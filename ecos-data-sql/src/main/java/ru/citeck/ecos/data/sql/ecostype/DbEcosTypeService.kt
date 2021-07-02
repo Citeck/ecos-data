@@ -1,0 +1,100 @@
+package ru.citeck.ecos.data.sql.ecostype
+
+import mu.KotlinLogging
+import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.data.sql.dto.DbColumnDef
+import ru.citeck.ecos.data.sql.dto.DbColumnType
+import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.records2.meta.RecordsTemplateService
+import ru.citeck.ecos.records3.RecordsServiceFactory
+
+class DbEcosTypeService(
+    private val ecosTypeRepo: DbEcosTypeRepo,
+    recordsServices: RecordsServiceFactory
+) {
+
+    companion object {
+        private val log = KotlinLogging.logger {}
+
+        private val VALID_COLUMN_NAME = "[\\w-]+".toRegex()
+    }
+
+    private val templateService = RecordsTemplateService(recordsServices)
+    private val recordsService = recordsServices.recordsServiceV1
+
+    fun getColumnsForTypes(typesId: List<String>): List<DbColumnDef> {
+        return mergeColumns(typesId.map { ecosTypeRepo.getTypeInfo(it) })
+    }
+
+    fun fillComputedAtts(sourceId: String, dbRecSrcEntity: DbEntity): Boolean {
+
+        val typeInfo = ecosTypeRepo.getTypeInfo(dbRecSrcEntity.type)
+
+        var changed = false
+        val newName = getDisplayName(RecordRef.create(sourceId, dbRecSrcEntity.extId), typeInfo)
+        if (dbRecSrcEntity.name != newName) {
+            dbRecSrcEntity.name = newName
+            changed = true
+        }
+        return changed
+    }
+
+    private fun getDisplayName(recordRef: RecordRef, typeInfo: DbEcosTypeInfo): MLText {
+
+        if (!MLText.isEmpty(typeInfo.dispNameTemplate)) {
+            return templateService.resolve(typeInfo.dispNameTemplate, recordRef)
+        }
+        val recName = recordsService.getAtt(recordRef, "name").asText()
+        if (recName.isNotBlank()) {
+            return MLText(recName)
+        }
+        if (!MLText.isEmpty(typeInfo.name)) {
+            return typeInfo.name
+        }
+        return MLText(typeInfo.id)
+    }
+
+    private fun mergeColumns(typesInfo: List<DbEcosTypeInfo>): List<DbColumnDef> {
+
+        val processedTypes = hashSetOf<String>()
+        val columnsById = LinkedHashMap<String, DbColumnDef>()
+
+        typesInfo.forEach { typeInfo ->
+            if (processedTypes.add(typeInfo.id)) {
+                val columns = typeInfo.attributes.mapNotNull { mapAttToColumn(it) }
+                columns.forEach { columnsById[it.name] = it }
+            }
+        }
+
+        return columnsById.values.toList()
+    }
+
+    private fun mapAttToColumn(attribute: AttributeDef): DbColumnDef? {
+
+        if (!VALID_COLUMN_NAME.matches(attribute.id)) {
+            log.debug { "Attribute id '${attribute.id}' is not a valid column name and will be skipped" }
+            return null
+        }
+
+        val columnType = when (attribute.type) {
+            AttributeType.ASSOC -> DbColumnType.TEXT
+            AttributeType.PERSON -> DbColumnType.TEXT
+            AttributeType.AUTHORITY_GROUP -> DbColumnType.TEXT
+            AttributeType.AUTHORITY -> DbColumnType.TEXT
+            AttributeType.TEXT -> DbColumnType.TEXT
+            AttributeType.MLTEXT -> DbColumnType.TEXT
+            AttributeType.NUMBER -> DbColumnType.DOUBLE
+            AttributeType.BOOLEAN -> DbColumnType.BOOLEAN
+            AttributeType.DATE -> DbColumnType.DATETIME
+            AttributeType.DATETIME -> DbColumnType.DATETIME
+            AttributeType.CONTENT -> DbColumnType.TEXT
+            AttributeType.JSON -> DbColumnType.JSON
+            AttributeType.BINARY -> DbColumnType.BINARY
+        }
+
+        return DbColumnDef(attribute.id, columnType, attribute.multiple, emptyList())
+    }
+}
