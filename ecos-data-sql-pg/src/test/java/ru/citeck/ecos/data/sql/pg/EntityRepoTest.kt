@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql
+package ru.citeck.ecos.data.sql.pg
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -6,7 +6,7 @@ import org.junit.jupiter.api.assertThrows
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
-import ru.citeck.ecos.data.sql.repo.SqlDataServiceTestUtils
+import ru.citeck.ecos.data.sql.pg.repo.SqlDataServiceTestUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import java.time.Instant

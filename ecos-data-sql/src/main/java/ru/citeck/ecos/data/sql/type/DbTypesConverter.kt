@@ -11,9 +11,15 @@ import kotlin.reflect.KClass
 class DbTypesConverter {
 
     private val converters = ConcurrentHashMap<Pair<KClass<*>, KClass<*>>, (Any) -> Any?>()
+    private val toCommonTypeConverters = ConcurrentHashMap<KClass<*>, (Any) -> Any?>()
 
     init {
         registerDefaultConverters()
+    }
+
+    fun <IN : Any> register(inCLass: KClass<IN>, converter: (IN) -> Any?) {
+        @Suppress("UNCHECKED_CAST")
+        this.toCommonTypeConverters[inCLass] = converter as (Any) -> Any?
     }
 
     fun <IN : Any, OUT : Any> register(inClass: KClass<IN>, outClass: KClass<OUT>, converter: (IN) -> OUT?) {
@@ -26,7 +32,16 @@ class DbTypesConverter {
         return convertNotNull(value, targetClass)
     }
 
-    fun <T : Any> convertNotNull(value: Any, targetClass: KClass<T>): T? {
+    fun <T : Any> convertNotNull(valueIn: Any, targetClass: KClass<T>): T? {
+
+        val toCommonTypeConverter = toCommonTypeConverters[valueIn::class]
+
+        val value = if (toCommonTypeConverter != null) {
+            toCommonTypeConverter.invoke(valueIn) ?: return null
+        } else {
+            valueIn
+        }
+
         val result = if (targetClass.isInstance(value)) {
             value
         } else if (targetClass.java.isArray) {

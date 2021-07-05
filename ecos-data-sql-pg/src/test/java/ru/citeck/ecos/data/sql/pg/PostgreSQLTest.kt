@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql
+package ru.citeck.ecos.data.sql.pg
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import org.assertj.core.api.Assertions.assertThat

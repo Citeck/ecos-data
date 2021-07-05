@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql
+package ru.citeck.ecos.data.sql.pg
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -6,7 +6,6 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbTableRef
-import ru.citeck.ecos.data.sql.pg.DbSchemaDaoPg
 
 class SchemaDaoTest {
 

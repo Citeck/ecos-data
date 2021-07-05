@@ -1,5 +1,7 @@
 package ru.citeck.ecos.data.sql.pg
 
+import org.postgresql.jdbc.PgArray
+import org.postgresql.util.PGobject
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
 import ru.citeck.ecos.data.sql.dto.DbTableRef
@@ -75,6 +77,9 @@ class PgDataServiceFactory {
             }
 
             val typesConverter = DbTypesConverter()
+            typesConverter.register(PgArray::class) { it.array }
+            typesConverter.register(PGobject::class) { it.value }
+
             val entityMapper = DbEntityMapperImpl(entityType.kotlin, typesConverter)
             val schemaDao = DbSchemaDaoPg(dataSource, tableRef)
             val entityRepo = DbEntityRepoPg(entityMapper, dbContextManager, dataSource, tableRef, typesConverter)

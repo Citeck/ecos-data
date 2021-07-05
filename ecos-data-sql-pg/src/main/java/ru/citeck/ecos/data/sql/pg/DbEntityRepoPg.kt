@@ -1,8 +1,6 @@
 package ru.citeck.ecos.data.sql.pg
 
 import mu.KotlinLogging
-import org.postgresql.jdbc.PgArray
-import org.postgresql.util.PGobject
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
@@ -81,16 +79,11 @@ class DbEntityRepoPg<T : Any>(
     private fun convertRowToMap(row: ResultSet, columns: List<DbColumnDef>): Map<String, Any?> {
         val result = LinkedHashMap<String, Any?>()
         columns.forEach { column ->
-            var value = row.getObject(column.name)
+            val value = row.getObject(column.name)
             result[column.name] = if (value != null) {
                 var expectedType = column.type.type
                 if (column.multiple) {
                     expectedType = DbTypeUtils.getArrayType(expectedType)
-                }
-                if (value is PgArray) {
-                    value = value.array
-                } else if (value is PGobject) {
-                    value = value.value
                 }
                 typesConverter.convertNotNull(value, expectedType)
             } else {

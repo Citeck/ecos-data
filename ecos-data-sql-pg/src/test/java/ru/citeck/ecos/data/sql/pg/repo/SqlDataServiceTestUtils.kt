@@ -1,10 +1,11 @@
-package ru.citeck.ecos.data.sql.repo
+package ru.citeck.ecos.data.sql.pg.repo
 
 import org.assertj.core.api.Assertions
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.pg.DbSchemaDaoPg
 import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
+import ru.citeck.ecos.data.sql.repo.DbContextManager
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 
