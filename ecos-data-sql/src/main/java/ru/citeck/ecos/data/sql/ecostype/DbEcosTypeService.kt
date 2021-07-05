@@ -25,13 +25,9 @@ class DbEcosTypeService(
     private val templateService = RecordsTemplateService(recordsServices)
     private val recordsService = recordsServices.recordsServiceV1
 
-    fun getColumnsForTypes(typesId: List<String>): List<DbColumnDef> {
-        return mergeColumns(typesId.map { ecosTypeRepo.getTypeInfo(it) })
-    }
-
     fun fillComputedAtts(sourceId: String, dbRecSrcEntity: DbEntity): Boolean {
 
-        val typeInfo = ecosTypeRepo.getTypeInfo(dbRecSrcEntity.type)
+        val typeInfo = ecosTypeRepo.getTypeInfo(dbRecSrcEntity.type) ?: return false
 
         var changed = false
         val newName = getDisplayName(RecordRef.create(sourceId, dbRecSrcEntity.extId), typeInfo)
@@ -57,7 +53,7 @@ class DbEcosTypeService(
         return MLText(typeInfo.id)
     }
 
-    private fun mergeColumns(typesInfo: List<DbEcosTypeInfo>): List<DbColumnDef> {
+    fun getColumnsForTypes(typesInfo: List<DbEcosTypeInfo>): List<DbColumnDef> {
 
         val processedTypes = hashSetOf<String>()
         val columnsById = LinkedHashMap<String, DbColumnDef>()

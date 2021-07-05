@@ -32,6 +32,7 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
 
     override fun <T> query(query: String, params: List<Any?>, action: (ResultSet) -> T): T {
         return withConnection { connection ->
+            log.debug { "Query: $query" }
             txnCommands.get()?.add(query)
             connection.prepareStatement(query).use { statement ->
                 params.forEachIndexed { idx, value -> statement.setObject(idx + 1, value) }
@@ -40,8 +41,9 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
         }
     }
 
-    override fun update(query: String, params: List<Any?>) : Int {
+    override fun update(query: String, params: List<Any?>): Int {
         return withConnection { connection ->
+            log.debug { "Update: $query" }
             txnCommands.get()?.add(query)
             connection.prepareStatement(query).use { statement ->
                 params.forEachIndexed { idx, value -> statement.setObject(idx + 1, value) }
@@ -86,8 +88,12 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
             return dataSource.connection.use { connection ->
                 val autoCommitBefore = connection.autoCommit
                 val readOnlyBefore = connection.isReadOnly
-                connection.autoCommit = false
-                connection.isReadOnly = readOnly
+                if (autoCommitBefore) {
+                    connection.autoCommit = false
+                }
+                if (readOnlyBefore != readOnly) {
+                    connection.isReadOnly = readOnly
+                }
                 try {
                     currentThreadTxn.set(TxnState(readOnly, connection))
                     val actionRes = action.invoke()
@@ -97,8 +103,12 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
                     connection.rollback()
                     throw e
                 } finally {
-                    connection.autoCommit = autoCommitBefore
-                    connection.isReadOnly = readOnlyBefore
+                    if (autoCommitBefore) {
+                        connection.autoCommit = true
+                    }
+                    if (readOnlyBefore != readOnly) {
+                        connection.isReadOnly = readOnlyBefore
+                    }
                     currentThreadTxn.remove()
                 }
             }

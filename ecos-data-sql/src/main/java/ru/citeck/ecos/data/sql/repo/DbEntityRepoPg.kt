@@ -35,6 +35,7 @@ class DbEntityRepoPg<T : Any>(
     }
 
     private var columns: List<DbColumnDef> = ArrayList()
+    private var schemaCacheUpdateRequired = false
 
     private val hasTenant = mapper.getEntityColumns().any { it.columnDef.name == DbEntity.TENANT }
     private val hasDeletedFlag = mapper.getEntityColumns().any { it.columnDef.name == DbEntity.DELETED }
@@ -45,30 +46,30 @@ class DbEntityRepoPg<T : Any>(
             return
         }
         this.columns = newColumns
-        dataSource.updateSchema("DEALLOCATE ALL")
+        schemaCacheUpdateRequired = true
     }
 
     override fun findById(id: String): T? {
         return findOneByColumnAsEntity(DbEntity.EXT_ID, id, columns)
     }
 
-    private fun findOneByColumnAsEntity(column: String, value: Any, columns: List<DbColumnDef>) : T? {
+    private fun findOneByColumnAsEntity(column: String, value: Any, columns: List<DbColumnDef>): T? {
         return findOneByColumnAsMap(column, value, columns)?.let {
             mapper.convertToEntity(it)
         }
     }
 
-    private fun findByExtIdAsMap(id: String, columns: List<DbColumnDef>) : Map<String, Any?>? {
+    private fun findByExtIdAsMap(id: String, columns: List<DbColumnDef>): Map<String, Any?>? {
         return findOneByColumnAsMap(DbEntity.EXT_ID, id, columns)
     }
 
-    private fun findOneByColumnAsMap(column: String, value: Any, columns: List<DbColumnDef>) : Map<String, Any?>? {
+    private fun findOneByColumnAsMap(column: String, value: Any, columns: List<DbColumnDef>): Map<String, Any?>? {
 
         if (columns.isEmpty()) {
             return null
         }
 
-        val select = createSelect(columns.joinToString(",") { it.name })
+        val select = createSelect(columns)
         select.append(" AND \"$column\"=?")
 
         return dataSource.query(select.toString(), listOf(value)) { resultSet ->
@@ -134,7 +135,7 @@ class DbEntityRepoPg<T : Any>(
         return findByExtIdAsMap(extId, columns) ?: error("Entity with extId $extId was inserted but can't be found.")
     }
 
-    private fun saveImpl(entity: Map<String, Any?>) : String {
+    private fun saveImpl(entity: Map<String, Any?>): String {
 
         val nowInstant = Instant.now()
         val entityMap = LinkedHashMap(entity)
@@ -257,18 +258,20 @@ class DbEntityRepoPg<T : Any>(
             return DbFindRes(emptyList(), 0)
         }
 
-        val queryBuilder = createSelect(columns.joinToString(",") { it.name })
+        val queryBuilder = createSelect(columns)
         val columnsByName = columns.associateBy { it.name }
 
         val params = mutableListOf<Any?>()
         var sqlPredicate = ""
 
         if (predicate !is VoidPredicate) {
-            queryBuilder.append(" AND ")
             val sqlPredicateBuilder = StringBuilder()
             toSqlPredicate(predicate, sqlPredicateBuilder, params, columnsByName)
             sqlPredicate = sqlPredicateBuilder.toString()
-            queryBuilder.append(sqlPredicate)
+            if (sqlPredicate.isNotBlank()) {
+                queryBuilder.append(" AND ")
+                queryBuilder.append(sqlPredicate)
+            }
         }
 
         if (sort.isNotEmpty()) {
@@ -289,6 +292,7 @@ class DbEntityRepoPg<T : Any>(
             queryBuilder.append(" OFFSET ").append(page.skipCount)
         }
 
+        updateSchemaCache()
         val resultEntities = dataSource.query(queryBuilder.toString(), params) { resultSet ->
             val resultList = mutableListOf<T>()
             while (resultSet.next()) {
@@ -298,11 +302,15 @@ class DbEntityRepoPg<T : Any>(
         }
 
         val totalCount = if (page.maxItems == -1) {
-            resultEntities.size.toLong() - page.skipCount
+            resultEntities.size.toLong() + page.skipCount
         } else {
             getCountImpl(sqlPredicate, params)
         }
         return DbFindRes(resultEntities, totalCount)
+    }
+
+    private fun createSelect(selectColumns: List<DbColumnDef>): StringBuilder {
+        return createSelect(selectColumns.joinToString { "\"${it.name}\"" })
     }
 
     private fun createSelect(selectColumns: String): StringBuilder {
@@ -352,7 +360,7 @@ class DbEntityRepoPg<T : Any>(
     }
 
     private fun getParamTypeForColumn(type: DbColumnType, multiple: Boolean): KClass<*> {
-        val baseType =  when (type) {
+        val baseType = when (type) {
             DbColumnType.BIGSERIAL -> Long::class
             DbColumnType.INT -> Int::class
             DbColumnType.DOUBLE -> Double::class
@@ -370,10 +378,12 @@ class DbEntityRepoPg<T : Any>(
         }
     }
 
-    private fun toSqlPredicate(predicate: Predicate,
-                               query: StringBuilder,
-                               queryParams: MutableList<Any?>,
-                               columnsByName: Map<String, DbColumnDef>): Boolean {
+    private fun toSqlPredicate(
+        predicate: Predicate,
+        query: StringBuilder,
+        queryParams: MutableList<Any?>,
+        columnsByName: Map<String, DbColumnDef>
+    ): Boolean {
 
         when (predicate) {
 
@@ -418,11 +428,12 @@ class DbEntityRepoPg<T : Any>(
                     ValuePredicate.Type.IN -> "IN"
                     ValuePredicate.Type.EQ -> "="
                     ValuePredicate.Type.LIKE,
-                    ValuePredicate.Type.CONTAINS -> if (value.isNumber()) {
-                        "="
-                    } else {
-                        "LIKE"
-                    }
+                    ValuePredicate.Type.CONTAINS ->
+                        if (value.isNumber()) {
+                            "="
+                        } else {
+                            "LIKE"
+                        }
                     ValuePredicate.Type.GT -> ">"
                     ValuePredicate.Type.GE -> ">="
                     ValuePredicate.Type.LT -> "<"
@@ -487,6 +498,13 @@ class DbEntityRepoPg<T : Any>(
                 log.error { "Unknown predicate type: ${predicate::class}" }
                 return false
             }
+        }
+    }
+
+    private fun updateSchemaCache() {
+        if (schemaCacheUpdateRequired) {
+            dataSource.updateSchema("DEALLOCATE ALL")
+            schemaCacheUpdateRequired = false
         }
     }
 

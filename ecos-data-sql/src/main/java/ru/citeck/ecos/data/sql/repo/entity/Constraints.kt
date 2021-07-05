@@ -1,5 +1,7 @@
 package ru.citeck.ecos.data.sql.repo.entity
 
+import ru.citeck.ecos.data.sql.dto.DbColumnConstraint
+
 @Retention(AnnotationRetention.RUNTIME)
 @Target(
     AnnotationTarget.FIELD,
@@ -8,5 +10,5 @@ package ru.citeck.ecos.data.sql.repo.entity
     AnnotationTarget.PROPERTY_SETTER
 )
 annotation class Constraints(
-    vararg val value: String
+    vararg val value: DbColumnConstraint
 )

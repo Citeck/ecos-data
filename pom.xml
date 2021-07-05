@@ -209,7 +209,6 @@
     </build>
 
     <modules>
-        <module>ecos-data-core</module>
         <module>ecos-data-sql</module>
     </modules>
 

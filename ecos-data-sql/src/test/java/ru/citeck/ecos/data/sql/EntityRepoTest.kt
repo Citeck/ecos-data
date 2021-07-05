@@ -78,7 +78,7 @@ class EntityRepoTest {
         val findByPredicateContainsUnknownRes = context.service.findAll(ValuePredicate.contains(STR_COLUMN, "unknown"))
         assertThat(findByPredicateContainsUnknownRes).isEmpty()
 
-        //search with other tenant
+        // search with other tenant
         context.setCurrentTenant.invoke("unknownTenant")
         assertThat(context.service.findAll()).isEmpty()
     }
@@ -98,14 +98,14 @@ class EntityRepoTest {
 
         assertThat(newEntity0.extId).isNotBlank()
         assertThat(newEntity0.attributes[STR_COLUMN] as List<*>).containsExactlyInAnyOrderElementsOf(
-            listOf( STR_COLUMN_V0 )
+            listOf(STR_COLUMN_V0)
         )
 
         newEntity0.attributes[STR_COLUMN] = listOf(STR_COLUMN_V0, STR_COLUMN_V1, STR_COLUMN_V2)
         newEntity0 = context.service.save(newEntity0, columns)
 
         assertThat(newEntity0.attributes[STR_COLUMN] as List<*>).containsExactlyInAnyOrderElementsOf(
-            listOf( STR_COLUMN_V0, STR_COLUMN_V1, STR_COLUMN_V2 )
+            listOf(STR_COLUMN_V0, STR_COLUMN_V1, STR_COLUMN_V2)
         )
 
         assertThrows<Exception> {
@@ -119,7 +119,7 @@ class EntityRepoTest {
 
         newEntity1 = context.service.save(newEntity1, columns)
         assertThat(newEntity1.attributes[STR_COLUMN] as List<*>).containsExactlyInAnyOrderElementsOf(
-            listOf( STR_COLUMN_V0, STR_COLUMN_V1, STR_COLUMN_V2 )
+            listOf(STR_COLUMN_V0, STR_COLUMN_V1, STR_COLUMN_V2)
         )
     }
 }

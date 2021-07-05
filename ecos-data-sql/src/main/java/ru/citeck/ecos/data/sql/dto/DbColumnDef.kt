@@ -4,5 +4,5 @@ data class DbColumnDef(
     val name: String,
     val type: DbColumnType,
     val multiple: Boolean,
-    val constraints: List<String>
+    val constraints: List<DbColumnConstraint>
 )

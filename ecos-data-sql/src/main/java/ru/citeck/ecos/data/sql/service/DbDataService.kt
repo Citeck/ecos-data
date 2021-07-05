@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql
+package ru.citeck.ecos.data.sql.service
 
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
@@ -22,8 +22,8 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 import java.time.Instant
 import kotlin.reflect.KClass
 
-class SqlDataService<T : Any>(
-    private val config: SqlDataServiceConfig,
+class DbDataService<T : Any>(
+    private val config: DbDataServiceConfig,
     private val tableRef: DbTableRef,
     private val dataSource: DbDataSource,
     entityType: KClass<T>,
@@ -42,9 +42,9 @@ class SqlDataService<T : Any>(
 
     private var columns: List<DbColumnDef>? = null
 
-    private val tableMetaService: SqlDataService<DbTableMetaEntity>? = if (storeTableMeta) {
-        SqlDataService(
-            SqlDataServiceConfig(false),
+    private val tableMetaService: DbDataService<DbTableMetaEntity>? = if (storeTableMeta) {
+        DbDataService(
+            DbDataServiceConfig(false),
             DbTableRef(tableRef.schema, META_TABLE_NAME),
             dataSource,
             DbTableMetaEntity::class,
@@ -138,11 +138,11 @@ class SqlDataService<T : Any>(
 
         if (commands.isNotEmpty() && tableMetaService != null) {
 
-            val currentMeta = tableMetaService.findById(tableRef.metaId)
+            val currentMeta = tableMetaService.findById(tableRef.table)
 
             val tableMetaNotNull = if (currentMeta == null) {
                 val newMeta = DbTableMetaEntity()
-                newMeta.extId = tableRef.metaId
+                newMeta.extId = tableRef.table
                 val config = DbTableMetaConfig(DbTableMetaAuthConfig(this.config.authEnabled))
                 newMeta.config = Json.mapper.toString(config) ?: "{}"
                 newMeta
@@ -208,7 +208,7 @@ class SqlDataService<T : Any>(
         }
     }
 
-    fun getMetaService(): SqlDataService<DbTableMetaEntity>? {
+    fun getMetaService(): DbDataService<DbTableMetaEntity>? {
         return tableMetaService
     }
 }

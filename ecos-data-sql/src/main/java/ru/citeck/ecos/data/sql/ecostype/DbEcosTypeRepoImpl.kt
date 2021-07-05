@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.ecostype
 
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
@@ -22,7 +23,8 @@ class DbEcosTypeRepoImpl(private val recordsService: RecordsService) : DbEcosTyp
             typeAtts.name ?: MLText.EMPTY,
             typeAtts.dispNameTemplate ?: MLText.EMPTY,
             typeAtts.numTemplateRef ?: RecordRef.EMPTY,
-            typeAtts.attributes
+            typeAtts.attributes,
+            typeAtts.statuses
         )
     }
 
@@ -31,6 +33,8 @@ class DbEcosTypeRepoImpl(private val recordsService: RecordsService) : DbEcosTyp
         val dispNameTemplate: MLText?,
         val numTemplateRef: RecordRef?,
         @AttName("model.attributes[]")
-        val attributes: List<AttributeDef>
+        val attributes: List<AttributeDef>,
+        @AttName("model.statuses[]")
+        val statuses: List<StatusDef>
     )
 }

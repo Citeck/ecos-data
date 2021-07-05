@@ -9,5 +9,4 @@ data class DbTableRef(
     } else {
         "\"$schema\".\"$table\""
     }
-    val metaId = "$schema|$table"
 }

@@ -9,6 +9,6 @@ import ru.citeck.ecos.data.sql.dto.DbColumnType
     AnnotationTarget.PROPERTY_GETTER,
     AnnotationTarget.PROPERTY_SETTER
 )
-annotation class DbFieldType(
+annotation class ColumnType(
     val value: DbColumnType
 )

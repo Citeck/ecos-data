@@ -1,10 +1,7 @@
 package ru.citeck.ecos.data.sql.records
 
-import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
-import ru.citeck.ecos.data.sql.SqlDataService
-import ru.citeck.ecos.data.sql.SqlDataServiceConfig
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
@@ -13,6 +10,8 @@ import ru.citeck.ecos.data.sql.repo.DbContextManager
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.service.DbDataService
+import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
@@ -36,6 +35,7 @@ import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.records3.record.request.RequestContext
 import kotlin.collections.LinkedHashMap
+import kotlin.math.min
 
 class DbRecordsDao(
     private val id: String,
@@ -54,8 +54,8 @@ class DbRecordsDao(
 
     private lateinit var ecosTypeService: DbEcosTypeService
 
-    private val sqlDataService = SqlDataService(
-        SqlDataServiceConfig(config.authEnabled),
+    private val sqlDataService = DbDataService(
+        DbDataServiceConfig(config.authEnabled),
         config.tableRef,
         dataSource,
         DbEntity::class,
@@ -63,7 +63,7 @@ class DbRecordsDao(
         true
     )
 
-     override fun getRecordsAtts(recordsId: List<String>): List<*> {
+    override fun getRecordsAtts(recordsId: List<String>): List<*> {
         return recordsId.map { id ->
             sqlDataService.findById(id)?.let {
                 Record(this, it)
@@ -83,11 +83,12 @@ class DbRecordsDao(
                     val typeLocalId = RecordRef.valueOf(it.getValue().asText()).id
                     ValuePredicate(DbEntity.TYPE, it.getType(), typeLocalId)
                 }
-                else -> if (ATTS_MAPPING.containsKey(it.getAttribute())) {
-                    ValuePredicate(ATTS_MAPPING[it.getAttribute()], it.getType(), it.getValue())
-                } else {
-                    it
-                }
+                else ->
+                    if (ATTS_MAPPING.containsKey(it.getAttribute())) {
+                        ValuePredicate(ATTS_MAPPING[it.getAttribute()], it.getType(), it.getValue())
+                    } else {
+                        it
+                    }
             }
         }
 
@@ -97,7 +98,14 @@ class DbRecordsDao(
             recsQuery.sortBy.map {
                 DbFindSort(ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.isAscending)
             },
-            DbFindPage(page.skipCount, page.maxItems)
+            DbFindPage(
+                page.skipCount,
+                if (page.maxItems == -1) {
+                    config.queryMaxItems
+                } else {
+                    min(page.maxItems, config.queryMaxItems)
+                }
+            )
         )
 
         val queryRes = RecsQueryRes<Any>()
@@ -109,8 +117,8 @@ class DbRecordsDao(
 
     override fun delete(recordsId: List<String>): List<DelStatus> {
 
-        if (!config.mutable) {
-            error("Records DAO is not mutable. Records can't be deleted: '$recordsId'")
+        if (!config.deletable) {
+            error("Records DAO is not deletable. Records can't be deleted: '$recordsId'")
         }
 
         return recordsId.map {
@@ -137,12 +145,15 @@ class DbRecordsDao(
 
     override fun mutate(records: List<LocalRecordAtts>): List<String> {
 
-        if (!config.mutable) {
+        if (!config.updatable) {
             error("Records DAO is not mutable. Records can't be mutated: '${records.map { it.id }}'")
         }
         val typesId = records.map { getTypeIdForRecord(it) }
+        val typesInfo = typesId.mapIndexed { idx, typeId ->
+            ecosTypeRepo.getTypeInfo(typeId) ?: error("Type is not found: '$typeId'. Record ID: '${records[idx]}'")
+        }
 
-        val columns = ecosTypeService.getColumnsForTypes(typesId).filter {
+        val columns = ecosTypeService.getColumnsForTypes(typesInfo).filter {
             !it.name.startsWith("__")
         }
 
@@ -162,12 +173,22 @@ class DbRecordsDao(
                     newEntity
                 }
             }
+            if (recToMutate.id == DbEntity.NEW_REC_ID) {
+                if (!config.insertable) {
+                    error("Records DAO doesn't support new records creation. Record ID: '${record.id}'")
+                }
+            } else {
+                if (!config.updatable) {
+                    error("Records DAO doesn't support records updating. Record ID: '${record.id}'")
+                }
+            }
 
             columns.forEach {
                 if (record.attributes.has(it.name)) {
                     val value = record.attributes.get(it.name)
-                    recToMutate.attributes[it.name] = if (value.isObject()
-                            && it.type == DbColumnType.TEXT || it.type == DbColumnType.JSON) {
+                    recToMutate.attributes[it.name] = if (value.isObject() &&
+                        it.type == DbColumnType.TEXT || it.type == DbColumnType.JSON
+                    ) {
                         Json.mapper.toString(value)
                     } else {
                         value.getAs(it.type.type.java)
@@ -175,12 +196,19 @@ class DbRecordsDao(
                 }
             }
             recToMutate.type = recordTypeId
+            val typeDef = typesInfo[recordIdx]
 
             if (record.attributes.has(StatusConstants.ATT_STATUS)) {
                 val newStatus = record.attributes.get(StatusConstants.ATT_STATUS).asText()
-                // todo: add status validation
                 if (newStatus.isNotBlank()) {
-                    recToMutate.status = newStatus
+                    if (typeDef.statuses.any { it.id == newStatus }) {
+                        recToMutate.status = newStatus
+                    } else {
+                        error(
+                            "Unknown status: '$newStatus'. " +
+                                "Available statuses: ${typeDef.statuses.joinToString { it.id }}"
+                        )
+                    }
                 }
             }
 
@@ -207,7 +235,7 @@ class DbRecordsDao(
             val recData = LinkedHashMap(entity.attributes)
 
             val typeInfo = owner.ecosTypeRepo.getTypeInfo(entity.type)
-            typeInfo.attributes.forEach {
+            typeInfo?.attributes?.forEach {
                 val value = recData[it.id]
                 when (it.type) {
                     AttributeType.ASSOC,
@@ -228,8 +256,7 @@ class DbRecordsDao(
                             recData[it.id] = Json.mapper.read(value, MLText::class.java)
                         }
                     }
-                    else -> {
-                    } // do nothing
+                    else -> {}
                 }
             }
             this.additionalAtts = recData

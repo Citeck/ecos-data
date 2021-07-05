@@ -9,8 +9,10 @@ import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import java.time.Instant
 import kotlin.reflect.KClass
 
-class DbEntityMapperImpl<T : Any>(private val entityType: KClass<T>,
-                                  private val converter: DbTypesConverter) : DbEntityMapper<T> {
+class DbEntityMapperImpl<T : Any>(
+    private val entityType: KClass<T>,
+    private val converter: DbTypesConverter
+) : DbEntityMapper<T> {
 
     companion object {
         private const val ATTRIBUTES_FIELD = "attributes"
@@ -78,12 +80,11 @@ class DbEntityMapperImpl<T : Any>(private val entityType: KClass<T>,
             if (prop.writeMethod == null || prop.readMethod == null || prop.name == ATTRIBUTES_FIELD) {
 
                 null
-
             } else {
 
                 val field = type.java.getDeclaredField(prop.name)
                 val constraints = field.getAnnotation(Constraints::class.java)?.value?.toList() ?: emptyList()
-                val explicitColumnType = field.getAnnotation(DbFieldType::class.java)?.value
+                val explicitColumnType = field.getAnnotation(ColumnType::class.java)?.value
 
                 val fieldType = explicitColumnType ?: when {
                     prop.name == "id" -> DbColumnType.BIGSERIAL

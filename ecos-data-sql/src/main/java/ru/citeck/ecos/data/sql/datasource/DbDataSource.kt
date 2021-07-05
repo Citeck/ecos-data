@@ -9,7 +9,7 @@ interface DbDataSource {
 
     fun <T> query(query: String, params: List<Any?>, action: (ResultSet) -> T): T
 
-    fun update(query: String, params: List<Any?>) : Int
+    fun update(query: String, params: List<Any?>): Int
 
     fun watchCommands(action: () -> Unit): List<String>
 

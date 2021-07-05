@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.repo.entity
 
 import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.data.sql.dto.DbColumnConstraint.*
 import java.time.Instant
 
 class DbEntity {
@@ -23,36 +24,36 @@ class DbEntity {
         const val TENANT = "__tenant"
     }
 
-    @Constraints("PRIMARY KEY")
+    @Constraints(PRIMARY_KEY)
     var id: Long = NEW_REC_ID
 
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var extId: String = ""
 
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var updVersion: Long = 0
 
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var modified: Instant = Instant.EPOCH
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var modifier: String = ""
 
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var created: Instant = Instant.EPOCH
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var creator: String = ""
 
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var deleted: Boolean = false
 
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var type: String = ""
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var status: String = ""
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var name: MLText = MLText.EMPTY
 
-    @Constraints("NOT NULL")
+    @Constraints(NOT_NULL)
     var tenant: String = ""
 
     var docNum: Long? = null
