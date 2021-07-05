@@ -58,7 +58,6 @@ class EntityRepoTest {
         assertThat(newEntity.deleted).isFalse()
         assertThat(newEntity.docNum).isNull()
         assertThat(newEntity.status).isEmpty()
-        assertThat(newEntity.tenant).isEqualTo(context.ctxManager.getCurrentTenant())
 
         findRes = context.service.findAll()
 
@@ -77,10 +76,6 @@ class EntityRepoTest {
 
         val findByPredicateContainsUnknownRes = context.service.findAll(ValuePredicate.contains(STR_COLUMN, "unknown"))
         assertThat(findByPredicateContainsUnknownRes).isEmpty()
-
-        // search with other tenant
-        context.setCurrentTenant.invoke("unknownTenant")
-        assertThat(context.service.findAll()).isEmpty()
     }
 
     fun testArrays(dbDataSource: DbDataSource) {

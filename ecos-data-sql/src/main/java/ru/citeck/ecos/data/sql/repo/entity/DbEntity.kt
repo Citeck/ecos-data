@@ -21,7 +21,6 @@ class DbEntity {
         const val STATUS = "__status"
         const val NAME = "__name"
         const val DOC_NUM = "__doc_num"
-        const val TENANT = "__tenant"
     }
 
     @Constraints(PRIMARY_KEY)
@@ -52,9 +51,6 @@ class DbEntity {
     var status: String = ""
     @Constraints(NOT_NULL)
     var name: MLText = MLText.EMPTY
-
-    @Constraints(NOT_NULL)
-    var tenant: String = ""
 
     var docNum: Long? = null
 

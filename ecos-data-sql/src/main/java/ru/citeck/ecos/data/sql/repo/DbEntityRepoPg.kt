@@ -37,7 +37,6 @@ class DbEntityRepoPg<T : Any>(
     private var columns: List<DbColumnDef> = ArrayList()
     private var schemaCacheUpdateRequired = false
 
-    private val hasTenant = mapper.getEntityColumns().any { it.columnDef.name == DbEntity.TENANT }
     private val hasDeletedFlag = mapper.getEntityColumns().any { it.columnDef.name == DbEntity.DELETED }
 
     override fun setColumns(columns: List<DbColumnDef>) {
@@ -155,9 +154,6 @@ class DbEntityRepoPg<T : Any>(
         attsToSave.remove(DbEntity.ID)
         attsToSave[DbEntity.MODIFIED] = nowInstant
         attsToSave[DbEntity.MODIFIER] = ctxManager.getCurrentUser()
-        if (hasTenant) {
-            attsToSave[DbEntity.TENANT] = ctxManager.getCurrentTenant()
-        }
 
         if (id == DbEntity.NEW_REC_ID) {
             insertImpl(attsToSave, nowInstant)
@@ -316,20 +312,11 @@ class DbEntityRepoPg<T : Any>(
     private fun createSelect(selectColumns: String): StringBuilder {
         val sb = StringBuilder()
         sb.append("SELECT $selectColumns FROM ${tableRef.fullName} WHERE ")
-        if (!hasDeletedFlag && !hasTenant) {
+        if (!hasDeletedFlag) {
             sb.append("true")
         } else {
-            if (hasTenant) {
-                sb.append(" \"").append(DbEntity.TENANT)
-                    .append("\"='")
-                    .append(ctxManager.getCurrentTenant())
-                    .append("'")
-                if (hasDeletedFlag) {
-                    sb.append(" AND ")
-                }
-            }
             if (hasDeletedFlag) {
-                sb.append("NOT \"").append(DbEntity.DELETED).append("\"=true")
+                sb.append("\"").append(DbEntity.DELETED).append("\"!=true")
             }
         }
         return sb

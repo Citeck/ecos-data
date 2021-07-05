@@ -18,7 +18,7 @@ class SchemaDaoTest {
 
     private fun testImpl(dbDataSource: DbDataSource) {
 
-        val dbSchemaDao = DbSchemaDaoPg(dbDataSource, DbTableRef("", "test-table"))
+        val dbSchemaDao = DbSchemaDaoPg(dbDataSource, DbTableRef("some-schema", "test-table"))
         assertThat(dbSchemaDao.getColumns()).isEmpty()
 
         val singleValueColumns = DbColumnType.values().mapIndexed { idx, value ->

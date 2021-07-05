@@ -21,12 +21,8 @@ class DbSchemaDaoPg(
     }
 
     override fun getColumns(): List<DbColumnDef> {
-        return getColumns("%")
-    }
-
-    private fun getColumns(namePattern: String): List<DbColumnDef> {
         return dataSource.withMetaData { metaData ->
-            metaData.getColumns(null, tableRef.schema.ifEmpty { "%" }, tableRef.table, namePattern)
+            metaData.getColumns(null, tableRef.schema.ifEmpty { "%" }, tableRef.table, "%")
                 .use {
                     val columns = arrayListOf<DbColumnDef>()
                     while (it.next()) {
@@ -53,6 +49,10 @@ class DbSchemaDaoPg(
     @Synchronized
     override fun createTable(columns: List<DbColumnDef>) {
 
+        if (tableRef.schema.isNotBlank()) {
+            dataSource.updateSchema("CREATE SCHEMA IF NOT EXISTS \"${tableRef.schema}\"")
+        }
+
         val queryBuilder = StringBuilder()
 
         queryBuilder.append("CREATE TABLE ${tableRef.fullName} (")
@@ -67,7 +67,7 @@ class DbSchemaDaoPg(
 
         dataSource.updateSchema(queryBuilder.toString())
 
-        onColumnsCreated(columns, true)
+        onColumnsCreated(columns)
     }
 
     @Synchronized
@@ -83,7 +83,7 @@ class DbSchemaDaoPg(
                 getColumnSqlConstraintsWithSpaceIfNotEmpty(column.constraints)
             dataSource.updateSchema(query)
         }
-        onColumnsCreated(columns, false)
+        onColumnsCreated(columns)
     }
 
     @Synchronized
@@ -107,30 +107,17 @@ class DbSchemaDaoPg(
         }
     }
 
-    private fun onColumnsCreated(columns: List<DbColumnDef>, tableJustCreated: Boolean) {
+    private fun onColumnsCreated(columns: List<DbColumnDef>) {
 
-        val hasTenant = if (columns.any { it.name == DbEntity.TENANT }) {
-            true
-        } else if (!tableJustCreated) {
-            getColumns(DbEntity.TENANT).isNotEmpty()
-        } else {
-            false
-        }
-
-        val tenantIndexPrefix = if (hasTenant) {
-            "\"${DbEntity.TENANT}\","
-        } else {
-            ""
-        }
         if (columns.any { it.name == DbEntity.EXT_ID }) {
             dataSource.updateSchema(
-                "CREATE UNIQUE INDEX ON ${tableRef.fullName} ($tenantIndexPrefix\"${DbEntity.EXT_ID}\")"
+                "CREATE UNIQUE INDEX ON ${tableRef.fullName} (\"${DbEntity.EXT_ID}\")"
             )
         }
         listOf(DbEntity.DELETED, DbEntity.MODIFIED, DbEntity.CREATED).forEach { indexedColumn ->
             if (columns.any { it.name == indexedColumn }) {
                 dataSource.updateSchema(
-                    "CREATE INDEX ON ${tableRef.fullName} ($tenantIndexPrefix\"$indexedColumn\")"
+                    "CREATE INDEX ON ${tableRef.fullName} (\"$indexedColumn\")"
                 )
             }
         }

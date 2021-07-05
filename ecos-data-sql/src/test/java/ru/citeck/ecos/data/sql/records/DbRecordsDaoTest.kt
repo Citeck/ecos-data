@@ -50,9 +50,7 @@ class DbRecordsDaoTest {
                 }
             }
             var currentUser = "user0"
-            var currentTenant = "tenant"
             val contextManager = object : DbContextManager {
-                override fun getCurrentTenant() = currentTenant
                 override fun getCurrentUser() = currentUser
                 override fun getCurrentUserAuthorities(): List<String> = listOf(getCurrentUser())
             }
@@ -60,7 +58,7 @@ class DbRecordsDaoTest {
             val recordsDao = DbRecordsDao(
                 "test",
                 DbRecordsDaoConfig(
-                    DbTableRef("", "test-records-table"),
+                    DbTableRef("records-test-schema", "test-records-table"),
                     insertable = true,
                     updatable = true,
                     deletable = true,
@@ -217,45 +215,14 @@ class DbRecordsDaoTest {
 
             assertThat(records.getAtt(recId, "_notExists?bool").asBoolean()).isTrue()
 
-            val tenantBefore = currentTenant
-            currentTenant = "newTenant"
-            val newTenantFullQueryRes = records.query(
+            val fullQueryAfterDeleteRes = records.query(
                 RecordsQuery.create {
                     withSourceId("test")
                     withQuery(VoidPredicate.INSTANCE)
                 }
             )
-            assertThat(newTenantFullQueryRes.getTotalCount()).isEqualTo(0)
-            assertThat(newTenantFullQueryRes.getRecords()).hasSize(0)
-
-            records.create(
-                "test",
-                mapOf(
-                    "numAtt" to 555,
-                    "_type" to "emodel/type@$testTypeId"
-                )
-            )
-            val newTenantFullQueryResAfterCreate = records.query(
-                RecordsQuery.create {
-                    withSourceId("test")
-                    withQuery(VoidPredicate.INSTANCE)
-                },
-                listOf("numAtt?num")
-            )
-            assertThat(newTenantFullQueryResAfterCreate.getTotalCount()).isEqualTo(1)
-            assertThat(newTenantFullQueryResAfterCreate.getRecords()).hasSize(1)
-            assertThat(newTenantFullQueryResAfterCreate.getRecords()[0].getAtt("numAtt?num").asInt()).isEqualTo(555)
-
-            currentTenant = tenantBefore
-
-            val oldTenantFullQueryRes = records.query(
-                RecordsQuery.create {
-                    withSourceId("test")
-                    withQuery(VoidPredicate.INSTANCE)
-                }
-            )
-            assertThat(oldTenantFullQueryRes.getTotalCount()).isEqualTo(30)
-            assertThat(oldTenantFullQueryRes.getRecords()).hasSize(30)
+            assertThat(fullQueryAfterDeleteRes.getTotalCount()).isEqualTo(30)
+            assertThat(fullQueryAfterDeleteRes.getRecords()).hasSize(30)
         }
     }
 }

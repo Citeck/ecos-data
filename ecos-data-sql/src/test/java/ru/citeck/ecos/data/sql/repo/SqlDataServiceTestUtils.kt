@@ -16,22 +16,20 @@ object SqlDataServiceTestUtils {
         Assertions.assertThat(dbSchemaDao.getColumns()).isEmpty()
 
         var currentUser = "user0"
-        var currentTenant = "tenant"
         val ctxManager = object : DbContextManager {
-            override fun getCurrentTenant() = currentTenant
             override fun getCurrentUser() = currentUser
             override fun getCurrentUserAuthorities(): List<String> = listOf(getCurrentUser())
         }
 
         val sqlDataService = DbDataService(
             DbDataServiceConfig(false),
-            DbTableRef("", tableName),
+            DbTableRef("sql-data-service-test-utils-schema", tableName),
             dbDataSource,
             DbEntity::class,
             ctxManager,
             true
         )
 
-        return SqlDataServiceTestCtx({ currentUser = it }, { currentTenant = it }, sqlDataService, ctxManager)
+        return SqlDataServiceTestCtx({ currentUser = it }, sqlDataService, ctxManager)
     }
 }
