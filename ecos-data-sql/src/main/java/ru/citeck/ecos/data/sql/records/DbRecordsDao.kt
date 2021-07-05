@@ -2,16 +2,13 @@ package ru.citeck.ecos.data.sql.records
 
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
-import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
-import ru.citeck.ecos.data.sql.repo.DbContextManager
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbDataService
-import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
@@ -41,8 +38,7 @@ class DbRecordsDao(
     private val id: String,
     private val config: DbRecordsDaoConfig,
     private val ecosTypeRepo: DbEcosTypeRepo,
-    dataSource: DbDataSource,
-    contextManager: DbContextManager
+    private val dbDataService: DbDataService<DbEntity>
 ) : AbstractRecordsDao(), RecordsAttsDao, RecordsQueryDao, RecordsMutateDao, RecordsDeleteDao {
 
     companion object {
@@ -54,18 +50,9 @@ class DbRecordsDao(
 
     private lateinit var ecosTypeService: DbEcosTypeService
 
-    private val sqlDataService = DbDataService(
-        DbDataServiceConfig(config.authEnabled),
-        config.tableRef,
-        dataSource,
-        DbEntity::class,
-        contextManager,
-        true
-    )
-
     override fun getRecordsAtts(recordsId: List<String>): List<*> {
         return recordsId.map { id ->
-            sqlDataService.findById(id)?.let {
+            dbDataService.findById(id)?.let {
                 Record(this, it)
             } ?: EmptyAttValue.INSTANCE
         }
@@ -93,7 +80,7 @@ class DbRecordsDao(
         }
 
         val page = recsQuery.page
-        val findRes = sqlDataService.find(
+        val findRes = dbDataService.find(
             predicate,
             recsQuery.sortBy.map {
                 DbFindSort(ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.isAscending)
@@ -122,7 +109,7 @@ class DbRecordsDao(
         }
 
         return recordsId.map {
-            sqlDataService.delete(it)
+            dbDataService.delete(it)
             DelStatus.OK
         }
     }
@@ -135,7 +122,7 @@ class DbRecordsDao(
             return typeRefFromAtts
         }
 
-        val typeFromRecord = sqlDataService.findById(record.id)?.type
+        val typeFromRecord = dbDataService.findById(record.id)?.type
         if (!typeFromRecord.isNullOrBlank()) {
             return typeFromRecord
         }
@@ -164,7 +151,7 @@ class DbRecordsDao(
             val recToMutate: DbEntity = if (record.id.isEmpty()) {
                 DbEntity()
             } else {
-                val existingEntity = sqlDataService.findById(record.id)
+                val existingEntity = dbDataService.findById(record.id)
                 if (existingEntity != null) {
                     existingEntity
                 } else {
@@ -212,10 +199,10 @@ class DbRecordsDao(
                 }
             }
 
-            val recAfterSave = sqlDataService.save(recToMutate, columns)
+            val recAfterSave = dbDataService.save(recToMutate, columns)
 
             if (ecosTypeService.fillComputedAtts(getId(), recAfterSave)) {
-                sqlDataService.save(recAfterSave, columns)
+                dbDataService.save(recAfterSave, columns)
             } else {
                 recAfterSave
             }.extId

@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql.repo
+package ru.citeck.ecos.data.sql.pg
 
 import mu.KotlinLogging
 import org.postgresql.jdbc.PgArray
@@ -7,6 +7,8 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbTableRef
+import ru.citeck.ecos.data.sql.repo.DbContextManager
+import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -49,11 +51,7 @@ class DbEntityRepoPg<T : Any>(
     }
 
     override fun findById(id: String): T? {
-        return findOneByColumnAsEntity(DbEntity.EXT_ID, id, columns)
-    }
-
-    private fun findOneByColumnAsEntity(column: String, value: Any, columns: List<DbColumnDef>): T? {
-        return findOneByColumnAsMap(column, value, columns)?.let {
+        return findOneByColumnAsMap(DbEntity.EXT_ID, id, columns)?.let {
             mapper.convertToEntity(it)
         }
     }

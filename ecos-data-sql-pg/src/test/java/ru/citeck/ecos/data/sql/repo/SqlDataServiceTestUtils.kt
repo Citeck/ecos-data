@@ -3,9 +3,9 @@ package ru.citeck.ecos.data.sql.repo
 import org.assertj.core.api.Assertions
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbTableRef
+import ru.citeck.ecos.data.sql.pg.DbSchemaDaoPg
+import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
-import ru.citeck.ecos.data.sql.schema.DbSchemaDaoPg
-import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 
 object SqlDataServiceTestUtils {
@@ -21,14 +21,12 @@ object SqlDataServiceTestUtils {
             override fun getCurrentUserAuthorities(): List<String> = listOf(getCurrentUser())
         }
 
-        val sqlDataService = DbDataService(
-            DbDataServiceConfig(false),
-            DbTableRef("sql-data-service-test-utils-schema", tableName),
-            dbDataSource,
-            DbEntity::class,
-            ctxManager,
-            true
-        )
+        val sqlDataService = PgDataServiceFactory().create(DbEntity::class.java)
+            .withTableRef(DbTableRef("sql-data-service-test-utils-schema", tableName))
+            .withConfig(DbDataServiceConfig(false))
+            .withDataSource(dbDataSource)
+            .withDbContextManager(ctxManager)
+            .build()
 
         return SqlDataServiceTestCtx({ currentUser = it }, sqlDataService, ctxManager)
     }

@@ -6,7 +6,7 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbTableRef
-import ru.citeck.ecos.data.sql.schema.DbSchemaDaoPg
+import ru.citeck.ecos.data.sql.pg.DbSchemaDaoPg
 
 class SchemaDaoTest {
 

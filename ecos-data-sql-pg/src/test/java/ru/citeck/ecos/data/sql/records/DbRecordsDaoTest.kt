@@ -7,7 +7,10 @@ import ru.citeck.ecos.data.sql.PgUtils
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
+import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.repo.DbContextManager
+import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.RecordRef
@@ -58,15 +61,17 @@ class DbRecordsDaoTest {
             val recordsDao = DbRecordsDao(
                 "test",
                 DbRecordsDaoConfig(
-                    DbTableRef("records-test-schema", "test-records-table"),
                     insertable = true,
                     updatable = true,
-                    deletable = true,
-                    authEnabled = true
+                    deletable = true
                 ),
                 ecosTypeRepo,
-                dataSource,
-                contextManager
+                PgDataServiceFactory().create(DbEntity::class.java)
+                    .withConfig(DbDataServiceConfig(true))
+                    .withDataSource(dataSource)
+                    .withDbContextManager(contextManager)
+                    .withTableRef(DbTableRef("records-test-schema", "test-records-table"))
+                    .build()
             )
 
             val records = RecordsServiceFactory().recordsServiceV1

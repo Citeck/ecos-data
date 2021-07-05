@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql.schema
+package ru.citeck.ecos.data.sql.pg
 
 import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 
 class DbSchemaDaoPg(
     private val dataSource: DbDataSource,

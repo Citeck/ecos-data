@@ -210,6 +210,7 @@
 
     <modules>
         <module>ecos-data-sql</module>
+        <module>ecos-data-sql-pg</module>
     </modules>
 
     <repositories>
