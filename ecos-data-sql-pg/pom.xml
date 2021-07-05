@@ -31,7 +31,6 @@
             <groupId>ru.citeck.ecos.data</groupId>
             <artifactId>ecos-data-sql</artifactId>
             <version>${project.version}</version>
-            <scope>provided</scope>
         </dependency>
 
         <dependency>

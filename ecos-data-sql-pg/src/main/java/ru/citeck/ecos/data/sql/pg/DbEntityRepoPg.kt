@@ -85,7 +85,7 @@ class DbEntityRepoPg<T : Any>(
                 if (column.multiple) {
                     expectedType = DbTypeUtils.getArrayType(expectedType)
                 }
-                typesConverter.convertNotNull(value, expectedType)
+                typesConverter.convert(value, expectedType)
             } else {
                 null
             }
@@ -327,7 +327,7 @@ class DbEntityRepoPg<T : Any>(
                 value = if (value == null) {
                     value
                 } else {
-                    typesConverter.convertNotNull(
+                    typesConverter.convert(
                         value,
                         getParamTypeForColumn(column.type, column.multiple)
                     )

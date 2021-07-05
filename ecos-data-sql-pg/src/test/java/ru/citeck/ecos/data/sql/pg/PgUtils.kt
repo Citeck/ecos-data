@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.pg
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
+import ru.citeck.ecos.data.sql.utils.use
 
 object PgUtils {
 

@@ -27,12 +27,9 @@ class DbTypesConverter {
         this.converters[inClass to outClass] = converter as (Any) -> Any?
     }
 
-    fun <T : Any> convert(value: Any?, targetClass: KClass<T>): T? {
-        value ?: return null
-        return convertNotNull(value, targetClass)
-    }
+    fun <T : Any> convert(valueIn: Any?, targetClass: KClass<T>): T? {
 
-    fun <T : Any> convertNotNull(valueIn: Any, targetClass: KClass<T>): T? {
+        valueIn ?: return null
 
         val toCommonTypeConverter = toCommonTypeConverters[valueIn::class]
 

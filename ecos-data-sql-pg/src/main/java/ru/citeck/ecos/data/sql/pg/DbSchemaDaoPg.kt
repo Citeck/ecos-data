@@ -8,6 +8,7 @@ import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
+import ru.citeck.ecos.data.sql.utils.use
 
 class DbSchemaDaoPg(
     private val dataSource: DbDataSource,
