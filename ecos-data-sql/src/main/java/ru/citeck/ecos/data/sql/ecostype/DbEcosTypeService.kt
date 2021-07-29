@@ -19,7 +19,7 @@ class DbEcosTypeService(
     companion object {
         private val log = KotlinLogging.logger {}
 
-        private val VALID_COLUMN_NAME = "[\\w-]+".toRegex()
+        private val VALID_COLUMN_NAME = "[\\w-_:]+".toRegex()
     }
 
     private val templateService = RecordsTemplateService(recordsServices)
