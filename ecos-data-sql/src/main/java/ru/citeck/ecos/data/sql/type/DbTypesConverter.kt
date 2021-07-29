@@ -81,6 +81,10 @@ class DbTypesConverter {
     }
 
     private fun registerDefaultConverters() {
+        register(Long::class, Timestamp::class) { Timestamp.from(Instant.ofEpochMilli(it)) }
+        register(Timestamp::class, Long::class) { it.toInstant().toEpochMilli() }
+        register(Long::class, Instant::class) { Instant.ofEpochMilli(it) }
+        register(Instant::class, Long::class) { it.toEpochMilli() }
         register(Instant::class, Timestamp::class) { Timestamp.from(it) }
         register(Timestamp::class, Instant::class) { it.toInstant() }
         register(MLText::class, String::class) { Json.mapper.toString(it) ?: "" }

@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
@@ -46,6 +47,10 @@ class DbRecordsDaoTest {
                                 AttributeDef.create()
                                     .withId("numAtt")
                                     .withType(AttributeType.NUMBER)
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("dateTimeAtt")
+                                    .withType(AttributeType.DATETIME)
                                     .build()
                             ),
                             emptyList()
@@ -81,9 +86,12 @@ class DbRecordsDaoTest {
 
             val timeBeforeCreated = Instant.now().truncatedTo(ChronoUnit.MILLIS)
 
+            val dateTimeAttValueStr = "2021-07-29T17:21:29+07:00"
+            val dateTimeAttValue = Json.mapper.read("\"$dateTimeAttValueStr\"", Instant::class.java)!!
             val attsMap = mapOf(
                 "textAtt" to "text value",
                 "numAtt" to 123,
+                "dateTimeAtt" to dateTimeAttValueStr,
                 "unknown" to "value",
                 "_type" to "emodel/type@$testTypeId"
             )
@@ -98,6 +106,7 @@ class DbRecordsDaoTest {
                 "_modifier?localId",
                 "_created",
                 "_creator?localId",
+                "dateTimeAtt?str",
                 "?disp"
             )
 
@@ -111,6 +120,7 @@ class DbRecordsDaoTest {
             assertThat(attsFromDao.getAtt("_created").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
             assertThat(attsFromDao.getAtt("_modifier?localId").asText()).isEqualTo(currentUser)
             assertThat(attsFromDao.getAtt("_creator?localId").asText()).isEqualTo(creator)
+            assertThat(attsFromDao.getAtt("dateTimeAtt?str").asText()).isEqualTo(dateTimeAttValue.toString())
 
             currentUser = "new-user"
             val newTextValue = attsMap["textAtt"].toString() + "-postfix"

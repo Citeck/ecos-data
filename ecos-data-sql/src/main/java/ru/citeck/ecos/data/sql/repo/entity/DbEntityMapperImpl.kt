@@ -6,7 +6,11 @@ import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
+import java.lang.reflect.Array
 import java.time.Instant
+import java.util.*
+import kotlin.collections.ArrayList
+import kotlin.collections.LinkedHashMap
 import kotlin.reflect.KClass
 
 class DbEntityMapperImpl<T : Any>(
@@ -35,15 +39,25 @@ class DbEntityMapperImpl<T : Any>(
         data.forEach { (k, v) ->
             val entityField = entityColumns[k]
             if (entityField == null) {
-                additionalAtts[k] = v
+                if (v != null && v::class.java.isArray) {
+                    val arraySize = Array.getLength(v)
+                    val list = ArrayList<Any>(arraySize)
+                    for (i in 0 until arraySize) {
+                        list.add(Array.get(v, i))
+                    }
+                    additionalAtts[k] = list
+                } else {
+                    additionalAtts[k] = v
+                }
             } else {
                 entityAtts[entityField.fieldName] = converter.convert(v, entityField.fieldType)
             }
         }
+        val entity = Json.mapper.convert(entityAtts, entityType.java) ?: error("Conversion error")
         if (hasAttributesField) {
-            entityAtts[ATTRIBUTES_FIELD] = additionalAtts
+            PropertyUtils.setProperty(entity, ATTRIBUTES_FIELD, additionalAtts)
         }
-        return Json.mapper.convert(entityAtts, entityType.java) ?: error("Conversion error")
+        return entity
     }
 
     override fun convertToMap(entity: T): Map<String, Any?> {
