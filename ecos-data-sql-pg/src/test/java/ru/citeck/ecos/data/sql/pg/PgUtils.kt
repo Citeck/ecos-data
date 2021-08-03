@@ -7,7 +7,7 @@ import ru.citeck.ecos.data.sql.utils.use
 
 object PgUtils {
 
-    private const val TEST_DB_NAME = "test"
+    const val TEST_DB_NAME = "test"
 
     fun withDbDataSource(action: (DbDataSource) -> Unit): List<String> {
         return EmbeddedPostgres.start().use { pg ->
