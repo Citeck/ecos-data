@@ -1,8 +1,8 @@
 package ru.citeck.ecos.data.sql.records
 
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
-import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -170,17 +170,18 @@ class DbRecordsDao(
                 }
             }
 
-            columns.forEach {
-                if (record.attributes.has(it.name)) {
-                    val value = record.attributes.get(it.name)
-                    recToMutate.attributes[it.name] = if (value.isObject() &&
-                        it.type == DbColumnType.TEXT || it.type == DbColumnType.JSON
-                    ) {
-                        Json.mapper.toString(value)
-                    } else {
-                        value.getAs(it.type.type.java)
-                    }
+            val atts = record.attributes
+
+            for (dbColumnDef in columns) {
+                if (!atts.has(dbColumnDef.name)) {
+                    continue
                 }
+                val value = atts.get(dbColumnDef.name)
+                recToMutate.attributes[dbColumnDef.name] = convert(
+                    value,
+                    dbColumnDef.multiple,
+                    dbColumnDef.type.type.java
+                )
             }
             recToMutate.type = recordTypeId
             val typeDef = typesInfo[recordIdx]
@@ -206,6 +207,45 @@ class DbRecordsDao(
             } else {
                 recAfterSave
             }.extId
+        }
+    }
+
+    private fun convert(rawValue: DataValue, multiple: Boolean, javaType: Class<*>): Any? {
+
+        val value = if (multiple) {
+            if (!rawValue.isArray()) {
+                val arr = DataValue.createArr()
+                if (!rawValue.isNull()) {
+                    arr.add(rawValue)
+                }
+                arr
+            } else {
+                rawValue
+            }
+        } else {
+            if (rawValue.isArray()) {
+                if (rawValue.size() == 0) {
+                    DataValue.NULL
+                } else {
+                    rawValue.get(0)
+                }
+            } else {
+                rawValue
+            }
+        }
+
+        if (multiple) {
+            val result = ArrayList<Any?>(value.size())
+            for (element in value) {
+                result.add(convert(element, false, javaType))
+            }
+            return result
+        }
+
+        return if (value.isObject() && javaType == String::class.java) {
+            Json.mapper.toString(value)
+        } else {
+            Json.mapper.convert(value, javaType)
         }
     }
 

@@ -3,9 +3,7 @@ package ru.citeck.ecos.data.sql.datasource
 import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.utils.use
 import java.lang.Exception
-import java.sql.Connection
-import java.sql.DatabaseMetaData
-import java.sql.ResultSet
+import java.sql.*
 import javax.sql.DataSource
 
 class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
@@ -36,7 +34,7 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
             log.debug { "Query: $query" }
             txnCommands.get()?.add(query)
             connection.prepareStatement(query).use { statement ->
-                params.forEachIndexed { idx, value -> statement.setObject(idx + 1, value) }
+                setParams(connection, statement, params)
                 statement.executeQuery().use { action.invoke(it) }
             }
         }
@@ -47,8 +45,19 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
             log.debug { "Update: $query" }
             txnCommands.get()?.add(query)
             connection.prepareStatement(query).use { statement ->
-                params.forEachIndexed { idx, value -> statement.setObject(idx + 1, value) }
+                setParams(connection, statement, params)
                 statement.executeUpdate()
+            }
+        }
+    }
+
+    private fun setParams(connection: Connection, statement: PreparedStatement, params: List<Any?>) {
+        params.forEachIndexed { idx, value ->
+            if (value is Array<*> && value.isArrayOf<Timestamp>()) {
+                val array = connection.createArrayOf("timestamp", value)
+                statement.setObject(idx + 1, array)
+            } else {
+                statement.setObject(idx + 1, value)
             }
         }
     }
