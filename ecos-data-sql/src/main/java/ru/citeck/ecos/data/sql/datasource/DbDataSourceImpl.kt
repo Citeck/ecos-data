@@ -66,6 +66,9 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
     }
 
     override fun <T> withSchemaMock(action: () -> T): T {
+        if (thSchemaMock.get()) {
+            return action.invoke()
+        }
         thSchemaMock.set(true)
         try {
             return action.invoke()
@@ -75,12 +78,18 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
     }
 
     override fun watchCommands(action: () -> Unit): List<String> {
+        val commandsBefore = thCommands.get()
         val commandsList = mutableListOf<String>()
         thCommands.set(commandsList)
         try {
             action.invoke()
         } finally {
-            thCommands.remove()
+            if (commandsBefore == null) {
+                thCommands.remove()
+            } else {
+                thCommands.set(commandsBefore)
+                commandsBefore.addAll(commandsList)
+            }
         }
         return commandsList
     }

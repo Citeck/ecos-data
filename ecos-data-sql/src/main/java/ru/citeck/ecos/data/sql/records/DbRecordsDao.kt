@@ -7,6 +7,7 @@ import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
+import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
@@ -57,9 +58,12 @@ class DbRecordsDao(
     fun runMigrations(typeRef: RecordRef, mock: Boolean = true, diff: Boolean = true): List<String> {
         val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
         val columns = ecosTypeService.getColumnsForTypes(listOf(typeInfo))
-        val resp = dbDataService.runMigrations(columns, mock, diff)
         dbDataService.resetColumnsCache()
-        return resp
+        return dbDataService.runMigrations(columns, mock, diff)
+    }
+
+    fun getTableMeta(): DbTableMetaDto {
+        return dbDataService.getTableMeta()
     }
 
     private fun getRecordsTypeInfo(typeRef: RecordRef): DbEcosTypeInfo? {

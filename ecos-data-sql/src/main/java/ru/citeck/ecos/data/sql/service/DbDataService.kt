@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.service
 
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
+import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
@@ -23,6 +24,8 @@ interface DbDataService<T : Any> {
     fun save(entity: T, columns: List<DbColumnDef>): T
 
     fun delete(extId: String)
+
+    fun getTableMeta(): DbTableMetaDto
 
     fun resetColumnsCache()
 

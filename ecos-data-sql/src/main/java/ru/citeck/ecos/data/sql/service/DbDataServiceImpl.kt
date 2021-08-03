@@ -10,6 +10,7 @@ import ru.citeck.ecos.data.sql.meta.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.meta.dto.DbTableChangeSet
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaAuthConfig
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaConfig
+import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapperImpl
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -99,8 +100,19 @@ class DbDataServiceImpl<T : Any>(
         }
     }
 
+    override fun getTableMeta(): DbTableMetaDto {
+        val id = tableRef.table
+        val metaEntity = tableMetaService?.findById(id) ?: return DbTableMetaDto.create().withId(id).build()
+        return DbTableMetaDto.create()
+            .withId(id)
+            .withChangelog(DataValue.create(metaEntity.changelog).asList(DbTableChangeSet::class.java))
+            .withConfig(Json.mapper.read(metaEntity.config, DbTableMetaConfig::class.java))
+            .build()
+    }
+
     override fun resetColumnsCache() {
-        this.columns = null
+        columns = null
+        tableMetaService?.resetColumnsCache()
     }
 
     @Synchronized
@@ -138,6 +150,7 @@ class DbDataServiceImpl<T : Any>(
         } else {
             dataSource.watchCommands {
                 changedColumns.addAll(ensureColumnsExistImpl(fullColumns, diff))
+                tableMetaService?.runMigrations(emptyList(), false, diff)
             }
         }
         if (mock) {
