@@ -24,5 +24,7 @@ interface DbDataService<T : Any> {
 
     fun delete(extId: String)
 
-    fun ensureColumnsExist(expectedColumns: List<DbColumnDef>)
+    fun resetColumnsCache()
+
+    fun runMigrations(expectedColumns: List<DbColumnDef>, mock: Boolean, diff: Boolean): List<String>
 }

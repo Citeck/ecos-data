@@ -13,13 +13,16 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
     }
 
     private val currentThreadTxn = ThreadLocal<TxnState>()
-    private val txnCommands = ThreadLocal<MutableList<String>>()
+    private val thCommands = ThreadLocal<MutableList<String>>()
+    private val thSchemaMock = ThreadLocal.withInitial { false }
 
     override fun updateSchema(query: String) {
         withConnection { connection ->
-            log.info { "Schema update: $query" }
-            txnCommands.get()?.add(query)
-            connection.createStatement().executeUpdate(query)
+            thCommands.get()?.add(query)
+            if (!thSchemaMock.get()) {
+                log.info { "Schema update: $query" }
+                connection.createStatement().executeUpdate(query)
+            }
         }
     }
 
@@ -32,7 +35,7 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
     override fun <T> query(query: String, params: List<Any?>, action: (ResultSet) -> T): T {
         return withConnection { connection ->
             log.debug { "Query: $query" }
-            txnCommands.get()?.add(query)
+            thCommands.get()?.add(query)
             connection.prepareStatement(query).use { statement ->
                 setParams(connection, statement, params)
                 statement.executeQuery().use { action.invoke(it) }
@@ -43,7 +46,7 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
     override fun update(query: String, params: List<Any?>): Int {
         return withConnection { connection ->
             log.debug { "Update: $query" }
-            txnCommands.get()?.add(query)
+            thCommands.get()?.add(query)
             connection.prepareStatement(query).use { statement ->
                 setParams(connection, statement, params)
                 statement.executeUpdate()
@@ -62,13 +65,22 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
         }
     }
 
+    override fun <T> withSchemaMock(action: () -> T): T {
+        thSchemaMock.set(true)
+        try {
+            return action.invoke()
+        } finally {
+            thSchemaMock.set(false)
+        }
+    }
+
     override fun watchCommands(action: () -> Unit): List<String> {
         val commandsList = mutableListOf<String>()
-        txnCommands.set(commandsList)
+        thCommands.set(commandsList)
         try {
             action.invoke()
         } finally {
-            txnCommands.remove()
+            thCommands.remove()
         }
         return commandsList
     }

@@ -82,10 +82,7 @@ class DbDataServiceImpl<T : Any>(
         val columnsBefore = this.columns
         try {
             return dataSource.withTransaction(false) {
-                initColumns()
-                val fullColumns = ArrayList(entityMapper.getEntityColumns().map { it.columnDef })
-                fullColumns.addAll(columns)
-                ensureColumnsExist(fullColumns)
+                runMigrationsInTxn(columns, mock = false, diff = true)
                 entityRepo.save(entity)
             }
         } catch (e: Exception) {
@@ -102,19 +99,56 @@ class DbDataServiceImpl<T : Any>(
         }
     }
 
+    override fun resetColumnsCache() {
+        this.columns = null
+    }
+
     @Synchronized
-    override fun ensureColumnsExist(expectedColumns: List<DbColumnDef>) {
+    override fun runMigrations(
+        expectedColumns: List<DbColumnDef>,
+        mock: Boolean,
+        diff: Boolean
+    ): List<String> {
+
+        return dataSource.withTransaction(mock) {
+            runMigrationsInTxn(expectedColumns, mock, diff)
+        }
+    }
+
+    private fun runMigrationsInTxn(
+        expectedColumns: List<DbColumnDef>,
+        mock: Boolean,
+        diff: Boolean
+    ): List<String> {
+
+        initColumns()
+
+        val fullColumns = ArrayList(entityMapper.getEntityColumns().map { it.columnDef })
+        fullColumns.addAll(expectedColumns)
 
         val startTime = Instant.now()
         val changedColumns = mutableListOf<DbColumnDef>()
-        val commands = dataSource.watchCommands {
-            changedColumns.addAll(ensureColumnsExistImpl(expectedColumns))
+        val commands = if (mock) {
+            dataSource.withSchemaMock {
+                dataSource.watchCommands {
+                    changedColumns.addAll(ensureColumnsExistImpl(fullColumns, diff))
+                    tableMetaService?.runMigrations(emptyList(), true, diff)
+                }
+            }
+        } else {
+            dataSource.watchCommands {
+                changedColumns.addAll(ensureColumnsExistImpl(fullColumns, diff))
+            }
         }
+        if (mock) {
+            return commands
+        }
+
         val durationMs = System.currentTimeMillis() - startTime.toEpochMilli()
 
-        if (commands.isNotEmpty()) {
-            this.columns = expectedColumns
-            entityRepo.setColumns(expectedColumns)
+        if (!mock && commands.isNotEmpty()) {
+            this.columns = fullColumns
+            entityRepo.setColumns(fullColumns)
         }
 
         if (commands.isNotEmpty() && tableMetaService != null) {
@@ -150,11 +184,17 @@ class DbDataServiceImpl<T : Any>(
             tableMetaNotNull.changelog = Json.mapper.toString(changeLog) ?: "[]"
             tableMetaService.save(tableMetaNotNull, emptyList())
         }
+
+        return commands
     }
 
-    private fun ensureColumnsExistImpl(expectedColumns: List<DbColumnDef>): List<DbColumnDef> {
+    private fun ensureColumnsExistImpl(expectedColumns: List<DbColumnDef>, diff: Boolean): List<DbColumnDef> {
 
-        val currentColumns = this.columns ?: error("Current columns is null")
+        val currentColumns = if (diff) {
+            this.columns ?: error("Current columns is null")
+        } else {
+            emptyList()
+        }
         if (currentColumns.isEmpty()) {
             schemaDao.createTable(expectedColumns)
             return expectedColumns

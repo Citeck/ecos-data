@@ -7,6 +7,7 @@ import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
@@ -15,6 +16,53 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 class DbRecordsDaoTest : DbRecordsTestBase() {
+
+    @Test
+    fun schemaMockTest() {
+
+        val testTypeId = "test-type"
+        registerType(
+            DbEcosTypeInfo(
+                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
+                listOf(
+                    AttributeDef.create()
+                        .withId("textAtt")
+                        .withType(AttributeType.TEXT)
+                ).map { it.build() },
+                emptyList()
+            )
+        )
+
+        val typeRef = TypeUtils.getTypeRef(testTypeId)
+        val commands0 = getRecordsDao().runMigrations(typeRef, diff = true)
+        val commands1 = getRecordsDao().runMigrations(typeRef, diff = false)
+
+        assertThat(commands0).isEqualTo(commands1)
+
+        getRecords().create(RECS_DAO_ID, mapOf("textAtt" to "value", "_type" to testTypeId))
+
+        registerType(
+            DbEcosTypeInfo(
+                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
+                listOf(
+                    AttributeDef.create()
+                        .withId("textAtt")
+                        .withType(AttributeType.TEXT),
+                    AttributeDef.create()
+                        .withId("textAtt2")
+                        .withType(AttributeType.TEXT)
+                ).map { it.build() },
+                emptyList()
+            )
+        )
+
+        assertThat(getRecordsDao().runMigrations(typeRef, diff = true))
+            .allMatch { !it.contains("CREATE TABLE") }
+            .anyMatch { it.contains("ALTER TABLE") }
+
+        assertThat(getRecordsDao().runMigrations(typeRef, diff = false))
+            .anyMatch { it.contains("CREATE TABLE") }
+    }
 
     @Test
     fun testWithArrays() {

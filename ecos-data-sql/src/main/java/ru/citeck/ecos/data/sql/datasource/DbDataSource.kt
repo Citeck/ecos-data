@@ -11,6 +11,8 @@ interface DbDataSource {
 
     fun update(query: String, params: List<Any?>): Int
 
+    fun <T> withSchemaMock(action: () -> T): T
+
     fun watchCommands(action: () -> Unit): List<String>
 
     fun <T> withMetaData(action: (DatabaseMetaData) -> T): T

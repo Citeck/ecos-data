@@ -15,6 +15,7 @@ import ru.citeck.ecos.data.sql.repo.DbContextManager
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.utils.use
+import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
 
@@ -27,6 +28,7 @@ abstract class DbRecordsTestBase {
     private val typesDef = mutableMapOf<String, DbEcosTypeInfo>()
     private var currentUser = "user0"
 
+    private lateinit var recordsDao: DbRecordsDao
     private lateinit var records: RecordsService
     private lateinit var pg: EmbeddedPostgres
 
@@ -49,12 +51,13 @@ abstract class DbRecordsTestBase {
         }
 
         val dbDataSource = DbDataSourceImpl(pg.getDatabase("postgres", PgUtils.TEST_DB_NAME))
-        val recordsDao = DbRecordsDao(
+        recordsDao = DbRecordsDao(
             RECS_DAO_ID,
             DbRecordsDaoConfig(
                 insertable = true,
                 updatable = true,
-                deletable = true
+                deletable = true,
+                typeRef = RecordRef.EMPTY
             ),
             ecosTypeRepo,
             PgDataServiceFactory().create(DbEntity::class.java)
@@ -90,5 +93,9 @@ abstract class DbRecordsTestBase {
 
     fun getCurrentUser(): String {
         return this.currentUser
+    }
+
+    fun getRecordsDao(): DbRecordsDao {
+        return this.recordsDao
     }
 }

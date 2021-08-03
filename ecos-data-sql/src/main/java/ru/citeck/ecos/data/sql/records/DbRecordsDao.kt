@@ -1,8 +1,10 @@
 package ru.citeck.ecos.data.sql.records
 
+import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -46,9 +48,34 @@ class DbRecordsDao(
             "_created" to DbEntity.CREATED,
             "_modified" to DbEntity.MODIFIED
         )
+
+        private val log = KotlinLogging.logger {}
     }
 
     private lateinit var ecosTypeService: DbEcosTypeService
+
+    fun runMigrations(typeRef: RecordRef, mock: Boolean = true, diff: Boolean = true): List<String> {
+        val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
+        val columns = ecosTypeService.getColumnsForTypes(listOf(typeInfo))
+        return dbDataService.runMigrations(columns, mock, diff)
+    }
+
+    private fun getRecordsTypeInfo(typeRef: RecordRef): DbEcosTypeInfo? {
+        val type = getRecordsTypeRef(typeRef)
+        if (RecordRef.isEmpty(type)) {
+            log.warn { "Type is not defined for Records DAO" }
+            return null
+        }
+        return ecosTypeRepo.getTypeInfo(type.id)
+    }
+
+    private fun getRecordsTypeRef(typeRef: RecordRef): RecordRef {
+        return if (RecordRef.isEmpty(typeRef)) {
+            config.typeRef
+        } else {
+            typeRef
+        }
+    }
 
     override fun getRecordsAtts(recordsId: List<String>): List<*> {
         return recordsId.map { id ->
@@ -140,9 +167,7 @@ class DbRecordsDao(
             ecosTypeRepo.getTypeInfo(typeId) ?: error("Type is not found: '$typeId'. Record ID: '${records[idx]}'")
         }
 
-        val columns = ecosTypeService.getColumnsForTypes(typesInfo).filter {
-            !it.name.startsWith("__")
-        }
+        val columns = ecosTypeService.getColumnsForTypes(typesInfo)
 
         return records.mapIndexed { recordIdx, record ->
 
