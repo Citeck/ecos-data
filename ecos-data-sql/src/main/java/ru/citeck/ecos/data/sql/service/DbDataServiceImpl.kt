@@ -201,10 +201,11 @@ class DbDataServiceImpl<T : Any>(
         }
         val currentColumnsByName = currentColumns.associateBy { it.name }
 
-        val columnsWithChangedType = expectedColumns.filter {
-            val currentColumn = currentColumnsByName[it.name]
+        val columnsWithChangedType = expectedColumns.filter { expectedColumn ->
+            val currentColumn = currentColumnsByName[expectedColumn.name]
             if (currentColumn != null) {
-                currentColumn.type != it.type || currentColumn.multiple != it.multiple
+                currentColumn.type != expectedColumn.type ||
+                    (currentColumn.multiple != expectedColumn.multiple && !currentColumn.multiple)
             } else {
                 false
             }

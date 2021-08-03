@@ -95,15 +95,35 @@ class DbSchemaDaoPg(
 
             metaData.getColumns(null, tableRef.schema.ifEmpty { "%" }, tableRef.table, name)
                 .use { rs ->
+                    if (!rs.next()) {
+                        error("Column doesn't found in table '$tableRef' with name '$name'")
+                    }
                     val typeName = rs.getString(COLUMN_TYPE_NAME)
                     val (currentType, currentMultiple) = getColumnType(typeName)
                     if (currentType == newType && currentMultiple == multiple) {
                         // everything ok
                     } else {
-                        error(
-                            "Conversion $currentType to $newType is not supported. " +
-                                "Multiple flag: $currentMultiple -> $multiple"
-                        )
+                        if (currentType == newType) {
+                            if (multiple) {
+                                // single value column to array
+                                dataSource.updateSchema(
+                                    "ALTER TABLE ${tableRef.fullName} " +
+                                        "ALTER \"$name\" " +
+                                        "TYPE ${getColumnSqlType(newType, true)} " +
+                                        "USING array[\"$name\"];"
+                                )
+                            } else {
+                                log.warn {
+                                    "DAO doesn't allow automatic change of column type from Array to simple value. " +
+                                        "table: ${tableRef.fullName} column: $name"
+                                }
+                            }
+                        } else {
+                            error(
+                                "Conversion $currentType to $newType is not supported. " +
+                                    "Multiple flag: $currentMultiple -> $multiple"
+                            )
+                        }
                     }
                 }
         }
