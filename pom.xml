@@ -47,6 +47,7 @@
             <groupId>ru.citeck.ecos.records</groupId>
             <artifactId>ecos-records</artifactId>
             <version>${ecos.records.version}</version>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
