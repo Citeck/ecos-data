@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -18,19 +19,66 @@ import java.time.temporal.ChronoUnit
 class DbRecordsDaoTest : DbRecordsTestBase() {
 
     @Test
+    fun testWithChangedSchema() {
+
+        val ref = RecordRef.create(RECS_DAO_ID, "test")
+
+        val firstTableRef = DbTableRef("ecos-data", "test-data")
+        initWithTable(firstTableRef)
+
+        val testTypeId = "test-type"
+        registerType(
+            testTypeId,
+            listOf(
+                AttributeDef.create()
+                    .withId("textAtt")
+                    .withType(AttributeType.TEXT)
+            ).map { it.build() }
+        )
+
+        assertThat(getRecords().getAtt(ref, "textAtt").asText()).isEmpty()
+        getRecordsDao().runMigrations(TypeUtils.getTypeRef(testTypeId), mock = false)
+        assertThat(getRecords().getAtt(ref, "textAtt").asText()).isEmpty()
+
+        val rec0Id = getRecords().create(
+            RECS_DAO_ID,
+            mapOf(
+                "textAtt" to "value",
+                "_type" to TypeUtils.getTypeRef(testTypeId)
+            )
+        )
+        assertThat(getRecords().getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
+
+        val secondTableRef = DbTableRef("ecos_data", "test_data")
+        initWithTable(secondTableRef)
+
+        assertThat(getRecords().getAtt(rec0Id, "textAtt").asText()).isEmpty()
+
+        val rec1Id = getRecords().create(
+            RECS_DAO_ID,
+            mapOf(
+                "textAtt" to "value2",
+                "_type" to TypeUtils.getTypeRef(testTypeId)
+            )
+        )
+        assertThat(getRecords().getAtt(rec1Id, "textAtt").asText()).isEqualTo("value2")
+
+        initWithTable(firstTableRef)
+
+        assertThat(getRecords().getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
+    }
+
+    @Test
     fun schemaMockTest() {
 
         val testTypeId = "test-type"
         registerType(
-            DbEcosTypeInfo(
-                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT)
-                ).map { it.build() },
-                emptyList()
-            )
+            testTypeId,
+            listOf(
+                AttributeDef.create()
+                    .withId("textAtt")
+                    .withType(AttributeType.TEXT)
+            ).map { it.build() }
         )
 
         val typeRef = TypeUtils.getTypeRef(testTypeId)
@@ -42,18 +90,15 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         getRecords().create(RECS_DAO_ID, mapOf("textAtt" to "value", "_type" to testTypeId))
 
         registerType(
-            DbEcosTypeInfo(
-                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT),
-                    AttributeDef.create()
-                        .withId("textAtt2")
-                        .withType(AttributeType.TEXT)
-                ).map { it.build() },
-                emptyList()
-            )
+            testTypeId,
+            listOf(
+                AttributeDef.create()
+                    .withId("textAtt")
+                    .withType(AttributeType.TEXT),
+                AttributeDef.create()
+                    .withId("textAtt2")
+                    .withType(AttributeType.TEXT)
+            ).map { it.build() }
         )
 
         assertThat(getRecordsDao().runMigrations(typeRef, diff = true))
@@ -69,27 +114,24 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         val testTypeId = "test-type"
         registerType(
-            DbEcosTypeInfo(
-                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT),
-                    AttributeDef.create()
-                        .withId("textArrayAtt")
-                        .withType(AttributeType.TEXT)
-                        .withMultiple(true),
-                    AttributeDef.create()
-                        .withId("numArrayAtt")
-                        .withType(AttributeType.NUMBER)
-                        .withMultiple(true),
-                    AttributeDef.create()
-                        .withId("dateTimeArrayAtt")
-                        .withType(AttributeType.DATETIME)
-                        .withMultiple(true)
-                ).map { it.build() },
-                emptyList()
-            )
+            testTypeId,
+            listOf(
+                AttributeDef.create()
+                    .withId("textAtt")
+                    .withType(AttributeType.TEXT),
+                AttributeDef.create()
+                    .withId("textArrayAtt")
+                    .withType(AttributeType.TEXT)
+                    .withMultiple(true),
+                AttributeDef.create()
+                    .withId("numArrayAtt")
+                    .withType(AttributeType.NUMBER)
+                    .withMultiple(true),
+                AttributeDef.create()
+                    .withId("dateTimeArrayAtt")
+                    .withType(AttributeType.DATETIME)
+                    .withMultiple(true)
+            ).map { it.build() }
         )
 
         val attsMap = mapOf(
@@ -109,7 +151,11 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         val result = getRecords().getAtts(newRecId, attsToReq)
         assertThat(result.getAtt("textArrayAtt").asText()).isEqualTo((attsMap["textArrayAtt"] as List<*>)[0])
         assertThat(result.getAtt("numArrayAtt?num").asInt()).isEqualTo((attsMap["numArrayAtt"] as List<*>)[0])
-        assertThat(Instant.parse(result.getAtt("dateTimeArrayAtt").asText())).isEqualTo((attsMap["dateTimeArrayAtt"] as List<*>)[0])
+        assertThat(
+            Instant.parse(
+                result.getAtt("dateTimeArrayAtt").asText()
+            )
+        ).isEqualTo((attsMap["dateTimeArrayAtt"] as List<*>)[0])
 
         val strList = arrayListOf("aaa", "bbb", "ccc")
         getRecords().mutate(newRecId, "textArrayAtt", strList)

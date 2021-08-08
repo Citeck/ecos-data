@@ -24,7 +24,9 @@ class DbSchemaDaoPg(
 
     override fun getColumns(): List<DbColumnDef> {
         return dataSource.withMetaData { metaData ->
-            metaData.getColumns(null, tableRef.schema.ifEmpty { "%" }, tableRef.table, "%")
+            val schema = tableRef.schema.replace("_", "\\_").ifEmpty { "%" }
+            val table = tableRef.table.replace("_", "\\_")
+            metaData.getColumns(null, schema, table, "%")
                 .use {
                     val columns = arrayListOf<DbColumnDef>()
                     while (it.next()) {
