@@ -148,6 +148,27 @@ abstract class DbRecordsTestBase {
         }
     }
 
+    fun printQueryRes(sql: String) {
+        dataSource.connection.use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery(sql).use {
+                    var line = ""
+                    for (i in 1..it.metaData.columnCount) {
+                        line += it.metaData.getColumnName(i) + "\t\t\t\t"
+                    }
+                    println(line)
+                    while (it.next()) {
+                        line = ""
+                        for (i in 1..it.metaData.columnCount) {
+                            line += (it.getObject(i) ?: "").toString() + "\t\t\t\t"
+                        }
+                        println(line)
+                    }
+                }
+            }
+        }
+    }
+
     fun registerType(type: DbEcosTypeInfo) {
         this.typesDef[type.id] = type
     }
