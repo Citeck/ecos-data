@@ -19,11 +19,12 @@ class DbEntityMapperImpl<T : Any>(
 
     companion object {
         private const val ATTRIBUTES_FIELD = "attributes"
+
         private val CAMEL_REGEX = "(?<=[a-zA-Z])[A-Z]".toRegex()
     }
 
     private val columns: List<DbEntityColumn> = getColumnsImpl(entityType)
-    private val hasAttributesField = hasAttributesField(entityType)
+    private val hasAttributesField = hasField(entityType, ATTRIBUTES_FIELD)
 
     override fun getEntityColumns(): List<DbEntityColumn> {
         return columns
@@ -78,9 +79,9 @@ class DbEntityMapperImpl<T : Any>(
         return rawAtts
     }
 
-    private fun hasAttributesField(type: KClass<*>): Boolean {
+    private fun hasField(type: KClass<*>, fieldName: String): Boolean {
         val descriptors = PropertyUtils.getPropertyDescriptors(type.java)
-        return descriptors.any { it.name == ATTRIBUTES_FIELD }
+        return descriptors.any { it.name == fieldName }
     }
 
     private fun getColumnsImpl(type: KClass<*>): List<DbEntityColumn> {

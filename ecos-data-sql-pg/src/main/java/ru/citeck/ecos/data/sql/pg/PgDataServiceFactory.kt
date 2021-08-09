@@ -31,6 +31,7 @@ class PgDataServiceFactory {
         private lateinit var dataSource: DbDataSource
         private lateinit var dbContextManager: DbContextManager
         private var storeTableMeta: Boolean = true
+        private var transactional: Boolean = true
 
         fun withConfig(config: DbDataServiceConfig): Builder<T> {
             this.config = config
@@ -62,6 +63,11 @@ class PgDataServiceFactory {
             return this
         }
 
+        fun withTransactional(transactional: Boolean): Builder<T> {
+            this.transactional = transactional
+            return this
+        }
+
         fun build(): DbDataService<T> {
 
             val tableMetaService = if (storeTableMeta) {
@@ -71,6 +77,20 @@ class PgDataServiceFactory {
                     .withConfig(DbDataServiceConfig(false))
                     .withDbContextManager(dbContextManager)
                     .withStoreTableMeta(false)
+                    .withTransactional(false)
+                    .build()
+            } else {
+                null
+            }
+
+            val txnDataService = if (transactional) {
+                create(entityType)
+                    .withTableRef(DbTableRef(tableRef.schema, tableRef.table + "__ext_txn"))
+                    .withDataSource(dataSource)
+                    .withConfig(DbDataServiceConfig(false))
+                    .withDbContextManager(dbContextManager)
+                    .withStoreTableMeta(false)
+                    .withTransactional(false)
                     .build()
             } else {
                 null
@@ -91,7 +111,8 @@ class PgDataServiceFactory {
                 entityType.kotlin,
                 schemaDao,
                 entityRepo,
-                tableMetaService
+                tableMetaService,
+                txnDataService
             )
         }
     }

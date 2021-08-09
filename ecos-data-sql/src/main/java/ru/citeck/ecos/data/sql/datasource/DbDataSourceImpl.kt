@@ -2,7 +2,6 @@ package ru.citeck.ecos.data.sql.datasource
 
 import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.utils.use
-import java.lang.Exception
 import java.sql.*
 import javax.sql.DataSource
 
@@ -130,9 +129,13 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
                     val actionRes = action.invoke()
                     connection.commit()
                     actionRes
-                } catch (e: Exception) {
-                    connection.rollback()
-                    throw e
+                } catch (originalEx: Throwable) {
+                    try {
+                        connection.rollback()
+                    } catch (e: Throwable) {
+                        originalEx.addSuppressed(e)
+                    }
+                    throw originalEx
                 } finally {
                     if (autoCommitBefore) {
                         connection.autoCommit = true

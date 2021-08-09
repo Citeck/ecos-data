@@ -24,7 +24,9 @@ class DbSchemaDaoPg(
 
     override fun getColumns(): List<DbColumnDef> {
         return dataSource.withMetaData { metaData ->
-            metaData.getColumns(null, tableRef.schema.ifEmpty { "%" }, tableRef.table, "%")
+            val schema = tableRef.schema.replace("_", "\\_").ifEmpty { "%" }
+            val table = tableRef.table.replace("_", "\\_")
+            metaData.getColumns(null, schema, table, "%")
                 .use {
                     val columns = arrayListOf<DbColumnDef>()
                     while (it.next()) {
@@ -163,6 +165,7 @@ class DbSchemaDaoPg(
             "jsonb" -> DbColumnType.JSON
             "varchar" -> DbColumnType.TEXT
             "bytea" -> DbColumnType.BINARY
+            "uuid" -> DbColumnType.UUID
             else -> error("Unknown type: $typeName")
         } to multiple
     }
@@ -192,6 +195,7 @@ class DbSchemaDaoPg(
             DbColumnType.JSON -> "JSONB"
             DbColumnType.TEXT -> "VARCHAR"
             DbColumnType.BINARY -> "BYTEA"
+            DbColumnType.UUID -> "UUID"
         }
         return if (multiple) {
             "$baseType[]"

@@ -29,7 +29,7 @@
         <kotlin.logging.version>1.7.8</kotlin.logging.version>
 
         <ecos.commons.version>2.4.0</ecos.commons.version>
-        <ecos.records.version>3.27.0</ecos.records.version>
+        <ecos.records.version>3.31.7</ecos.records.version>
         <ecos.model-lib.version>2.4.10</ecos.model-lib.version>
 
     </properties>
@@ -188,8 +188,12 @@
         <plugins>
 
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.0.0-M3</version>
+                <configuration>
+                    <forkCount>0</forkCount>
+                </configuration>
             </plugin>
 
             <plugin>

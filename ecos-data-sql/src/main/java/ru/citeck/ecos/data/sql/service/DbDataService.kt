@@ -15,6 +15,8 @@ interface DbDataService<T : Any> {
 
     fun findAll(predicate: Predicate): List<T>
 
+    fun findAll(predicate: Predicate, withDeleted: Boolean): List<T>
+
     fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<T>
 
     fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage): DbFindRes<T>
@@ -23,11 +25,22 @@ interface DbDataService<T : Any> {
 
     fun save(entity: T, columns: List<DbColumnDef>): T
 
-    fun delete(extId: String)
+    fun commit(entitiesId: List<String>)
+
+    fun rollback(entitiesId: List<String>)
+
+    fun delete(id: String)
+
+    fun forceDelete(entity: T)
 
     fun getTableMeta(): DbTableMetaDto
 
     fun resetColumnsCache()
 
-    fun runMigrations(expectedColumns: List<DbColumnDef>, mock: Boolean, diff: Boolean): List<String>
+    fun runMigrations(
+        expectedColumns: List<DbColumnDef>,
+        mock: Boolean,
+        diff: Boolean,
+        onlyOwn: Boolean
+    ): List<String>
 }

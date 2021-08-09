@@ -12,6 +12,7 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbDataService
+import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
@@ -33,7 +34,10 @@ import ru.citeck.ecos.records3.record.dao.mutate.RecordsMutateDao
 import ru.citeck.ecos.records3.record.dao.query.RecordsQueryDao
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
+import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
+import java.util.*
+import kotlin.collections.ArrayList
 import kotlin.collections.LinkedHashMap
 import kotlin.math.min
 
@@ -42,7 +46,7 @@ class DbRecordsDao(
     private val config: DbRecordsDaoConfig,
     private val ecosTypeRepo: DbEcosTypeRepo,
     private val dbDataService: DbDataService<DbEntity>
-) : AbstractRecordsDao(), RecordsAttsDao, RecordsQueryDao, RecordsMutateDao, RecordsDeleteDao {
+) : AbstractRecordsDao(), RecordsAttsDao, RecordsQueryDao, RecordsMutateDao, RecordsDeleteDao, TxnRecordsDao {
 
     companion object {
         private val ATTS_MAPPING = mapOf(
@@ -59,7 +63,7 @@ class DbRecordsDao(
         val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
         val columns = ecosTypeService.getColumnsForTypes(listOf(typeInfo))
         dbDataService.resetColumnsCache()
-        return dbDataService.runMigrations(columns, mock, diff)
+        return dbDataService.runMigrations(columns, mock, diff, false)
     }
 
     fun getTableMeta(): DbTableMetaDto {
@@ -83,7 +87,33 @@ class DbRecordsDao(
         }
     }
 
+    override fun commit(txnId: UUID, recordsId: List<String>) {
+        log.info { "${this.hashCode()} COMMIT " + txnId + " records: " + recordsId }
+        ExtTxnContext.withExtTxn(txnId, false) {
+            dbDataService.commit(recordsId)
+        }
+    }
+
+    override fun rollback(txnId: UUID, recordsId: List<String>) {
+        ExtTxnContext.withExtTxn(txnId, false) {
+            dbDataService.rollback(recordsId)
+        }
+    }
+
     override fun getRecordsAtts(recordsId: List<String>): List<*> {
+
+        val txnId = RequestContext.getCurrentNotNull().ctxData.txnId
+
+        return if (txnId != null) {
+            ExtTxnContext.withExtTxn(txnId, true) {
+                getRecordsAttsInTxn(recordsId)
+            }
+        } else {
+            getRecordsAttsInTxn(recordsId)
+        }
+    }
+
+    private fun getRecordsAttsInTxn(recordsId: List<String>): List<*> {
         return recordsId.map { id ->
             dbDataService.findById(id)?.let {
                 Record(this, it)
@@ -141,9 +171,20 @@ class DbRecordsDao(
             error("Records DAO is not deletable. Records can't be deleted: '$recordsId'")
         }
 
-        return recordsId.map {
-            dbDataService.delete(it)
-            DelStatus.OK
+        val txnId = RequestContext.getCurrentNotNull().ctxData.txnId
+
+        return if (txnId != null) {
+            ExtTxnContext.withExtTxn(txnId, false) {
+                recordsId.map {
+                    dbDataService.delete(it)
+                    DelStatus.OK
+                }
+            }
+        } else {
+            recordsId.map {
+                dbDataService.delete(it)
+                DelStatus.OK
+            }
         }
     }
 
@@ -164,10 +205,21 @@ class DbRecordsDao(
     }
 
     override fun mutate(records: List<LocalRecordAtts>): List<String> {
-
         if (!config.updatable) {
             error("Records DAO is not mutable. Records can't be mutated: '${records.map { it.id }}'")
         }
+        val txnId = RequestContext.getCurrentNotNull().ctxData.txnId
+        return if (txnId != null) {
+            ExtTxnContext.withExtTxn(txnId, false) {
+                mutateInTxn(records)
+            }
+        } else {
+            mutateInTxn(records)
+        }
+    }
+
+    private fun mutateInTxn(records: List<LocalRecordAtts>): List<String> {
+
         val typesId = records.map { getTypeIdForRecord(it) }
         val typesInfo = typesId.mapIndexed { idx, typeId ->
             ecosTypeRepo.getTypeInfo(typeId) ?: error("Type is not found: '$typeId'. Record ID: '${records[idx]}'")

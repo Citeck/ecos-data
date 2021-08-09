@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -16,6 +17,56 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 class DbRecordsDaoTest : DbRecordsTestBase() {
+
+    @Test
+    fun testWithChangedSchema() {
+
+        val ref = RecordRef.create(RECS_DAO_ID, "test")
+
+        val firstTableRef = DbTableRef("ecos-data", "test-data")
+        initWithTable(firstTableRef)
+
+        val testTypeId = "test-type"
+        registerType(
+            testTypeId,
+            listOf(
+                AttributeDef.create()
+                    .withId("textAtt")
+                    .withType(AttributeType.TEXT)
+            ).map { it.build() }
+        )
+
+        assertThat(getRecords().getAtt(ref, "textAtt").asText()).isEmpty()
+        getRecordsDao().runMigrations(TypeUtils.getTypeRef(testTypeId), mock = false)
+        assertThat(getRecords().getAtt(ref, "textAtt").asText()).isEmpty()
+
+        val rec0Id = getRecords().create(
+            RECS_DAO_ID,
+            mapOf(
+                "textAtt" to "value",
+                "_type" to TypeUtils.getTypeRef(testTypeId)
+            )
+        )
+        assertThat(getRecords().getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
+
+        val secondTableRef = DbTableRef("ecos_data", "test_data")
+        initWithTable(secondTableRef)
+
+        assertThat(getRecords().getAtt(rec0Id, "textAtt").asText()).isEmpty()
+
+        val rec1Id = getRecords().create(
+            RECS_DAO_ID,
+            mapOf(
+                "textAtt" to "value2",
+                "_type" to TypeUtils.getTypeRef(testTypeId)
+            )
+        )
+        assertThat(getRecords().getAtt(rec1Id, "textAtt").asText()).isEqualTo("value2")
+
+        initWithTable(firstTableRef)
+
+        assertThat(getRecords().getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
+    }
 
     @Test
     fun schemaMockTest() {

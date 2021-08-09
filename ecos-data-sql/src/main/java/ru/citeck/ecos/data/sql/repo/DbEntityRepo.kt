@@ -10,9 +10,13 @@ interface DbEntityRepo<T : Any> {
 
     fun findById(id: String): T?
 
+    fun findById(id: String, withDeleted: Boolean): T?
+
     fun findAll(): List<T>
 
     fun findAll(predicate: Predicate): List<T>
+
+    fun findAll(predicate: Predicate, withDeleted: Boolean): List<T>
 
     fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<T>
 
@@ -23,6 +27,8 @@ interface DbEntityRepo<T : Any> {
     fun save(entity: T): T
 
     fun delete(extId: String)
+
+    fun forceDelete(entity: T)
 
     fun setColumns(columns: List<DbColumnDef>)
 }

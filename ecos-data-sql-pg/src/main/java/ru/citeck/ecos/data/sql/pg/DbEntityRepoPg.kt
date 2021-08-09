@@ -49,22 +49,36 @@ class DbEntityRepoPg<T : Any>(
     }
 
     override fun findById(id: String): T? {
-        return findOneByColumnAsMap(DbEntity.EXT_ID, id, columns)?.let {
+        return findById(id, false)
+    }
+
+    override fun findById(id: String, withDeleted: Boolean): T? {
+        return findOneByColumnAsMap(DbEntity.EXT_ID, id, columns, withDeleted)?.let {
             mapper.convertToEntity(it)
         }
     }
 
-    private fun findByExtIdAsMap(id: String, columns: List<DbColumnDef>): Map<String, Any?>? {
-        return findOneByColumnAsMap(DbEntity.EXT_ID, id, columns)
+    private fun findByExtIdAsMap(
+        id: String,
+        columns: List<DbColumnDef>,
+        withDeleted: Boolean = false
+    ): Map<String, Any?>? {
+
+        return findOneByColumnAsMap(DbEntity.EXT_ID, id, columns, withDeleted)
     }
 
-    private fun findOneByColumnAsMap(column: String, value: Any, columns: List<DbColumnDef>): Map<String, Any?>? {
+    private fun findOneByColumnAsMap(
+        column: String,
+        value: Any,
+        columns: List<DbColumnDef>,
+        withDeleted: Boolean
+    ): Map<String, Any?>? {
 
         if (columns.isEmpty()) {
             return null
         }
 
-        val select = createSelect(columns)
+        val select = createSelect(columns, withDeleted)
         select.append(" AND \"$column\"=?")
 
         return dataSource.query(select.toString(), listOf(value)) { resultSet ->
@@ -93,6 +107,13 @@ class DbEntityRepoPg<T : Any>(
         return result
     }
 
+    override fun forceDelete(entity: T) {
+        if (columns.isEmpty()) {
+            return
+        }
+        forceDelete(mapper.convertToMap(entity))
+    }
+
     override fun delete(extId: String) {
 
         if (columns.isEmpty()) {
@@ -105,11 +126,15 @@ class DbEntityRepoPg<T : Any>(
             mutableEntity[DbEntity.DELETED] = true
             saveImpl(mutableEntity)
         } else {
-            dataSource.update(
-                "DELETE FROM ${tableRef.fullName} WHERE \"${DbEntity.ID}\"=${entity[DbEntity.ID]}",
-                emptyList()
-            )
+            forceDelete(entity)
         }
+    }
+
+    private fun forceDelete(entity: Map<String, Any?>) {
+        dataSource.update(
+            "DELETE FROM ${tableRef.fullName} WHERE \"${DbEntity.ID}\"=${entity[DbEntity.ID]}",
+            emptyList()
+        )
     }
 
     override fun save(entity: T): T {
@@ -232,20 +257,38 @@ class DbEntityRepoPg<T : Any>(
     }
 
     override fun findAll(predicate: Predicate): List<T> {
-        return find(predicate, emptyList(), DbFindPage.ALL).entities
+        return findAll(predicate, false)
+    }
+
+    override fun findAll(predicate: Predicate, withDeleted: Boolean): List<T> {
+        return find(predicate, emptyList(), DbFindPage.ALL, withDeleted).entities
     }
 
     override fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<T> {
         return find(predicate, sort, DbFindPage.ALL).entities
     }
 
-    override fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage): DbFindRes<T> {
+    override fun find(
+        predicate: Predicate,
+        sort: List<DbFindSort>,
+        page: DbFindPage
+    ): DbFindRes<T> {
+
+        return find(predicate, sort, page, false)
+    }
+
+    private fun find(
+        predicate: Predicate,
+        sort: List<DbFindSort>,
+        page: DbFindPage,
+        withDeleted: Boolean
+    ): DbFindRes<T> {
 
         if (columns.isEmpty()) {
             return DbFindRes(emptyList(), 0)
         }
 
-        val queryBuilder = createSelect(columns)
+        val queryBuilder = createSelect(columns, withDeleted)
         val columnsByName = columns.associateBy { it.name }
 
         val params = mutableListOf<Any?>()
@@ -296,19 +339,17 @@ class DbEntityRepoPg<T : Any>(
         return DbFindRes(resultEntities, totalCount)
     }
 
-    private fun createSelect(selectColumns: List<DbColumnDef>): StringBuilder {
-        return createSelect(selectColumns.joinToString { "\"${it.name}\"" })
+    private fun createSelect(selectColumns: List<DbColumnDef>, withDeleted: Boolean = false): StringBuilder {
+        return createSelect(selectColumns.joinToString { "\"${it.name}\"" }, withDeleted)
     }
 
-    private fun createSelect(selectColumns: String): StringBuilder {
+    private fun createSelect(selectColumns: String, withDeleted: Boolean = false): StringBuilder {
         val sb = StringBuilder()
         sb.append("SELECT $selectColumns FROM ${tableRef.fullName} WHERE ")
-        if (!hasDeletedFlag) {
+        if (!hasDeletedFlag || withDeleted) {
             sb.append("true")
         } else {
-            if (hasDeletedFlag) {
-                sb.append("\"").append(DbEntity.DELETED).append("\"!=true")
-            }
+            sb.append("\"").append(DbEntity.DELETED).append("\"!=true")
         }
         return sb
     }
@@ -348,6 +389,7 @@ class DbEntityRepoPg<T : Any>(
             DbColumnType.JSON -> String::class
             DbColumnType.TEXT -> String::class
             DbColumnType.BINARY -> ByteArray::class
+            DbColumnType.UUID -> UUID::class
         }
         return if (multiple) {
             DbTypeUtils.getArrayType(baseType)
@@ -453,6 +495,8 @@ class DbEntityRepoPg<T : Any>(
                             .append(" ?")
                         if (value.isTextual() && type == ValuePredicate.Type.CONTAINS) {
                             queryParams.add("%" + value.asText() + "%")
+                        } else if (value.isTextual() && columnDef.type == DbColumnType.UUID) {
+                            queryParams.add(UUID.fromString(value.asText()))
                         } else {
                             queryParams.add(value.asJavaObj())
                         }
