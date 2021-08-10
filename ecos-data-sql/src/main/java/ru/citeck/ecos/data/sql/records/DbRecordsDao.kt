@@ -88,13 +88,14 @@ class DbRecordsDao(
     }
 
     override fun commit(txnId: UUID, recordsId: List<String>) {
-        log.info { "${this.hashCode()} COMMIT " + txnId + " records: " + recordsId }
+        log.debug { "${this.hashCode()} commit " + txnId + " records: " + recordsId }
         ExtTxnContext.withExtTxn(txnId, false) {
             dbDataService.commit(recordsId)
         }
     }
 
     override fun rollback(txnId: UUID, recordsId: List<String>) {
+        log.debug { "${this.hashCode()} rollback " + txnId + " records: " + recordsId }
         ExtTxnContext.withExtTxn(txnId, false) {
             dbDataService.rollback(recordsId)
         }

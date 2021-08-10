@@ -105,6 +105,10 @@ abstract class DbRecordsTestBase {
         RequestContext.setDefaultServices(services)
     }
 
+    fun updateRecord(rec: RecordRef, vararg atts: Pair<String, Any>): RecordRef {
+        return getRecords().mutate(rec, mapOf(*atts))
+    }
+
     fun createRecord(vararg atts: Pair<String, Any>): RecordRef {
         val map = hashMapOf(*atts)
         if (!map.containsKey("_type")) {

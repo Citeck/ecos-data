@@ -78,6 +78,8 @@ class DbEntityRepoPg<T : Any>(
             return null
         }
 
+        updateSchemaCache()
+
         val select = createSelect(columns, withDeleted)
         select.append(" AND \"$column\"=?")
 
@@ -131,6 +133,7 @@ class DbEntityRepoPg<T : Any>(
     }
 
     private fun forceDelete(entity: Map<String, Any?>) {
+        updateSchemaCache()
         dataSource.update(
             "DELETE FROM ${tableRef.fullName} WHERE \"${DbEntity.ID}\"=${entity[DbEntity.ID]}",
             emptyList()
@@ -151,6 +154,8 @@ class DbEntityRepoPg<T : Any>(
     }
 
     private fun saveImpl(entity: Map<String, Any?>): String {
+
+        updateSchemaCache()
 
         val nowInstant = Instant.now()
         val entityMap = LinkedHashMap(entity)
@@ -239,6 +244,7 @@ class DbEntityRepoPg<T : Any>(
     }
 
     private fun getCountImpl(sqlPredicate: String, params: List<Any?>): Long {
+        updateSchemaCache()
         val selectQuery = createSelect("COUNT(*)")
         if (sqlPredicate.isNotBlank()) {
             selectQuery.append(" AND ").append(sqlPredicate)
@@ -287,6 +293,7 @@ class DbEntityRepoPg<T : Any>(
         if (columns.isEmpty()) {
             return DbFindRes(emptyList(), 0)
         }
+        updateSchemaCache()
 
         val queryBuilder = createSelect(columns, withDeleted)
         val columnsByName = columns.associateBy { it.name }
@@ -322,7 +329,6 @@ class DbEntityRepoPg<T : Any>(
             queryBuilder.append(" OFFSET ").append(page.skipCount)
         }
 
-        updateSchemaCache()
         val resultEntities = dataSource.query(queryBuilder.toString(), params) { resultSet ->
             val resultList = mutableListOf<T>()
             while (resultSet.next()) {
