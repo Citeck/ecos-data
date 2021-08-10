@@ -150,7 +150,8 @@ class DbEntityRepoPg<T : Any>(
 
     private fun saveAndGet(entity: Map<String, Any?>): Map<String, Any?> {
         val extId = saveImpl(entity)
-        return findByExtIdAsMap(extId, columns) ?: error("Entity with extId $extId was inserted but can't be found.")
+        return findByExtIdAsMap(extId, columns, true)
+            ?: error("Entity with extId $extId was inserted but can't be found.")
     }
 
     private fun saveImpl(entity: Map<String, Any?>): String {

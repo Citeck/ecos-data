@@ -7,7 +7,7 @@
 
     <groupId>ru.citeck.ecos.data</groupId>
     <artifactId>ecos-data-project</artifactId>
-    <version>1.2.3</version>
+    <version>1.2.4</version>
     <packaging>pom</packaging>
 
     <properties>
