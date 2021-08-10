@@ -13,6 +13,35 @@ import ru.citeck.ecos.records3.record.request.RequestContext
 class DbRecordsDaoTxnTest : DbRecordsTestBase() {
 
     @Test
+    fun doubleUpdateTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("textAtt")
+                    .withType(AttributeType.TEXT)
+            ).map { it.build() }
+        )
+
+        var newRecRef = RecordRef.EMPTY
+        RequestContext.doWithTxn(false) {
+            newRecRef = createRecord("textAtt" to "Value")
+            assertThat(getRecords().getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value")
+            updateRecord(newRecRef, "textAtt" to "Value2")
+            assertThat(getRecords().getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value2")
+        }
+        assertThat(getRecords().getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value2")
+
+        RequestContext.doWithTxn(false) {
+            updateRecord(newRecRef, "textAtt" to "Value3")
+            assertThat(getRecords().getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value3")
+            updateRecord(newRecRef, "textAtt" to "Value4")
+            assertThat(getRecords().getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value4")
+        }
+        assertThat(getRecords().getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value4")
+    }
+
+    @Test
     fun deleteTest() {
 
         registerAtts(

@@ -209,6 +209,7 @@ class DbDataServiceImpl<T : Any>(
                         if (entityFromRepo != null) {
                             val entityMapFromRepo = entityMapper.convertToMap(entityFromRepo)
                             entityMap[DbEntity.ID] = entityMapFromRepo[DbEntity.ID]
+                            entityMap[DbEntity.UPD_VERSION] = entityMapFromRepo[DbEntity.UPD_VERSION]
                         }
                         if (entityFromRepo != null || entityMap[DbEntity.DELETED] != true) {
                             entityRepo.save(entityMapper.convertToEntity(entityMap))
