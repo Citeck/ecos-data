@@ -288,7 +288,7 @@ class DbDataServiceImpl<T : Any>(
         val startTime = Instant.now()
         val changedColumns = mutableListOf<DbColumnDef>()
         val migration = {
-            dataSource.watchCommands {
+            dataSource.watchSchemaCommands {
                 changedColumns.addAll(ensureColumnsExistImpl(fullColumns, diff))
                 if (!onlyOwn) {
                     tableMetaService?.runMigrations(emptyList(), true, diff, true)

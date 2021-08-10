@@ -16,7 +16,7 @@ object PgUtils {
             }
             val dbDataSource = DbDataSourceImpl(pg.getDatabase("postgres", "test"))
             dbDataSource.withTransaction(false) {
-                dbDataSource.watchCommands {
+                dbDataSource.watchSchemaCommands {
                     action.invoke(dbDataSource)
                 }
             }

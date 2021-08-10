@@ -13,7 +13,7 @@ interface DbDataSource {
 
     fun <T> withSchemaMock(action: () -> T): T
 
-    fun watchCommands(action: () -> Unit): List<String>
+    fun watchSchemaCommands(action: () -> Unit): List<String>
 
     fun <T> withMetaData(action: (DatabaseMetaData) -> T): T
 
