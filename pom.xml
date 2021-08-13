@@ -28,9 +28,9 @@
         <kotlin.version>1.5.21</kotlin.version>
         <kotlin.logging.version>1.12.5</kotlin.logging.version>
 
-        <ecos.commons.version>2.4.0</ecos.commons.version>
-        <ecos.records.version>3.31.9</ecos.records.version>
-        <ecos.model-lib.version>2.4.10</ecos.model-lib.version>
+        <ecos.commons.version>2.5.0</ecos.commons.version>
+        <ecos.records.version>3.32.0</ecos.records.version>
+        <ecos.model-lib.version>2.5.0</ecos.model-lib.version>
 
     </properties>
 
