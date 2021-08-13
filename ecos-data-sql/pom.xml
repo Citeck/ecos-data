@@ -10,7 +10,7 @@
     <parent>
         <groupId>ru.citeck.ecos.data</groupId>
         <artifactId>ecos-data-project</artifactId>
-        <version>1.3.0</version>
+        <version>1.4.0-SNAPSHOT</version>
     </parent>
 
     <dependencies>
