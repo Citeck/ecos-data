@@ -13,6 +13,25 @@ import ru.citeck.ecos.records3.record.request.RequestContext
 class DbRecordsDaoTxnTest : DbRecordsTestBase() {
 
     @Test
+    fun deleteTest2() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("textAtt")
+                    .withType(AttributeType.TEXT)
+            ).map { it.build() }
+        )
+
+        val newRecId = createRecord("textAtt" to "value")
+        RequestContext.doWithTxn {
+            assertThat(getRecords().getAtt(newRecId, "textAtt").asText()).isEqualTo("value")
+            getRecords().delete(newRecId)
+            assertThat(getRecords().getAtt(newRecId, "textAtt").asText()).isEqualTo("")
+        }
+    }
+
+    @Test
     fun doubleUpdateTest() {
 
         registerAtts(
