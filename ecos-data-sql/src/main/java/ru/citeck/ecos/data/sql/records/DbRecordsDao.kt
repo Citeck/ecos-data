@@ -51,7 +51,8 @@ class DbRecordsDao(
     companion object {
         private val ATTS_MAPPING = mapOf(
             "_created" to DbEntity.CREATED,
-            "_modified" to DbEntity.MODIFIED
+            "_modified" to DbEntity.MODIFIED,
+            "_localId" to DbEntity.EXT_ID
         )
 
         private val log = KotlinLogging.logger {}
