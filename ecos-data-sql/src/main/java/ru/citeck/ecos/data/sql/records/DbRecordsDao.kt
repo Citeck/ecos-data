@@ -202,6 +202,10 @@ class DbRecordsDao(
             return typeFromRecord
         }
 
+        if (RecordRef.isNotEmpty(config.typeRef)) {
+            return config.typeRef.id
+        }
+
         error("${RecordConstants.ATT_TYPE} attribute is mandatory for mutation. Record: ${record.id}")
     }
 

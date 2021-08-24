@@ -38,4 +38,32 @@ class SchemaDaoTest {
             listOf(*singleValueColumns.toTypedArray(), *arrayColumns.toTypedArray())
         )
     }
+
+    @Test
+    fun typeUpdateTest() {
+        PgUtils.withDbDataSource { typeUpdateTestImpl(it) }
+    }
+
+    private fun typeUpdateTestImpl(dbDataSource: DbDataSource) {
+
+        val dbSchemaDao = DbSchemaDaoPg(dbDataSource, DbTableRef("some-schema", "test-table"))
+        dbSchemaDao.createTable(
+            listOf(
+                DbColumnDef("text_column", DbColumnType.TEXT, false, emptyList())
+            )
+        )
+
+        // text to json
+
+        assertThat(dbSchemaDao.getColumns()).hasSize(1)
+        assertThat(dbSchemaDao.getColumns()[0].type).isEqualTo(DbColumnType.TEXT)
+
+        dbSchemaDao.setColumnType("text_column", false, DbColumnType.JSON)
+
+        assertThat(dbSchemaDao.getColumns()[0].type).isEqualTo(DbColumnType.JSON)
+
+        dbSchemaDao.setColumnType("text_column", false, DbColumnType.TEXT)
+
+        assertThat(dbSchemaDao.getColumns()[0].type).isEqualTo(DbColumnType.TEXT)
+    }
 }
