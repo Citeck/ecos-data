@@ -2,8 +2,10 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
+import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.RecordRef
@@ -32,20 +34,49 @@ class DbRecordsDaoColumnUpdateTest : DbRecordsTestBase() {
         registerTypeWithAtt.invoke("textAtt", false)
 
         val simpleValue = "value"
-        val recId = getRecords().create(RECS_DAO_ID, mapOf("textAtt" to simpleValue, "_type" to testTypeId))
-        assertThat(getRecords().getAtt(recId, "textAtt").asText()).isEqualTo(simpleValue)
+        val recId = records.create(RECS_DAO_ID, mapOf("textAtt" to simpleValue, "_type" to testTypeId))
+        assertThat(records.getAtt(recId, "textAtt").asText()).isEqualTo(simpleValue)
 
         registerTypeWithAtt.invoke("textAtt", true)
 
         val valuesList = listOf("value0", "value1")
-        getRecords().mutate(recId, mapOf("textAtt" to valuesList))
-        assertThat(getRecords().getAtt(recId, "textAtt[]").asStrList()).containsExactlyElementsOf(valuesList)
+        records.mutate(recId, mapOf("textAtt" to valuesList))
+        assertThat(records.getAtt(recId, "textAtt[]").asStrList()).containsExactlyElementsOf(valuesList)
 
         registerTypeWithAtt.invoke("textAtt", false)
 
         val valuesList2 = listOf("value2", "value3")
-        getRecords().mutate(recId, mapOf("textAtt" to valuesList2))
-        val att2 = getRecords().getAtt(recId, "textAtt[]").asStrList()
+        records.mutate(recId, mapOf("textAtt" to valuesList2))
+        val att2 = records.getAtt(recId, "textAtt[]").asStrList()
         assertThat(att2).containsExactlyElementsOf(listOf(valuesList2.first()))
+    }
+
+    @Test
+    fun maxItemsSchemaMigrationTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("testAtt")
+                }
+            )
+        )
+
+        repeat(DbDataServiceConfig.EMPTY.maxItemsToAllowSchemaMigration.toInt() + 1) {
+            createRecord("textAtt" to "val")
+        }
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("testAtt")
+                    withMultiple(true)
+                }
+            )
+        )
+
+        assertThrows<Exception> {
+            createRecord("textAtt" to "val")
+        }
     }
 }

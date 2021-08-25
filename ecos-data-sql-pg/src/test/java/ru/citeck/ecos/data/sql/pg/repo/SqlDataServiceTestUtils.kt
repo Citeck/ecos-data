@@ -24,7 +24,7 @@ object SqlDataServiceTestUtils {
 
         val sqlDataService = PgDataServiceFactory().create(DbEntity::class.java)
             .withTableRef(DbTableRef("sql-data-service-test-utils-schema", tableName))
-            .withConfig(DbDataServiceConfig(false))
+            .withConfig(DbDataServiceConfig.create { withAuthEnabled(false) })
             .withDataSource(dbDataSource)
             .withDbContextManager(ctxManager)
             .build()

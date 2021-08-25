@@ -3,7 +3,10 @@ package ru.citeck.ecos.data.sql.records
 import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.data.sql.dto.DbColumnDef
+import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
@@ -38,6 +41,7 @@ import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import java.util.*
 import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
 import kotlin.collections.LinkedHashMap
 import kotlin.math.min
 
@@ -49,9 +53,23 @@ class DbRecordsDao(
 ) : AbstractRecordsDao(), RecordsAttsDao, RecordsQueryDao, RecordsMutateDao, RecordsDeleteDao, TxnRecordsDao {
 
     companion object {
+
         private val ATTS_MAPPING = mapOf(
             "_created" to DbEntity.CREATED,
-            "_modified" to DbEntity.MODIFIED
+            "_modified" to DbEntity.MODIFIED,
+            "_localId" to DbEntity.EXT_ID
+        )
+
+        private val OPTIONAL_ATTS = listOf(
+            DbColumnDef.create {
+                withName("_docNum")
+                withType(DbColumnType.INT)
+            },
+            DbColumnDef.create {
+                withName("_proc")
+                withMultiple(true)
+                withType(DbColumnType.JSON)
+            }
         )
 
         private val log = KotlinLogging.logger {}
@@ -202,6 +220,10 @@ class DbRecordsDao(
             return typeFromRecord
         }
 
+        if (RecordRef.isNotEmpty(config.typeRef)) {
+            return config.typeRef.id
+        }
+
         error("${RecordConstants.ATT_TYPE} attribute is mandatory for mutation. Record: ${record.id}")
     }
 
@@ -226,7 +248,8 @@ class DbRecordsDao(
             ecosTypeRepo.getTypeInfo(typeId) ?: error("Type is not found: '$typeId'. Record ID: '${records[idx]}'")
         }
 
-        val columns = ecosTypeService.getColumnsForTypes(typesInfo)
+        val typesColumns = ecosTypeService.getColumnsForTypes(typesInfo)
+        val typesColumnNames = typesColumns.map { it.name }.toSet()
 
         return records.mapIndexed { recordIdx, record ->
 
@@ -254,19 +277,13 @@ class DbRecordsDao(
                 }
             }
 
-            val atts = record.attributes
-
-            for (dbColumnDef in columns) {
-                if (!atts.has(dbColumnDef.name)) {
-                    continue
-                }
-                val value = atts.get(dbColumnDef.name)
-                recToMutate.attributes[dbColumnDef.name] = convert(
-                    value,
-                    dbColumnDef.multiple,
-                    dbColumnDef.type.type.java
-                )
+            val fullColumns = ArrayList<DbColumnDef>(typesColumns)
+            setMutationAtts(recToMutate, record.attributes, typesColumns)
+            val optionalAtts = OPTIONAL_ATTS.filter { !typesColumnNames.contains(it.name) }
+            if (optionalAtts.isNotEmpty()) {
+                fullColumns.addAll(setMutationAtts(recToMutate, record.attributes, optionalAtts))
             }
+
             recToMutate.type = recordTypeId
             val typeDef = typesInfo[recordIdx]
 
@@ -284,17 +301,48 @@ class DbRecordsDao(
                 }
             }
 
-            val recAfterSave = dbDataService.save(recToMutate, columns)
+            val recAfterSave = dbDataService.save(recToMutate, fullColumns)
 
             if (ecosTypeService.fillComputedAtts(getId(), recAfterSave)) {
-                dbDataService.save(recAfterSave, columns)
+                dbDataService.save(recAfterSave, fullColumns)
             } else {
                 recAfterSave
             }.extId
         }
     }
 
-    private fun convert(rawValue: DataValue, multiple: Boolean, javaType: Class<*>): Any? {
+    private fun setMutationAtts(recToMutate: DbEntity, atts: ObjectData, types: List<DbColumnDef>): List<DbColumnDef> {
+        val notEmptyColumns = ArrayList<DbColumnDef>()
+        for (dbColumnDef in types) {
+            if (!atts.has(dbColumnDef.name)) {
+                continue
+            }
+            notEmptyColumns.add(dbColumnDef)
+            val value = atts.get(dbColumnDef.name)
+            recToMutate.attributes[dbColumnDef.name] = convert(
+                value,
+                dbColumnDef.multiple,
+                dbColumnDef.type
+            )
+        }
+        return notEmptyColumns
+    }
+
+    private fun convert(
+        rawValue: DataValue,
+        multiple: Boolean,
+        columnType: DbColumnType
+    ): Any? {
+
+        return if (columnType == DbColumnType.JSON) {
+            val converted = convertToClass(rawValue, multiple, DataValue::class.java)
+            Json.mapper.toString(converted)
+        } else {
+            convertToClass(rawValue, multiple, columnType.type.java)
+        }
+    }
+
+    private fun convertToClass(rawValue: DataValue, multiple: Boolean, javaType: Class<*>): Any? {
 
         val value = if (multiple) {
             if (!rawValue.isArray()) {
@@ -321,16 +369,12 @@ class DbRecordsDao(
         if (multiple) {
             val result = ArrayList<Any?>(value.size())
             for (element in value) {
-                result.add(convert(element, false, javaType))
+                result.add(convertToClass(element, false, javaType))
             }
             return result
         }
 
-        return if (value.isObject() && javaType == String::class.java) {
-            Json.mapper.toString(value)
-        } else {
-            Json.mapper.convert(value, javaType)
-        }
+        return Json.mapper.convert(value, javaType)
     }
 
     override fun getId() = id
@@ -345,26 +389,40 @@ class DbRecordsDao(
         init {
             val recData = LinkedHashMap(entity.attributes)
 
-            val typeInfo = owner.ecosTypeRepo.getTypeInfo(entity.type)
-            typeInfo?.attributes?.forEach {
-                val value = recData[it.id]
-                when (it.type) {
+            val attTypes = HashMap<String, AttributeType>()
+            owner.ecosTypeRepo.getTypeInfo(entity.type)?.attributes?.forEach {
+                attTypes[it.id] = it.type
+            }
+            OPTIONAL_ATTS.forEach {
+                if (!attTypes.containsKey(it.name)) {
+                    if (it.type == DbColumnType.JSON) {
+                        attTypes[it.name] = AttributeType.JSON
+                    } else if (it.type == DbColumnType.TEXT) {
+                        attTypes[it.name] = AttributeType.TEXT
+                    } else if (it.type == DbColumnType.INT) {
+                        attTypes[it.name] = AttributeType.NUMBER
+                    }
+                }
+            }
+            attTypes.forEach { (attId, attType) ->
+                val value = recData[attId]
+                when (attType) {
                     AttributeType.ASSOC,
                     AttributeType.AUTHORITY,
                     AttributeType.PERSON,
                     AttributeType.AUTHORITY_GROUP -> {
                         if (value is String) {
-                            recData[it.id] = RecordRef.valueOf(value)
+                            recData[attId] = RecordRef.valueOf(value)
                         }
                     }
                     AttributeType.JSON -> {
                         if (value is String) {
-                            recData[it.id] = Json.mapper.read(value)
+                            recData[attId] = Json.mapper.read(value)
                         }
                     }
                     AttributeType.MLTEXT -> {
                         if (value is String) {
-                            recData[it.id] = Json.mapper.read(value, MLText::class.java)
+                            recData[attId] = Json.mapper.read(value, MLText::class.java)
                         }
                     }
                     else -> {}
@@ -393,21 +451,15 @@ class DbRecordsDao(
             return additionalAtts.contains(name)
         }
 
-        override fun getAtt(name: String?): Any? {
-            if (name == RecordConstants.ATT_DOC_NUM) {
-                return entity.docNum
-            } else if (name == RecordConstants.ATT_MODIFIED || name == "cm:modified") {
-                return entity.modified
-            } else if (name == RecordConstants.ATT_CREATED || name == "cm:created") {
-                return entity.created
-            } else if (name == RecordConstants.ATT_MODIFIER) {
-                return getAsPersonRef(entity.modifier)
-            } else if (name == RecordConstants.ATT_CREATOR) {
-                return getAsPersonRef(entity.creator)
-            } else if (name == StatusConstants.ATT_STATUS) {
-                return entity.status
+        override fun getAtt(name: String): Any? {
+            return when (name) {
+                RecordConstants.ATT_MODIFIED, "cm:modified" -> entity.modified
+                RecordConstants.ATT_CREATED, "cm:created" -> entity.created
+                RecordConstants.ATT_MODIFIER -> getAsPersonRef(entity.modifier)
+                RecordConstants.ATT_CREATOR -> getAsPersonRef(entity.creator)
+                StatusConstants.ATT_STATUS -> entity.status
+                else -> additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
             }
-            return additionalAtts[name]
         }
 
         private fun getAsPersonRef(name: String): RecordRef {

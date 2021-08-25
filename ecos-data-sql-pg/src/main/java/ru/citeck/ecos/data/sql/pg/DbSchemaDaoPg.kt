@@ -111,25 +111,36 @@ class DbSchemaDaoPg(
                     if (currentType == newType && currentMultiple == multiple) {
                         // everything ok
                     } else {
-                        if (currentType == newType) {
-                            if (multiple) {
-                                // single value column to array
-                                dataSource.updateSchema(
-                                    "ALTER TABLE ${tableRef.fullName} " +
-                                        "ALTER \"$name\" " +
-                                        "TYPE ${getColumnSqlType(newType, true)} " +
-                                        "USING array[\"$name\"];"
-                                )
+                        if (multiple && !currentMultiple && newType != DbColumnType.JSON) {
+                            // automatic conversion of array to single value column is not available
+                            // it is not a huge problem because it affects only on fuzzy searching
+                            dataSource.updateSchema(
+                                "ALTER TABLE ${tableRef.fullName} " +
+                                    "ALTER \"$name\" " +
+                                    "TYPE ${getColumnSqlType(currentType, true)} " +
+                                    "USING array[\"$name\"];"
+                            )
+                        }
+                        val isMultipleColumn = multiple || currentMultiple
+                        if (currentType != newType) {
+                            var conversion = if (currentType == DbColumnType.TEXT && newType == DbColumnType.JSON) {
+                                "jsonb"
+                            } else if (currentType == DbColumnType.JSON && newType == DbColumnType.TEXT) {
+                                "text"
                             } else {
-                                log.warn {
-                                    "DAO doesn't allow automatic change of column type from Array to simple value. " +
-                                        "table: ${tableRef.fullName} column: $name"
-                                }
+                                error(
+                                    "Conversion $currentType to $newType is not supported. " +
+                                        "Multiple flag: $currentMultiple -> $multiple"
+                                )
                             }
-                        } else {
-                            error(
-                                "Conversion $currentType to $newType is not supported. " +
-                                    "Multiple flag: $currentMultiple -> $multiple"
+                            if (isMultipleColumn) {
+                                conversion = "$conversion[]"
+                            }
+                            dataSource.updateSchema(
+                                "ALTER TABLE ${tableRef.fullName} " +
+                                    "ALTER \"$name\" " +
+                                    "TYPE ${getColumnSqlType(newType, isMultipleColumn)} " +
+                                    "USING \"$name\"::$conversion;"
                             )
                         }
                     }
@@ -203,7 +214,7 @@ class DbSchemaDaoPg(
             DbColumnType.BINARY -> "BYTEA"
             DbColumnType.UUID -> "UUID"
         }
-        return if (multiple) {
+        return if (multiple && type != DbColumnType.JSON) {
             "$baseType[]"
         } else {
             baseType

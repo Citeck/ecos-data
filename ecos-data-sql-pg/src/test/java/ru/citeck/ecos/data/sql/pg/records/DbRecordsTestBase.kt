@@ -4,7 +4,9 @@ import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
+import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
@@ -14,6 +16,7 @@ import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.repo.DbContextManager
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.utils.use
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
@@ -57,8 +60,11 @@ abstract class DbRecordsTestBase {
     private val typesDef = mutableMapOf<String, DbEcosTypeInfo>()
     private var currentUser = "user0"
 
-    private lateinit var recordsDao: DbRecordsDao
-    private lateinit var records: RecordsService
+    lateinit var recordsDao: DbRecordsDao
+    lateinit var records: RecordsService
+    lateinit var dbDataSource: DbDataSource
+    lateinit var tableRef: DbTableRef
+    lateinit var dbSchemaDao: DbSchemaDao
 
     @BeforeEach
     fun beforeEach() {
@@ -71,6 +77,8 @@ abstract class DbRecordsTestBase {
 
     fun initWithTable(tableRef: DbTableRef) {
 
+        this.tableRef = tableRef
+
         val ecosTypeRepo = object : DbEcosTypeRepo {
             override fun getTypeInfo(typeId: String): DbEcosTypeInfo? {
                 return typesDef[typeId]
@@ -81,7 +89,14 @@ abstract class DbRecordsTestBase {
             override fun getCurrentUserAuthorities(): List<String> = listOf(getCurrentUser())
         }
 
-        val dbDataSource = DbDataSourceImpl(dataSource)
+        dbDataSource = DbDataSourceImpl(dataSource)
+
+        val pgDataServiceFactory = PgDataServiceFactory().create(DbEntity::class.java)
+            .withConfig(DbDataServiceConfig.create { withAuthEnabled(true) })
+            .withDataSource(dbDataSource)
+            .withDbContextManager(contextManager)
+            .withTableRef(tableRef)
+
         recordsDao = DbRecordsDao(
             RECS_DAO_ID,
             DbRecordsDaoConfig(
@@ -91,13 +106,9 @@ abstract class DbRecordsTestBase {
                 typeRef = RecordRef.EMPTY
             ),
             ecosTypeRepo,
-            PgDataServiceFactory().create(DbEntity::class.java)
-                .withConfig(DbDataServiceConfig(true))
-                .withDataSource(dbDataSource)
-                .withDbContextManager(contextManager)
-                .withTableRef(tableRef)
-                .build()
+            pgDataServiceFactory.build()
         )
+        dbSchemaDao = pgDataServiceFactory.schemaDao
 
         val services = RecordsServiceFactory()
         records = services.recordsServiceV1
@@ -106,7 +117,7 @@ abstract class DbRecordsTestBase {
     }
 
     fun updateRecord(rec: RecordRef, vararg atts: Pair<String, Any>): RecordRef {
-        return getRecords().mutate(rec, mapOf(*atts))
+        return records.mutate(rec, mapOf(*atts))
     }
 
     fun createRecord(vararg atts: Pair<String, Any>): RecordRef {
@@ -114,7 +125,26 @@ abstract class DbRecordsTestBase {
         if (!map.containsKey("_type")) {
             map["_type"] = REC_TEST_TYPE_REF
         }
-        return getRecords().create(RECS_DAO_ID, map)
+        return records.create(RECS_DAO_ID, map)
+    }
+
+    fun selectRecFromDb(rec: RecordRef, field: String): Any? {
+        return dbDataSource.withTransaction(true) {
+            dbDataSource.query(
+                "SELECT $field as res FROM ${tableRef.fullName} " +
+                    "where __ext_id='${rec.id}'",
+                emptyList()
+            ) { res ->
+                res.next()
+                res.getObject("res")
+            }
+        }
+    }
+
+    fun getColumns(): List<DbColumnDef> {
+        return dbDataSource.withTransaction(true) {
+            dbSchemaDao.getColumns()
+        }
     }
 
     fun cleanData() {
@@ -189,15 +219,7 @@ abstract class DbRecordsTestBase {
         this.currentUser = user
     }
 
-    fun getRecords(): RecordsService {
-        return this.records
-    }
-
     fun getCurrentUser(): String {
         return this.currentUser
-    }
-
-    fun getRecordsDao(): DbRecordsDao {
-        return this.recordsDao
     }
 }

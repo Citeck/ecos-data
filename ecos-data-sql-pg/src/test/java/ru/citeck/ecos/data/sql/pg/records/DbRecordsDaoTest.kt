@@ -36,36 +36,36 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             ).map { it.build() }
         )
 
-        assertThat(getRecords().getAtt(ref, "textAtt").asText()).isEmpty()
-        getRecordsDao().runMigrations(TypeUtils.getTypeRef(testTypeId), mock = false)
-        assertThat(getRecords().getAtt(ref, "textAtt").asText()).isEmpty()
+        assertThat(records.getAtt(ref, "textAtt").asText()).isEmpty()
+        recordsDao.runMigrations(TypeUtils.getTypeRef(testTypeId), mock = false)
+        assertThat(records.getAtt(ref, "textAtt").asText()).isEmpty()
 
-        val rec0Id = getRecords().create(
+        val rec0Id = records.create(
             RECS_DAO_ID,
             mapOf(
                 "textAtt" to "value",
                 "_type" to TypeUtils.getTypeRef(testTypeId)
             )
         )
-        assertThat(getRecords().getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
+        assertThat(records.getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
 
         val secondTableRef = DbTableRef("ecos_data", "test_data")
         initWithTable(secondTableRef)
 
-        assertThat(getRecords().getAtt(rec0Id, "textAtt").asText()).isEmpty()
+        assertThat(records.getAtt(rec0Id, "textAtt").asText()).isEmpty()
 
-        val rec1Id = getRecords().create(
+        val rec1Id = records.create(
             RECS_DAO_ID,
             mapOf(
                 "textAtt" to "value2",
                 "_type" to TypeUtils.getTypeRef(testTypeId)
             )
         )
-        assertThat(getRecords().getAtt(rec1Id, "textAtt").asText()).isEqualTo("value2")
+        assertThat(records.getAtt(rec1Id, "textAtt").asText()).isEqualTo("value2")
 
         initWithTable(firstTableRef)
 
-        assertThat(getRecords().getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
+        assertThat(records.getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
     }
 
     @Test
@@ -85,12 +85,12 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         )
 
         val typeRef = TypeUtils.getTypeRef(testTypeId)
-        val commands0 = getRecordsDao().runMigrations(typeRef, diff = true)
-        val commands1 = getRecordsDao().runMigrations(typeRef, diff = false)
+        val commands0 = recordsDao.runMigrations(typeRef, diff = true)
+        val commands1 = recordsDao.runMigrations(typeRef, diff = false)
 
         assertThat(commands0).isEqualTo(commands1)
 
-        getRecords().create(RECS_DAO_ID, mapOf("textAtt" to "value", "_type" to testTypeId))
+        records.create(RECS_DAO_ID, mapOf("textAtt" to "value", "_type" to testTypeId))
 
         registerType(
             DbEcosTypeInfo(
@@ -107,11 +107,11 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             )
         )
 
-        assertThat(getRecordsDao().runMigrations(typeRef, diff = true))
+        assertThat(recordsDao.runMigrations(typeRef, diff = true))
             .allMatch { !it.contains("CREATE TABLE") }
             .anyMatch { it.contains("ALTER TABLE") }
 
-        assertThat(getRecordsDao().runMigrations(typeRef, diff = false))
+        assertThat(recordsDao.runMigrations(typeRef, diff = false))
             .anyMatch { it.contains("CREATE TABLE") }
     }
 
@@ -149,7 +149,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             "dateTimeArrayAtt" to listOf(Instant.now().truncatedTo(ChronoUnit.MILLIS)),
             "_type" to "emodel/type@$testTypeId"
         )
-        val newRecId = getRecords().create(RECS_DAO_ID, attsMap)
+        val newRecId = records.create(RECS_DAO_ID, attsMap)
 
         val attsToReq = listOf(
             "textArrayAtt",
@@ -157,19 +157,19 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             "dateTimeArrayAtt"
         )
 
-        val result = getRecords().getAtts(newRecId, attsToReq)
+        val result = records.getAtts(newRecId, attsToReq)
         assertThat(result.getAtt("textArrayAtt").asText()).isEqualTo((attsMap["textArrayAtt"] as List<*>)[0])
         assertThat(result.getAtt("numArrayAtt?num").asInt()).isEqualTo((attsMap["numArrayAtt"] as List<*>)[0])
         assertThat(Instant.parse(result.getAtt("dateTimeArrayAtt").asText())).isEqualTo((attsMap["dateTimeArrayAtt"] as List<*>)[0])
 
         val strList = arrayListOf("aaa", "bbb", "ccc")
-        getRecords().mutate(newRecId, "textArrayAtt", strList)
-        val attRes = getRecords().getAtt(newRecId, "textArrayAtt[]?str").asStrList()
+        records.mutate(newRecId, "textArrayAtt", strList)
+        val attRes = records.getAtt(newRecId, "textArrayAtt[]?str").asStrList()
         assertThat(attRes).containsExactlyElementsOf(strList)
 
         val simpleStr = "simple-str"
-        getRecords().mutate(newRecId, "textArrayAtt", simpleStr)
-        val attRes2 = getRecords().getAtt(newRecId, "textArrayAtt[]?str").asStrList()
+        records.mutate(newRecId, "textArrayAtt", simpleStr)
+        val attRes2 = records.getAtt(newRecId, "textArrayAtt[]?str").asStrList()
         assertThat(attRes2).containsExactlyElementsOf(listOf(simpleStr))
     }
 
@@ -209,7 +209,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             "unknown" to "value",
             "_type" to "emodel/type@$testTypeId"
         )
-        val newRecId = getRecords().create("test", attsMap)
+        val newRecId = records.create("test", attsMap)
         val creator = getCurrentUser()
 
         val attsToCheck = listOf(
@@ -224,7 +224,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             "?disp"
         )
 
-        val attsFromDao = getRecords().getAtts(newRecId, attsToCheck)
+        val attsFromDao = records.getAtts(newRecId, attsToCheck)
 
         assertThat(attsFromDao.getAtt("?disp").asText()).isEqualTo("Имя #${attsMap["numAtt"]}")
         assertThat(attsFromDao.getAtt("textAtt").asText()).isEqualTo(attsMap["textAtt"])
@@ -238,9 +238,9 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         setCurrentUser("new-user")
         val newTextValue = attsMap["textAtt"].toString() + "-postfix"
-        getRecords().mutate(newRecId, mapOf("textAtt" to newTextValue))
+        records.mutate(newRecId, mapOf("textAtt" to newTextValue))
 
-        val attsFromDao2 = getRecords().getAtts(newRecId, attsToCheck)
+        val attsFromDao2 = records.getAtts(newRecId, attsToCheck)
 
         assertThat(attsFromDao2.getAtt("textAtt").asText()).isEqualTo(newTextValue)
         assertThat(attsFromDao2.getAtt("numAtt?num").asInt()).isEqualTo(attsMap["numAtt"])
@@ -250,7 +250,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(attsFromDao2.getAtt("_modifier?localId").asText()).isEqualTo(getCurrentUser())
         assertThat(attsFromDao2.getAtt("_creator?localId").asText()).isEqualTo(creator)
 
-        val res = getRecords().query(
+        val res = records.query(
             RecordsQuery.create {
                 withSourceId("test")
                 withQuery(Predicates.eq("textAtt", newTextValue))
@@ -261,7 +261,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(res.getRecords()[0].id).isEqualTo(newRecId.id)
         assertThat(res.getTotalCount()).isEqualTo(1)
 
-        val fullResWithUnknownFieldPred = getRecords().query(
+        val fullResWithUnknownFieldPred = records.query(
             RecordsQuery.create {
                 withSourceId("test")
                 withQuery(Predicates.eq("textAtt123", newTextValue))
@@ -270,7 +270,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(fullResWithUnknownFieldPred.getTotalCount()).isEqualTo(1)
         assertThat(fullResWithUnknownFieldPred.getRecords()).hasSize(1)
 
-        val emptyRes = getRecords().query(
+        val emptyRes = records.query(
             RecordsQuery.create {
                 withSourceId("test")
                 withQuery(Predicates.eq("textAtt", "unknown-value"))
@@ -280,7 +280,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(emptyRes.getRecords()).isEmpty()
 
         for (i in 0 until 30) {
-            getRecords().create(
+            records.create(
                 "test",
                 mapOf(
                     "numAtt" to i,
@@ -289,7 +289,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             )
         }
 
-        val fullRes = getRecords().query(
+        val fullRes = records.query(
             RecordsQuery.create {
                 withSourceId("test")
                 withQuery(VoidPredicate.INSTANCE)
@@ -298,7 +298,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(fullRes.getTotalCount()).isEqualTo(31)
         assertThat(fullRes.getRecords()).hasSize(31)
 
-        val resWithPage = getRecords().query(
+        val resWithPage = records.query(
             RecordsQuery.create {
                 withSourceId("test")
                 withQuery(VoidPredicate.INSTANCE)
@@ -308,7 +308,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(resWithPage.getTotalCount()).isEqualTo(31)
         assertThat(resWithPage.getRecords()).hasSize(10)
 
-        val resWithSkip = getRecords().query(
+        val resWithSkip = records.query(
             RecordsQuery.create {
                 withSourceId("test")
                 withQuery(VoidPredicate.INSTANCE)
@@ -318,7 +318,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(resWithSkip.getTotalCount()).isEqualTo(31)
         assertThat(resWithSkip.getRecords()).hasSize(31 - 25)
 
-        val resWithGt = getRecords().query(
+        val resWithGt = records.query(
             RecordsQuery.create {
                 withSourceId("test")
                 withQuery(Predicates.gt("numAtt", 15.0))
@@ -327,16 +327,16 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(resWithGt.getTotalCount()).isEqualTo(15)
         assertThat(resWithGt.getRecords()).hasSize(15)
 
-        val recId = getRecords().queryOne(
+        val recId = records.queryOne(
             RecordsQuery.create {
                 withSourceId("test")
                 withQuery(Predicates.eq("numAtt", 15))
             }
         )!!
-        getRecords().delete(recId)
+        records.delete(recId)
 
         assertThat(
-            getRecords().queryOne(
+            records.queryOne(
                 RecordsQuery.create {
                     withSourceId("test")
                     withQuery(Predicates.eq("numAtt", 15))
@@ -344,9 +344,9 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             )
         ).isNull()
 
-        assertThat(getRecords().getAtt(recId, "_notExists?bool").asBoolean()).isTrue()
+        assertThat(records.getAtt(recId, "_notExists?bool").asBoolean()).isTrue()
 
-        val fullQueryAfterDeleteRes = getRecords().query(
+        val fullQueryAfterDeleteRes = records.query(
             RecordsQuery.create {
                 withSourceId("test")
                 withQuery(VoidPredicate.INSTANCE)

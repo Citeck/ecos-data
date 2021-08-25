@@ -29,7 +29,7 @@
         <kotlin.logging.version>1.12.5</kotlin.logging.version>
 
         <ecos.commons.version>2.5.0</ecos.commons.version>
-        <ecos.records.version>3.32.0</ecos.records.version>
+        <ecos.records.version>3.32.4</ecos.records.version>
         <ecos.model-lib.version>2.5.0</ecos.model-lib.version>
 
     </properties>

@@ -43,9 +43,23 @@ class DbEcosTypeService(
         if (!MLText.isEmpty(typeInfo.dispNameTemplate)) {
             return templateService.resolve(typeInfo.dispNameTemplate, recordRef)
         }
-        val recName = recordsService.getAtt(recordRef, "name").asText()
-        if (recName.isNotBlank()) {
-            return MLText(recName)
+
+        val nameAtt = typeInfo.attributes.find { it.id == "name" }
+        if (nameAtt != null) {
+            if (nameAtt.type == AttributeType.TEXT) {
+                val name = recordsService.getAtt(recordRef, "name").asText()
+                if (name.isNotBlank()) {
+                    return MLText(name)
+                }
+            } else if (nameAtt.type == AttributeType.MLTEXT) {
+                val name = recordsService.getAtt(recordRef, "name?json")
+                if (name.isObject()) {
+                    val mlName = name.getAs(MLText::class.java)
+                    if (mlName != null && !MLText.isEmpty(mlName)) {
+                        return mlName
+                    }
+                }
+            }
         }
         if (!MLText.isEmpty(typeInfo.name)) {
             return typeInfo.name

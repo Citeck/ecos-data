@@ -98,7 +98,7 @@ class DbEntityRepoPg<T : Any>(
             val value = row.getObject(column.name)
             result[column.name] = if (value != null) {
                 var expectedType = column.type.type
-                if (column.multiple) {
+                if (column.multiple && column.type != DbColumnType.JSON) {
                     expectedType = DbTypeUtils.getArrayType(expectedType)
                 }
                 typesConverter.convert(value, expectedType)
@@ -375,9 +375,10 @@ class DbEntityRepoPg<T : Any>(
                 value = if (value == null) {
                     value
                 } else {
+                    val multiple = column.multiple && column.type != DbColumnType.JSON
                     typesConverter.convert(
                         value,
-                        getParamTypeForColumn(column.type, column.multiple)
+                        getParamTypeForColumn(column.type, multiple)
                     )
                 }
                 ValueForDb(column.name, placeholder, value)

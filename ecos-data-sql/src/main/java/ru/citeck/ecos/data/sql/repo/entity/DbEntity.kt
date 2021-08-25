@@ -20,7 +20,6 @@ class DbEntity {
         const val TYPE = "__type"
         const val STATUS = "__status"
         const val NAME = "__name"
-        const val DOC_NUM = "__doc_num"
     }
 
     @Constraints(PRIMARY_KEY)
@@ -51,8 +50,6 @@ class DbEntity {
     var status: String = ""
     @Constraints(NOT_NULL)
     var name: MLText = MLText.EMPTY
-
-    var docNum: Long? = null
 
     var attributes: MutableMap<String, Any?> = LinkedHashMap()
 }
