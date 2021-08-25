@@ -374,8 +374,7 @@ class DbDataServiceImpl<T : Any>(
         val columnsWithChangedType = expectedColumns.filter { expectedColumn ->
             val currentColumn = currentColumnsByName[expectedColumn.name]
             if (currentColumn != null) {
-                currentColumn.type != expectedColumn.type ||
-                    (currentColumn.multiple != expectedColumn.multiple && !currentColumn.multiple)
+                isColumnSchemaUpdateRequired(currentColumn, expectedColumn)
             } else {
                 false
             }
@@ -390,6 +389,17 @@ class DbDataServiceImpl<T : Any>(
         changedColumns.addAll(missingColumns)
 
         return changedColumns
+    }
+
+    private fun isColumnSchemaUpdateRequired(currentColumn: DbColumnDef, expectedColumn: DbColumnDef): Boolean {
+
+        if (currentColumn.type != expectedColumn.type) {
+            return true
+        }
+
+        return currentColumn.multiple != expectedColumn.multiple &&
+            !currentColumn.multiple &&
+            expectedColumn.type != DbColumnType.JSON
     }
 
     private fun initColumns(): List<DbColumnDef> {

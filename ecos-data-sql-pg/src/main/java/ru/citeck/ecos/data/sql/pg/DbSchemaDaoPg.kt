@@ -111,7 +111,7 @@ class DbSchemaDaoPg(
                     if (currentType == newType && currentMultiple == multiple) {
                         // everything ok
                     } else {
-                        if (multiple && !currentMultiple) {
+                        if (multiple && !currentMultiple && newType != DbColumnType.JSON) {
                             // automatic conversion of array to single value column is not available
                             // it is not a huge problem because it affects only on fuzzy searching
                             dataSource.updateSchema(
@@ -214,7 +214,7 @@ class DbSchemaDaoPg(
             DbColumnType.BINARY -> "BYTEA"
             DbColumnType.UUID -> "UUID"
         }
-        return if (multiple) {
+        return if (multiple && type != DbColumnType.JSON) {
             "$baseType[]"
         } else {
             baseType

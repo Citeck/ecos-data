@@ -33,6 +33,8 @@ class PgDataServiceFactory {
         private var storeTableMeta: Boolean = true
         private var transactional: Boolean = true
 
+        lateinit var schemaDao: DbSchemaDaoPg
+
         fun withConfig(config: DbDataServiceConfig): Builder<T> {
             this.config = config
             return this
@@ -101,7 +103,7 @@ class PgDataServiceFactory {
             typesConverter.register(PGobject::class) { it.value }
 
             val entityMapper = DbEntityMapperImpl(entityType.kotlin, typesConverter)
-            val schemaDao = DbSchemaDaoPg(dataSource, tableRef)
+            schemaDao = DbSchemaDaoPg(dataSource, tableRef)
             val entityRepo = DbEntityRepoPg(entityMapper, dbContextManager, dataSource, tableRef, typesConverter)
 
             return DbDataServiceImpl(

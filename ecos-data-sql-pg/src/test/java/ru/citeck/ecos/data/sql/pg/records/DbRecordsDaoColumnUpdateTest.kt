@@ -32,20 +32,20 @@ class DbRecordsDaoColumnUpdateTest : DbRecordsTestBase() {
         registerTypeWithAtt.invoke("textAtt", false)
 
         val simpleValue = "value"
-        val recId = getRecords().create(RECS_DAO_ID, mapOf("textAtt" to simpleValue, "_type" to testTypeId))
-        assertThat(getRecords().getAtt(recId, "textAtt").asText()).isEqualTo(simpleValue)
+        val recId = records.create(RECS_DAO_ID, mapOf("textAtt" to simpleValue, "_type" to testTypeId))
+        assertThat(records.getAtt(recId, "textAtt").asText()).isEqualTo(simpleValue)
 
         registerTypeWithAtt.invoke("textAtt", true)
 
         val valuesList = listOf("value0", "value1")
-        getRecords().mutate(recId, mapOf("textAtt" to valuesList))
-        assertThat(getRecords().getAtt(recId, "textAtt[]").asStrList()).containsExactlyElementsOf(valuesList)
+        records.mutate(recId, mapOf("textAtt" to valuesList))
+        assertThat(records.getAtt(recId, "textAtt[]").asStrList()).containsExactlyElementsOf(valuesList)
 
         registerTypeWithAtt.invoke("textAtt", false)
 
         val valuesList2 = listOf("value2", "value3")
-        getRecords().mutate(recId, mapOf("textAtt" to valuesList2))
-        val att2 = getRecords().getAtt(recId, "textAtt[]").asStrList()
+        records.mutate(recId, mapOf("textAtt" to valuesList2))
+        val att2 = records.getAtt(recId, "textAtt[]").asStrList()
         assertThat(att2).containsExactlyElementsOf(listOf(valuesList2.first()))
     }
 }

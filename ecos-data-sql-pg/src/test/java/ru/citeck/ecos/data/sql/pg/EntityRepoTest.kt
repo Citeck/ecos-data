@@ -56,7 +56,6 @@ class EntityRepoTest {
             .isAfterOrEqualTo(instantBeforeSave)
 
         assertThat(newEntity.deleted).isFalse()
-        assertThat(newEntity.docNum).isNull()
         assertThat(newEntity.status).isEmpty()
 
         findRes = context.service.findAll()

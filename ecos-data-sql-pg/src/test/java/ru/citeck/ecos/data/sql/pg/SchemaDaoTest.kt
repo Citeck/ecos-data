@@ -29,6 +29,7 @@ class SchemaDaoTest {
 
         val arrayColumns = DbColumnType.values()
             .filter { it != DbColumnType.BIGSERIAL }
+            .filter { it != DbColumnType.JSON }
             .mapIndexed { idx, value -> DbColumnDef("column_arr_$idx", value, true, emptyList()) }
 
         dbSchemaDao.addColumns(arrayColumns)
