@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.service
 
+import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
@@ -23,6 +24,7 @@ import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import java.time.Instant
 import java.util.*
 import kotlin.collections.ArrayList
@@ -42,6 +44,8 @@ class DbDataServiceImpl<T : Any>(
 
     companion object {
         private const val COLUMN_EXT_TXN_ID = "__ext_txn_id"
+
+        private val log = KotlinLogging.logger {}
     }
 
     private val typesConverter = DbTypesConverter()
@@ -289,7 +293,7 @@ class DbDataServiceImpl<T : Any>(
         val changedColumns = mutableListOf<DbColumnDef>()
         val migration = {
             dataSource.watchSchemaCommands {
-                changedColumns.addAll(ensureColumnsExistImpl(fullColumns, diff))
+                changedColumns.addAll(ensureColumnsExistImpl(fullColumns, mock, diff))
                 if (!onlyOwn) {
                     tableMetaService?.runMigrations(emptyList(), true, diff, true)
                     txnDataService?.runMigrations(getTxnColumns(expectedColumns), mock, diff, true)
@@ -358,7 +362,11 @@ class DbDataServiceImpl<T : Any>(
         return txnColumns
     }
 
-    private fun ensureColumnsExistImpl(expectedColumns: List<DbColumnDef>, diff: Boolean): List<DbColumnDef> {
+    private fun ensureColumnsExistImpl(
+        expectedColumns: List<DbColumnDef>,
+        mock: Boolean,
+        diff: Boolean
+    ): List<DbColumnDef> {
 
         val currentColumns = if (diff) {
             this.columns ?: error("Current columns is null")
@@ -379,8 +387,20 @@ class DbDataServiceImpl<T : Any>(
                 false
             }
         }
-        columnsWithChangedType.forEach {
-            schemaDao.setColumnType(it.name, it.multiple, it.type)
+        if (columnsWithChangedType.isNotEmpty()) {
+            if (!mock) {
+                val currentCount = entityRepo.getCount(VoidPredicate.INSTANCE)
+                if (currentCount > config.maxItemsToAllowSchemaMigration) {
+                    val baseMsg = "Schema migration can't be performed because table has too much items: $currentCount."
+                    val newColumnsMsg = columnsWithChangedType.joinToString { it.toString() }
+                    val oldColumnsMsg = columnsWithChangedType.joinToString { currentColumnsByName[it.name].toString() }
+                    log.error { "$baseMsg\n New columns: $newColumnsMsg\n Old columns: $oldColumnsMsg" }
+                    error(baseMsg)
+                }
+            }
+            columnsWithChangedType.forEach {
+                schemaDao.setColumnType(it.name, it.multiple, it.type)
+            }
         }
         val missingColumns = expectedColumns.filter { !currentColumnsByName.containsKey(it.name) }
         schemaDao.addColumns(missingColumns)

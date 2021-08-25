@@ -92,7 +92,7 @@ abstract class DbRecordsTestBase {
         dbDataSource = DbDataSourceImpl(dataSource)
 
         val pgDataServiceFactory = PgDataServiceFactory().create(DbEntity::class.java)
-            .withConfig(DbDataServiceConfig(true))
+            .withConfig(DbDataServiceConfig.create { withAuthEnabled(true) })
             .withDataSource(dbDataSource)
             .withDbContextManager(contextManager)
             .withTableRef(tableRef)
