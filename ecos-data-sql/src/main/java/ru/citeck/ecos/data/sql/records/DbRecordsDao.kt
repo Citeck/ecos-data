@@ -165,7 +165,7 @@ class DbRecordsDao(
         val findRes = dbDataService.find(
             predicate,
             recsQuery.sortBy.map {
-                DbFindSort(ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.isAscending)
+                DbFindSort(ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.ascending)
             },
             DbFindPage(
                 page.skipCount,

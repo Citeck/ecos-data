@@ -163,12 +163,12 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(Instant.parse(result.getAtt("dateTimeArrayAtt").asText())).isEqualTo((attsMap["dateTimeArrayAtt"] as List<*>)[0])
 
         val strList = arrayListOf("aaa", "bbb", "ccc")
-        records.mutate(newRecId, "textArrayAtt", strList)
+        records.mutateAtt(newRecId, "textArrayAtt", strList)
         val attRes = records.getAtt(newRecId, "textArrayAtt[]?str").asStrList()
         assertThat(attRes).containsExactlyElementsOf(strList)
 
         val simpleStr = "simple-str"
-        records.mutate(newRecId, "textArrayAtt", simpleStr)
+        records.mutateAtt(newRecId, "textArrayAtt", simpleStr)
         val attRes2 = records.getAtt(newRecId, "textArrayAtt[]?str").asStrList()
         assertThat(attRes2).containsExactlyElementsOf(listOf(simpleStr))
     }
