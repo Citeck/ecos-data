@@ -88,8 +88,8 @@ class DbEcosTypeService(
             log.debug { "Attribute id '${attribute.id}' is not a valid column name and will be skipped" }
             return null
         }
-        if (attribute.id.startsWith("__")) {
-            log.debug { "Attribute id '${attribute.id}' starts with '__', but it is reserved system prefix" }
+        if (attribute.id.startsWith("_")) {
+            log.debug { "Attribute id '${attribute.id}' starts with '_', but it is reserved system prefix" }
             return null
         }
 

@@ -40,9 +40,6 @@ import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import java.util.*
-import kotlin.collections.ArrayList
-import kotlin.collections.HashMap
-import kotlin.collections.LinkedHashMap
 import kotlin.math.min
 
 class DbRecordsDao(
@@ -54,13 +51,15 @@ class DbRecordsDao(
 
     companion object {
 
+        private const val ATT_STATE = "_state"
+
         private val ATTS_MAPPING = mapOf(
             "_created" to DbEntity.CREATED,
             "_modified" to DbEntity.MODIFIED,
             "_localId" to DbEntity.EXT_ID
         )
 
-        private val OPTIONAL_ATTS = listOf(
+        private val OPTIONAL_COLUMNS = listOf(
             DbColumnDef.create {
                 withName("_docNum")
                 withType(DbColumnType.INT)
@@ -69,8 +68,17 @@ class DbRecordsDao(
                 withName("_proc")
                 withMultiple(true)
                 withType(DbColumnType.JSON)
+            },
+            DbColumnDef.create {
+                withName("_cipher")
+                withType(DbColumnType.JSON)
             }
         )
+
+        private val COLUMN_IS_DRAFT = DbColumnDef.create {
+            withName("_isDraft")
+            withType(DbColumnType.BOOLEAN)
+        }
 
         private val log = KotlinLogging.logger {}
     }
@@ -277,11 +285,17 @@ class DbRecordsDao(
                 }
             }
 
-            val fullColumns = ArrayList<DbColumnDef>(typesColumns)
+            val fullColumns = ArrayList(typesColumns)
             setMutationAtts(recToMutate, record.attributes, typesColumns)
-            val optionalAtts = OPTIONAL_ATTS.filter { !typesColumnNames.contains(it.name) }
+            val optionalAtts = OPTIONAL_COLUMNS.filter { !typesColumnNames.contains(it.name) }
             if (optionalAtts.isNotEmpty()) {
                 fullColumns.addAll(setMutationAtts(recToMutate, record.attributes, optionalAtts))
+            }
+
+            if (record.attributes.has(ATT_STATE)) {
+                val state = record.attributes.get(ATT_STATE).asText()
+                recToMutate.attributes[COLUMN_IS_DRAFT.name] = state == "draft"
+                fullColumns.add(COLUMN_IS_DRAFT)
             }
 
             recToMutate.type = recordTypeId
@@ -393,14 +407,18 @@ class DbRecordsDao(
             owner.ecosTypeRepo.getTypeInfo(entity.type)?.attributes?.forEach {
                 attTypes[it.id] = it.type
             }
-            OPTIONAL_ATTS.forEach {
+            OPTIONAL_COLUMNS.forEach {
                 if (!attTypes.containsKey(it.name)) {
-                    if (it.type == DbColumnType.JSON) {
-                        attTypes[it.name] = AttributeType.JSON
-                    } else if (it.type == DbColumnType.TEXT) {
-                        attTypes[it.name] = AttributeType.TEXT
-                    } else if (it.type == DbColumnType.INT) {
-                        attTypes[it.name] = AttributeType.NUMBER
+                    when (it.type) {
+                        DbColumnType.JSON -> {
+                            attTypes[it.name] = AttributeType.JSON
+                        }
+                        DbColumnType.TEXT -> {
+                            attTypes[it.name] = AttributeType.TEXT
+                        }
+                        DbColumnType.INT -> {
+                            attTypes[it.name] = AttributeType.NUMBER
+                        }
                     }
                 }
             }
