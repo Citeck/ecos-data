@@ -264,7 +264,6 @@ class DbDataServiceImpl<T : Any>(
         tableMetaService?.resetColumnsCache()
     }
 
-    @Synchronized
     override fun runMigrations(
         expectedColumns: List<DbColumnDef>,
         mock: Boolean,
@@ -277,6 +276,7 @@ class DbDataServiceImpl<T : Any>(
         }
     }
 
+    @Synchronized
     private fun runMigrationsInTxn(
         expectedColumns: List<DbColumnDef>,
         mock: Boolean,
@@ -286,14 +286,14 @@ class DbDataServiceImpl<T : Any>(
 
         initColumns()
 
-        val fullColumns = ArrayList(entityMapper.getEntityColumns().map { it.columnDef })
-        fullColumns.addAll(expectedColumns)
+        val expectedWithEntityColumns = ArrayList(entityMapper.getEntityColumns().map { it.columnDef })
+        expectedWithEntityColumns.addAll(expectedColumns)
 
         val startTime = Instant.now()
         val changedColumns = mutableListOf<DbColumnDef>()
         val migration = {
             dataSource.watchSchemaCommands {
-                changedColumns.addAll(ensureColumnsExistImpl(fullColumns, mock, diff))
+                changedColumns.addAll(ensureColumnsExistImpl(expectedWithEntityColumns, mock, diff))
                 if (!onlyOwn) {
                     tableMetaService?.runMigrations(emptyList(), true, diff, true)
                     txnDataService?.runMigrations(getTxnColumns(expectedColumns), mock, diff, true)
@@ -308,8 +308,9 @@ class DbDataServiceImpl<T : Any>(
         val durationMs = System.currentTimeMillis() - startTime.toEpochMilli()
 
         if (!mock && commands.isNotEmpty()) {
-            this.columns = fullColumns
-            entityRepo.setColumns(fullColumns)
+            this.columns = null
+            val newColumns = initColumns()
+            entityRepo.setColumns(newColumns)
         }
 
         if (commands.isNotEmpty() && tableMetaService != null) {

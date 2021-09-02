@@ -49,5 +49,8 @@ class DbRecordsOptionalAttsTest : DbRecordsTestBase() {
 
         assertThat(records.getAtt(rec, "_proc[]?json")).isEqualTo(procData)
         assertThat(records.getAtt(rec, "_proc?json")).isEqualTo(procData.get(0))
+
+        updateRecord(rec, "_state" to "draft")
+        updateRecord(rec, "_proc" to procData)
     }
 }
