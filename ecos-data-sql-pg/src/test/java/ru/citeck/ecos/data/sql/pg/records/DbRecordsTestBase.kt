@@ -14,7 +14,6 @@ import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.pg.PgUtils
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
-import ru.citeck.ecos.data.sql.repo.DbContextManager
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
@@ -58,13 +57,14 @@ abstract class DbRecordsTestBase {
     }
 
     private val typesDef = mutableMapOf<String, DbEcosTypeInfo>()
-    private var currentUser = "user0"
 
     lateinit var recordsDao: DbRecordsDao
     lateinit var records: RecordsService
+    lateinit var recordsServiceFactory: RecordsServiceFactory
     lateinit var dbDataSource: DbDataSource
     lateinit var tableRef: DbTableRef
     lateinit var dbSchemaDao: DbSchemaDao
+    lateinit var ecosTypeRepo: DbEcosTypeRepo
 
     @BeforeEach
     fun beforeEach() {
@@ -79,14 +79,10 @@ abstract class DbRecordsTestBase {
 
         this.tableRef = tableRef
 
-        val ecosTypeRepo = object : DbEcosTypeRepo {
+        ecosTypeRepo = object : DbEcosTypeRepo {
             override fun getTypeInfo(typeId: String): DbEcosTypeInfo? {
                 return typesDef[typeId]
             }
-        }
-        val contextManager = object : DbContextManager {
-            override fun getCurrentUser() = currentUser
-            override fun getCurrentUserAuthorities(): List<String> = listOf(getCurrentUser())
         }
 
         dbDataSource = DbDataSourceImpl(dataSource)
@@ -94,7 +90,6 @@ abstract class DbRecordsTestBase {
         val pgDataServiceFactory = PgDataServiceFactory().create(DbEntity::class.java)
             .withConfig(DbDataServiceConfig.create { withAuthEnabled(true) })
             .withDataSource(dbDataSource)
-            .withDbContextManager(contextManager)
             .withTableRef(tableRef)
 
         recordsDao = DbRecordsDao(
@@ -110,10 +105,10 @@ abstract class DbRecordsTestBase {
         )
         dbSchemaDao = pgDataServiceFactory.schemaDao
 
-        val services = RecordsServiceFactory()
-        records = services.recordsServiceV1
+        recordsServiceFactory = RecordsServiceFactory()
+        records = recordsServiceFactory.recordsServiceV1
         records.register(recordsDao)
-        RequestContext.setDefaultServices(services)
+        RequestContext.setDefaultServices(recordsServiceFactory)
     }
 
     fun updateRecord(rec: RecordRef, vararg atts: Pair<String, Any>): RecordRef {
@@ -213,13 +208,5 @@ abstract class DbRecordsTestBase {
 
     fun registerType(id: String, atts: List<AttributeDef>) {
         this.typesDef[id] = DbEcosTypeInfo(id, MLText(), MLText(), RecordRef.EMPTY, atts, emptyList())
-    }
-
-    fun setCurrentUser(user: String) {
-        this.currentUser = user
-    }
-
-    fun getCurrentUser(): String {
-        return this.currentUser
     }
 }

@@ -6,7 +6,6 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.meta.DbTableMetaEntity
-import ru.citeck.ecos.data.sql.repo.DbContextManager
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapperImpl
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
@@ -29,7 +28,6 @@ class PgDataServiceFactory {
         private lateinit var config: DbDataServiceConfig
         private lateinit var tableRef: DbTableRef
         private lateinit var dataSource: DbDataSource
-        private lateinit var dbContextManager: DbContextManager
         private var storeTableMeta: Boolean = true
         private var transactional: Boolean = true
 
@@ -55,11 +53,6 @@ class PgDataServiceFactory {
             return this
         }
 
-        fun withDbContextManager(dbContextManager: DbContextManager): Builder<T> {
-            this.dbContextManager = dbContextManager
-            return this
-        }
-
         fun withStoreTableMeta(storeTableMeta: Boolean): Builder<T> {
             this.storeTableMeta = storeTableMeta
             return this
@@ -77,7 +70,6 @@ class PgDataServiceFactory {
                     .withTableRef(DbTableRef(tableRef.schema, META_TABLE_NAME))
                     .withDataSource(dataSource)
                     .withConfig(DbDataServiceConfig.create { withAuthEnabled(false) })
-                    .withDbContextManager(dbContextManager)
                     .withStoreTableMeta(false)
                     .withTransactional(false)
                     .build()
@@ -90,7 +82,6 @@ class PgDataServiceFactory {
                     .withTableRef(DbTableRef(tableRef.schema, tableRef.table + "__ext_txn"))
                     .withDataSource(dataSource)
                     .withConfig(DbDataServiceConfig.create { withAuthEnabled(false) })
-                    .withDbContextManager(dbContextManager)
                     .withStoreTableMeta(false)
                     .withTransactional(false)
                     .build()
@@ -104,7 +95,7 @@ class PgDataServiceFactory {
 
             val entityMapper = DbEntityMapperImpl(entityType.kotlin, typesConverter)
             schemaDao = DbSchemaDaoPg(dataSource, tableRef)
-            val entityRepo = DbEntityRepoPg(entityMapper, dbContextManager, dataSource, tableRef, typesConverter)
+            val entityRepo = DbEntityRepoPg(entityMapper, dataSource, tableRef, typesConverter)
 
             return DbDataServiceImpl(
                 config,

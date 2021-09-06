@@ -29,8 +29,9 @@
         <kotlin.logging.version>1.12.5</kotlin.logging.version>
 
         <ecos.commons.version>2.5.0</ecos.commons.version>
-        <ecos.records.version>3.34.1</ecos.records.version>
-        <ecos.model-lib.version>2.5.0</ecos.model-lib.version>
+        <ecos.records.version>3.34.2</ecos.records.version>
+        <ecos.model-lib.version>2.6.0</ecos.model-lib.version>
+        <ecos.context-lib.version>1.0.4</ecos.context-lib.version>
 
     </properties>
 
@@ -40,6 +41,13 @@
             <groupId>ru.citeck.ecos</groupId>
             <artifactId>ecos-jackson</artifactId>
             <version>${ecos.jackson.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>ru.citeck.ecos.context</groupId>
+            <artifactId>ecos-context-lib</artifactId>
+            <version>${ecos.context-lib.version}</version>
             <scope>provided</scope>
         </dependency>
 

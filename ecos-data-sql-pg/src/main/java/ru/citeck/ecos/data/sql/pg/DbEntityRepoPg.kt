@@ -1,11 +1,11 @@
 package ru.citeck.ecos.data.sql.pg
 
 import mu.KotlinLogging
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbTableRef
-import ru.citeck.ecos.data.sql.repo.DbContextManager
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
@@ -24,7 +24,6 @@ import kotlin.reflect.KClass
 
 class DbEntityRepoPg<T : Any>(
     private val mapper: DbEntityMapper<T>,
-    private val ctxManager: DbContextManager,
     private val dataSource: DbDataSource,
     private val tableRef: DbTableRef,
     private val typesConverter: DbTypesConverter
@@ -175,7 +174,7 @@ class DbEntityRepoPg<T : Any>(
         val attsToSave = LinkedHashMap(entityMap)
         attsToSave.remove(DbEntity.ID)
         attsToSave[DbEntity.MODIFIED] = nowInstant
-        attsToSave[DbEntity.MODIFIER] = ctxManager.getCurrentUser()
+        attsToSave[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
 
         if (id == DbEntity.NEW_REC_ID) {
             insertImpl(attsToSave, nowInstant)
@@ -194,7 +193,7 @@ class DbEntityRepoPg<T : Any>(
         }
         attsToInsert[DbEntity.UPD_VERSION] = 0L
         attsToInsert[DbEntity.CREATED] = nowInstant
-        attsToInsert[DbEntity.CREATOR] = ctxManager.getCurrentUser()
+        attsToInsert[DbEntity.CREATOR] = AuthContext.getCurrentUser()
 
         val valuesForDb = prepareValuesForDb(attsToInsert)
         val columnNames = valuesForDb.joinToString(",") { "\"${it.name}\"" }

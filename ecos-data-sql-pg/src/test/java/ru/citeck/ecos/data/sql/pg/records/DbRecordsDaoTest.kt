@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
@@ -210,7 +211,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             "_type" to "emodel/type@$testTypeId"
         )
         val newRecId = records.create("test", attsMap)
-        val creator = getCurrentUser()
+        val creator = AuthContext.getCurrentUser()
 
         val attsToCheck = listOf(
             "textAtt",
@@ -232,23 +233,25 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(attsFromDao.getAtt("unknown").isNull()).isTrue()
         assertThat(attsFromDao.getAtt("_modified").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
         assertThat(attsFromDao.getAtt("_created").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
-        assertThat(attsFromDao.getAtt("_modifier?localId").asText()).isEqualTo(getCurrentUser())
+        assertThat(attsFromDao.getAtt("_modifier?localId").asText()).isEqualTo(AuthContext.getCurrentUser())
         assertThat(attsFromDao.getAtt("_creator?localId").asText()).isEqualTo(creator)
         assertThat(attsFromDao.getAtt("dateTimeAtt?str").asText()).isEqualTo(dateTimeAttValue.toString())
 
-        setCurrentUser("new-user")
         val newTextValue = attsMap["textAtt"].toString() + "-postfix"
-        records.mutate(newRecId, mapOf("textAtt" to newTextValue))
 
-        val attsFromDao2 = records.getAtts(newRecId, attsToCheck)
+        AuthContext.runAs("new-user") {
+            records.mutate(newRecId, mapOf("textAtt" to newTextValue))
 
-        assertThat(attsFromDao2.getAtt("textAtt").asText()).isEqualTo(newTextValue)
-        assertThat(attsFromDao2.getAtt("numAtt?num").asInt()).isEqualTo(attsMap["numAtt"])
-        assertThat(attsFromDao2.getAtt("unknown").isNull()).isTrue()
-        assertThat(attsFromDao2.getAtt("_modified").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
-        assertThat(attsFromDao2.getAtt("_created").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
-        assertThat(attsFromDao2.getAtt("_modifier?localId").asText()).isEqualTo(getCurrentUser())
-        assertThat(attsFromDao2.getAtt("_creator?localId").asText()).isEqualTo(creator)
+            val attsFromDao2 = records.getAtts(newRecId, attsToCheck)
+
+            assertThat(attsFromDao2.getAtt("textAtt").asText()).isEqualTo(newTextValue)
+            assertThat(attsFromDao2.getAtt("numAtt?num").asInt()).isEqualTo(attsMap["numAtt"])
+            assertThat(attsFromDao2.getAtt("unknown").isNull()).isTrue
+            assertThat(attsFromDao2.getAtt("_modified").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
+            assertThat(attsFromDao2.getAtt("_created").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
+            assertThat(attsFromDao2.getAtt("_modifier?localId").asText()).isEqualTo(AuthContext.getCurrentUser())
+            assertThat(attsFromDao2.getAtt("_creator?localId").asText()).isEqualTo(creator)
+        }
 
         val res = records.query(
             RecordsQuery.create {
