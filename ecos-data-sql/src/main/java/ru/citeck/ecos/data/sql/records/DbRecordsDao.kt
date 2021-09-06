@@ -47,7 +47,12 @@ class DbRecordsDao(
     private val config: DbRecordsDaoConfig,
     private val ecosTypeRepo: DbEcosTypeRepo,
     private val dbDataService: DbDataService<DbEntity>
-) : AbstractRecordsDao(), RecordsAttsDao, RecordsQueryDao, RecordsMutateDao, RecordsDeleteDao, TxnRecordsDao {
+) : AbstractRecordsDao(),
+    RecordsAttsDao,
+    RecordsQueryDao,
+    RecordsMutateDao,
+    RecordsDeleteDao,
+    TxnRecordsDao {
 
     companion object {
 
@@ -143,7 +148,7 @@ class DbRecordsDao(
     private fun getRecordsAttsInTxn(recordsId: List<String>): List<*> {
         return recordsId.map { id ->
             dbDataService.findById(id)?.let {
-                Record(this, it)
+                Record(it)
             } ?: EmptyAttValue.INSTANCE
         }
     }
@@ -187,7 +192,7 @@ class DbRecordsDao(
 
         val queryRes = RecsQueryRes<Any>()
         queryRes.setTotalCount(findRes.totalCount)
-        queryRes.setRecords(findRes.entities.map { Record(this, it) })
+        queryRes.setRecords(findRes.entities.map { Record(it) })
 
         return queryRes
     }
@@ -393,8 +398,7 @@ class DbRecordsDao(
 
     override fun getId() = id
 
-    class Record(
-        private val owner: DbRecordsDao,
+    inner class Record(
         val entity: DbEntity
     ) : AttValue {
 
@@ -404,7 +408,7 @@ class DbRecordsDao(
             val recData = LinkedHashMap(entity.attributes)
 
             val attTypes = HashMap<String, AttributeType>()
-            owner.ecosTypeRepo.getTypeInfo(entity.type)?.attributes?.forEach {
+            ecosTypeRepo.getTypeInfo(entity.type)?.attributes?.forEach {
                 attTypes[it.id] = it.type
             }
             OPTIONAL_COLUMNS.forEach {
@@ -450,7 +454,7 @@ class DbRecordsDao(
         }
 
         override fun getId(): Any {
-            return RecordRef.create(owner.id, entity.extId)
+            return RecordRef.create(this@DbRecordsDao.id, entity.extId)
         }
 
         override fun asText(): String {
