@@ -23,6 +23,7 @@ import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.PredicateUtils
+import ru.citeck.ecos.records2.predicate.model.EmptyPredicate
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records3.RecordsServiceFactory
@@ -60,8 +61,11 @@ class DbRecordsDao(
 
         private val ATTS_MAPPING = mapOf(
             "_created" to DbEntity.CREATED,
+            "_creator" to DbEntity.CREATOR,
             "_modified" to DbEntity.MODIFIED,
-            "_localId" to DbEntity.EXT_ID
+            "_modifier" to DbEntity.MODIFIER,
+            "_localId" to DbEntity.EXT_ID,
+            "_status" to DbEntity.STATUS
         )
 
         private val OPTIONAL_COLUMNS = listOf(
@@ -159,18 +163,30 @@ class DbRecordsDao(
             return null
         }
 
-        val predicate = PredicateUtils.mapValuePredicates(recsQuery.getQuery(Predicate::class.java)) {
-            when (it.getAttribute()) {
-                "_type" -> {
-                    val typeLocalId = RecordRef.valueOf(it.getValue().asText()).id
-                    ValuePredicate(DbEntity.TYPE, it.getType(), typeLocalId)
-                }
-                else ->
-                    if (ATTS_MAPPING.containsKey(it.getAttribute())) {
-                        ValuePredicate(ATTS_MAPPING[it.getAttribute()], it.getType(), it.getValue())
-                    } else {
-                        it
+        val predicate = PredicateUtils.mapAttributePredicates(recsQuery.getQuery(Predicate::class.java)) {
+            val attribute = it.getAttribute()
+            if (it is ValuePredicate) {
+                when (attribute) {
+                    "_type" -> {
+                        val typeLocalId = RecordRef.valueOf(it.getValue().asText()).id
+                        ValuePredicate(DbEntity.TYPE, it.getType(), typeLocalId)
                     }
+                    else ->
+                        if (ATTS_MAPPING.containsKey(attribute)) {
+                            ValuePredicate(ATTS_MAPPING[attribute], it.getType(), it.getValue())
+                        } else {
+                            it
+                        }
+                }
+            } else if (it is EmptyPredicate) {
+                if (ATTS_MAPPING.containsKey(attribute)) {
+                    EmptyPredicate(ATTS_MAPPING[attribute])
+                } else {
+                    it
+                }
+            } else {
+                log.error { "Unknown predicate type: ${it::class}" }
+                null
             }
         }
 
