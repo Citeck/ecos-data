@@ -77,9 +77,11 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
         val result5 = records.query(queryWithEmptyStatus)
         assertThat(result5.getRecords()).containsExactly(rec0)
 
-        val result6 = records.query(baseQuery.copy {
-            withQuery(Predicates.eq("unknown", "value"))
-        })
+        val result6 = records.query(
+            baseQuery.copy {
+                withQuery(Predicates.eq("unknown", "value"))
+            }
+        )
         assertThat(result6.getRecords()).isEmpty()
     }
 }
