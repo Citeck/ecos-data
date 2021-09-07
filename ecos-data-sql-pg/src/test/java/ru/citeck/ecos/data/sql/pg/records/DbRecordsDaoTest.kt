@@ -270,8 +270,8 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
                 withQuery(Predicates.eq("textAtt123", newTextValue))
             }
         )
-        assertThat(fullResWithUnknownFieldPred.getTotalCount()).isEqualTo(1)
-        assertThat(fullResWithUnknownFieldPred.getRecords()).hasSize(1)
+        assertThat(fullResWithUnknownFieldPred.getTotalCount()).isEqualTo(0)
+        assertThat(fullResWithUnknownFieldPred.getRecords()).hasSize(0)
 
         val emptyRes = records.query(
             RecordsQuery.create {
