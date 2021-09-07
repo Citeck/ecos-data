@@ -31,6 +31,8 @@ class DbEntityRepoPg<T : Any>(
 
     companion object {
         private val log = KotlinLogging.logger {}
+
+        private const val ALWAYS_FALSE_CONDITION = "0=1"
     }
 
     private var columns: List<DbColumnDef> = ArrayList()
@@ -512,6 +514,11 @@ class DbEntityRepoPg<T : Any>(
                 return true
             }
             is NotPredicate -> {
+                val innerPredicate = predicate.getPredicate()
+                if (innerPredicate is EmptyPredicate && !columnsByName.containsKey(innerPredicate.getAttribute())) {
+                    query.append(ALWAYS_FALSE_CONDITION)
+                    return true
+                }
                 query.append("NOT ")
                 return if (toSqlPredicate(predicate.getPredicate(), query, queryParams, columnsByName)) {
                     true
@@ -519,6 +526,28 @@ class DbEntityRepoPg<T : Any>(
                     query.setLength(query.length - 4)
                     false
                 }
+            }
+            is EmptyPredicate -> {
+
+                val columnDef = columnsByName[predicate.getAttribute()]
+                if (columnDef == null || columnDef.multiple) {
+                    return false
+                }
+                val attribute: String = predicate.getAttribute()
+                if (columnDef.type == DbColumnType.TEXT) {
+                    query.append("(\"")
+                        .append(attribute)
+                        .append('"')
+                        .append(" IS NULL OR \"")
+                        .append(attribute)
+                        .append("\"='')")
+                } else {
+                    query.append('"')
+                        .append(attribute)
+                        .append('"')
+                        .append(" IS NULL")
+                }
+                return true
             }
             is VoidPredicate -> {
                 return false
