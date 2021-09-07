@@ -443,9 +443,12 @@ class DbEntityRepoPg<T : Any>(
             is ValuePredicate -> {
 
                 val columnDef = columnsByName[predicate.getAttribute()]
-
+                if (columnDef == null) {
+                    query.append(ALWAYS_FALSE_CONDITION)
+                    return true
+                }
                 // todo: add ability to search for multiple values fields
-                if (columnDef == null || columnDef.multiple) {
+                if (columnDef.multiple) {
                     return false
                 }
 
