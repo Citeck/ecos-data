@@ -26,9 +26,13 @@ interface DbEntityRepo<T : Any> {
 
     fun save(entity: T): T
 
-    fun delete(extId: String)
+    fun setReadPerms(permissions: Map<String, Set<Long>>)
+
+    fun delete(id: String)
 
     fun forceDelete(entity: T)
+
+    fun forceDelete(entities: List<T>)
 
     fun setColumns(columns: List<DbColumnDef>)
 }

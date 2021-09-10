@@ -61,9 +61,8 @@ class RolesMixinTest : DbRecordsTestBase() {
         val mixin = RolesMixin(modelServiceFactory.roleService)
         recordsDao.addAttributesMixin(mixin)
 
-        val rec = createRecord("textAtt" to "value")
-
         AuthContext.runAs("user0") {
+            val rec = createRecord("textAtt" to "value")
             assertThat(records.getAtt(rec, "_roles.isCurrentUserMemberOf.testRoleId?bool").asBoolean()).isTrue
         }
     }

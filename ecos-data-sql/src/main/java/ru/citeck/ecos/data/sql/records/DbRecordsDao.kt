@@ -5,12 +5,14 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
+import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
@@ -28,6 +30,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
+import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.records3.record.dao.AbstractRecordsDao
@@ -47,7 +50,8 @@ class DbRecordsDao(
     private val id: String,
     private val config: DbRecordsDaoConfig,
     private val ecosTypeRepo: DbEcosTypeRepo,
-    private val dbDataService: DbDataService<DbEntity>
+    private val dbDataService: DbDataService<DbEntity>,
+    private val permsComponent: DbPermsComponent?
 ) : AbstractRecordsDao(),
     RecordsAttsDao,
     RecordsQueryDao,
@@ -101,6 +105,12 @@ class DbRecordsDao(
         return dbDataService.runMigrations(columns, mock, diff, false)
     }
 
+    fun updatePermissions(records: List<String>) {
+        AuthContext.runAsSystem {
+            dbDataService.commit(records.associateWith { getAuthoritiesWithReadPerms(it) })
+        }
+    }
+
     fun getTableMeta(): DbTableMetaDto {
         return dbDataService.getTableMeta()
     }
@@ -125,7 +135,7 @@ class DbRecordsDao(
     override fun commit(txnId: UUID, recordsId: List<String>) {
         log.debug { "${this.hashCode()} commit " + txnId + " records: " + recordsId }
         ExtTxnContext.withExtTxn(txnId, false) {
-            dbDataService.commit(recordsId)
+            dbDataService.commit(recordsId.associateWith { getAuthoritiesWithReadPerms(it) })
         }
     }
 
@@ -209,6 +219,7 @@ class DbRecordsDao(
         val queryRes = RecsQueryRes<Any>()
         queryRes.setTotalCount(findRes.totalCount)
         queryRes.setRecords(findRes.entities.map { Record(it) })
+        queryRes.setHasMore(findRes.totalCount > findRes.entities.size + page.skipCount)
 
         return queryRes
     }
@@ -263,14 +274,14 @@ class DbRecordsDao(
         val txnId = RequestContext.getCurrentNotNull().ctxData.txnId
         return if (txnId != null) {
             ExtTxnContext.withExtTxn(txnId, false) {
-                mutateInTxn(records)
+                mutateInTxn(records, true)
             }
         } else {
-            mutateInTxn(records)
+            mutateInTxn(records, false)
         }
     }
 
-    private fun mutateInTxn(records: List<LocalRecordAtts>): List<String> {
+    private fun mutateInTxn(records: List<LocalRecordAtts>, txnExists: Boolean): List<String> {
 
         val typesId = records.map { getTypeIdForRecord(it) }
         val typesInfo = typesId.mapIndexed { idx, typeId ->
@@ -296,6 +307,19 @@ class DbRecordsDao(
                     newEntity
                 }
             }
+            val localId = record.attributes.get(ScalarType.LOCAL_ID.mirrorAtt).asText()
+            if (localId.isNotBlank()) {
+                if (recToMutate.extId != localId) {
+                    recToMutate.extId = localId
+                    if (dbDataService.findById(localId) != null) {
+                        error("Record with ID $localId already exists. You should mutate it directly")
+                    } else {
+                        // copy of existing record
+                        recToMutate.id = DbEntity.NEW_REC_ID
+                    }
+                }
+            }
+
             if (recToMutate.id == DbEntity.NEW_REC_ID) {
                 if (!config.insertable) {
                     error("Records DAO doesn't support new records creation. Record ID: '${record.id}'")
@@ -338,12 +362,32 @@ class DbRecordsDao(
 
             val recAfterSave = dbDataService.save(recToMutate, fullColumns)
 
-            if (ecosTypeService.fillComputedAtts(getId(), recAfterSave)) {
-                dbDataService.save(recAfterSave, fullColumns)
-            } else {
-                recAfterSave
-            }.extId
+            AuthContext.runAsSystem {
+                val resId = if (ecosTypeService.fillComputedAtts(getId(), recAfterSave)) {
+                    dbDataService.save(recAfterSave, fullColumns)
+                } else {
+                    recAfterSave
+                }.extId
+
+                if (!txnExists) {
+                    dbDataService.commit(mapOf(resId to getAuthoritiesWithReadPerms(resId)))
+                }
+
+                resId
+            }
         }
+    }
+
+    private fun getAuthoritiesWithReadPerms(recordId: String): Set<String> {
+        if (permsComponent == null) {
+            val user = AuthContext.getCurrentUser()
+            if (user.isNotBlank()) {
+                return setOf(user)
+            }
+        } else {
+            return permsComponent.getAuthoritiesWithReadPermission(RecordRef.create(getId(), recordId))
+        }
+        return emptySet()
     }
 
     private fun setMutationAtts(recToMutate: DbEntity, atts: ObjectData, types: List<DbColumnDef>): List<DbColumnDef> {

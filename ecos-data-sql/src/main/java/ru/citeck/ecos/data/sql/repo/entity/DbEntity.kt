@@ -2,8 +2,19 @@ package ru.citeck.ecos.data.sql.repo.entity
 
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.data.sql.dto.DbColumnConstraint.*
+import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
+import ru.citeck.ecos.data.sql.repo.entity.annotation.FieldsColumnName
+import ru.citeck.ecos.data.sql.repo.entity.annotation.Index
+import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 import java.time.Instant
 
+@Indexes(
+    Index(columns = [DbEntity.EXT_ID], unique = true),
+    Index(columns = [DbEntity.DELETED]),
+    Index(columns = [DbEntity.MODIFIED]),
+    Index(columns = [DbEntity.CREATED])
+)
+@FieldsColumnName(prefix = "__")
 class DbEntity {
 
     companion object {

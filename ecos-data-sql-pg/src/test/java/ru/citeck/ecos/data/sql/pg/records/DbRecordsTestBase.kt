@@ -14,15 +14,21 @@ import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.pg.PgUtils
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
+import ru.citeck.ecos.data.sql.records.perms.CreatorPermsComponent
+import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
+import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.utils.use
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.records2.predicate.PredicateService
+import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
+import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.request.RequestContext
 import javax.sql.DataSource
 
@@ -57,6 +63,7 @@ abstract class DbRecordsTestBase {
     }
 
     private val typesDef = mutableMapOf<String, DbEcosTypeInfo>()
+    private val recPerms = mutableMapOf<RecordRef, Set<String>>()
 
     lateinit var recordsDao: DbRecordsDao
     lateinit var records: RecordsService
@@ -67,15 +74,25 @@ abstract class DbRecordsTestBase {
     lateinit var ecosTypeRepo: DbEcosTypeRepo
 
     @BeforeEach
-    fun beforeEach() {
+    fun beforeEachBase() {
 
         cleanData()
         typesDef.clear()
+        recPerms.clear()
 
-        initWithTable(DbTableRef("records-test-schema", "test-records-table"))
+        initWithTable(DbTableRef("records-test-schema", "test-records-table"), false)
     }
 
-    fun initWithTable(tableRef: DbTableRef) {
+    fun setPerms(rec: RecordRef, perms: Collection<String>) {
+        recPerms[rec] = perms.toSet()
+        recordsDao.updatePermissions(listOf(rec.id))
+    }
+
+    fun setPerms(rec: RecordRef, vararg perms: String) {
+        setPerms(rec, perms.toSet())
+    }
+
+    fun initWithTable(tableRef: DbTableRef, authEnabled: Boolean = false) {
 
         this.tableRef = tableRef
 
@@ -87,10 +104,33 @@ abstract class DbRecordsTestBase {
 
         dbDataSource = DbDataSourceImpl(dataSource)
 
-        val pgDataServiceFactory = PgDataServiceFactory().create(DbEntity::class.java)
-            .withConfig(DbDataServiceConfig.create { withAuthEnabled(true) })
-            .withDataSource(dbDataSource)
-            .withTableRef(tableRef)
+        val pgDataServiceFactory = PgDataServiceFactory()
+
+        val dataServiceConfig = DbDataServiceConfig.create {
+            withAuthEnabled(authEnabled)
+            withTransactional(true)
+            withTableRef(tableRef)
+        }
+        val dataService = DbDataServiceImpl(
+            DbEntity::class.java,
+            dataServiceConfig,
+            dbDataSource,
+            pgDataServiceFactory
+        )
+
+        recordsServiceFactory = RecordsServiceFactory()
+        records = recordsServiceFactory.recordsServiceV1
+        RequestContext.setDefaultServices(recordsServiceFactory)
+
+        val defaultPermsComponent = CreatorPermsComponent(records)
+        val permsComponent = object : DbPermsComponent {
+            override fun getAuthoritiesWithReadPermission(recordRef: RecordRef): Set<String> {
+                if (recPerms.containsKey(recordRef)) {
+                    return recPerms[recordRef]!!
+                }
+                return defaultPermsComponent.getAuthoritiesWithReadPermission(recordRef)
+            }
+        }
 
         recordsDao = DbRecordsDao(
             RECS_DAO_ID,
@@ -101,14 +141,23 @@ abstract class DbRecordsTestBase {
                 typeRef = RecordRef.EMPTY
             ),
             ecosTypeRepo,
-            pgDataServiceFactory.build()
+            dataService,
+            permsComponent
         )
-        dbSchemaDao = pgDataServiceFactory.schemaDao
-
-        recordsServiceFactory = RecordsServiceFactory()
-        records = recordsServiceFactory.recordsServiceV1
+        dbSchemaDao = pgDataServiceFactory.createSchemaDao(tableRef, dbDataSource)
         records.register(recordsDao)
-        RequestContext.setDefaultServices(recordsServiceFactory)
+    }
+
+    fun createQuery(): RecordsQuery {
+        return RecordsQuery.create()
+            .withQuery(VoidPredicate.INSTANCE)
+            .withSourceId(recordsDao.getId())
+            .withLanguage(PredicateService.LANGUAGE_PREDICATE)
+            .build()
+    }
+
+    fun createRef(id: String): RecordRef {
+        return RecordRef.create(recordsDao.getId(), id)
     }
 
     fun updateRecord(rec: RecordRef, vararg atts: Pair<String, Any>): RecordRef {

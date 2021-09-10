@@ -210,8 +210,10 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             "unknown" to "value",
             "_type" to "emodel/type@$testTypeId"
         )
-        val newRecId = records.create("test", attsMap)
-        val creator = AuthContext.getCurrentUser()
+        val creatorUser = "user0"
+        val newRecId = AuthContext.runAs(creatorUser) {
+            records.create("test", attsMap)
+        }
 
         val attsToCheck = listOf(
             "textAtt",
@@ -233,8 +235,8 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(attsFromDao.getAtt("unknown").isNull()).isTrue()
         assertThat(attsFromDao.getAtt("_modified").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
         assertThat(attsFromDao.getAtt("_created").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
-        assertThat(attsFromDao.getAtt("_modifier?localId").asText()).isEqualTo(AuthContext.getCurrentUser())
-        assertThat(attsFromDao.getAtt("_creator?localId").asText()).isEqualTo(creator)
+        assertThat(attsFromDao.getAtt("_modifier?localId").asText()).isEqualTo(creatorUser)
+        assertThat(attsFromDao.getAtt("_creator?localId").asText()).isEqualTo(creatorUser)
         assertThat(attsFromDao.getAtt("dateTimeAtt?str").asText()).isEqualTo(dateTimeAttValue.toString())
 
         val newTextValue = attsMap["textAtt"].toString() + "-postfix"
@@ -250,7 +252,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             assertThat(attsFromDao2.getAtt("_modified").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
             assertThat(attsFromDao2.getAtt("_created").getAs(Instant::class.java)!!.isAfter(timeBeforeCreated))
             assertThat(attsFromDao2.getAtt("_modifier?localId").asText()).isEqualTo(AuthContext.getCurrentUser())
-            assertThat(attsFromDao2.getAtt("_creator?localId").asText()).isEqualTo(creator)
+            assertThat(attsFromDao2.getAtt("_creator?localId").asText()).isEqualTo(creatorUser)
         }
 
         val res = records.query(

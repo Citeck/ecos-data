@@ -5,9 +5,15 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
+import ru.citeck.ecos.data.sql.dto.DbIndexDef
+import ru.citeck.ecos.data.sql.repo.entity.annotation.ColumnType
+import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
+import ru.citeck.ecos.data.sql.repo.entity.annotation.FieldsColumnName
+import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import java.lang.reflect.Array
 import java.time.Instant
+import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.LinkedHashMap
 import kotlin.reflect.KClass
@@ -24,7 +30,13 @@ class DbEntityMapperImpl<T : Any>(
     }
 
     private val columns: List<DbEntityColumn> = getColumnsImpl(entityType)
+    private val indexes: List<DbIndexDef> = getIndexesImpl(entityType)
+
     private val hasAttributesField = hasField(entityType, ATTRIBUTES_FIELD)
+
+    override fun getEntityIndexes(): List<DbIndexDef> {
+        return indexes
+    }
 
     override fun getEntityColumns(): List<DbEntityColumn> {
         return columns
@@ -89,6 +101,9 @@ class DbEntityMapperImpl<T : Any>(
         val descriptors = PropertyUtils.getPropertyDescriptors(type.java)
         val defaultValue = type.java.getDeclaredConstructor().newInstance()
 
+        val fieldsColumnName = type.java.getAnnotation(FieldsColumnName::class.java)
+        val fieldsColumnNamePrefix = fieldsColumnName?.prefix ?: ""
+
         return descriptors.mapNotNull { prop ->
 
             if (prop.writeMethod == null || prop.readMethod == null || prop.name == ATTRIBUTES_FIELD) {
@@ -114,9 +129,11 @@ class DbEntityMapperImpl<T : Any>(
 
                 val columnName = if (prop.name == "id") {
                     prop.name
+                } else if (prop.name == "extId") {
+                    "__ext_id"
                 } else {
-                    val snakeName = CAMEL_REGEX.replace(prop.name) { "_${it.value}" }.toLowerCase()
-                    "__$snakeName"
+                    val snakeName = CAMEL_REGEX.replace(prop.name) { "_${it.value}" }.lowercase()
+                    "$fieldsColumnNamePrefix$snakeName"
                 }
 
                 DbEntityColumn(
@@ -126,6 +143,20 @@ class DbEntityMapperImpl<T : Any>(
                     DbColumnDef(columnName, fieldType, false, constraints)
                 ) { obj -> prop.readMethod.invoke(obj) }
             }
+        }
+    }
+
+    private fun getIndexesImpl(type: KClass<*>): List<DbIndexDef> {
+
+        val indexes = type.java.getAnnotation(Indexes::class.java)
+        if (indexes == null || indexes.value.isEmpty()) {
+            return emptyList()
+        }
+        return indexes.value.map {
+            DbIndexDef.create()
+                .withColumns(it.columns.toList())
+                .withUnique(it.unique)
+                .build()
         }
     }
 }

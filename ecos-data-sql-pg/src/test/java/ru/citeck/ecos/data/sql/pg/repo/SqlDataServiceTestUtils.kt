@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.pg.DbSchemaDaoPg
 import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
+import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 
 object SqlDataServiceTestUtils {
 
@@ -15,12 +16,20 @@ object SqlDataServiceTestUtils {
         val dbSchemaDao = DbSchemaDaoPg(dbDataSource, DbTableRef("", tableName))
         Assertions.assertThat(dbSchemaDao.getColumns()).isEmpty()
 
-        val sqlDataService = PgDataServiceFactory().create(DbEntity::class.java)
-            .withTableRef(DbTableRef("sql-data-service-test-utils-schema", tableName))
-            .withConfig(DbDataServiceConfig.create { withAuthEnabled(false) })
-            .withDataSource(dbDataSource)
-            .build()
+        val dataServiceConfig = DbDataServiceConfig.create {
+            withAuthEnabled(false)
+            withTableRef(DbTableRef("sql-data-service-test-utils-schema", tableName))
+        }
 
-        return SqlDataServiceTestCtx(sqlDataService)
+        val pgDataServiceFactory = PgDataServiceFactory()
+
+        val dataService = DbDataServiceImpl(
+            DbEntity::class.java,
+            dataServiceConfig,
+            dbDataSource,
+            pgDataServiceFactory
+        )
+
+        return SqlDataServiceTestCtx(dataService)
     }
 }

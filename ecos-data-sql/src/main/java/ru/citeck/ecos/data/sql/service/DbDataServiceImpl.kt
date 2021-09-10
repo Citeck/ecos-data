@@ -4,18 +4,22 @@ import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
-import ru.citeck.ecos.data.sql.dto.DbColumnDef
-import ru.citeck.ecos.data.sql.dto.DbColumnType
-import ru.citeck.ecos.data.sql.dto.DbTableRef
+import ru.citeck.ecos.data.sql.dto.*
+import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
+import ru.citeck.ecos.data.sql.dto.fk.FkCascadeActionOptions
 import ru.citeck.ecos.data.sql.meta.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.meta.dto.DbTableChangeSet
-import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaAuthConfig
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaConfig
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
+import ru.citeck.ecos.data.sql.repo.DbEntityRepoConfig
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapperImpl
+import ru.citeck.ecos.data.sql.repo.entity.auth.DbAuthorityEntity
+import ru.citeck.ecos.data.sql.repo.entity.auth.DbPermsEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
@@ -29,33 +33,169 @@ import java.time.Instant
 import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
-import kotlin.reflect.KClass
 
-class DbDataServiceImpl<T : Any>(
-    private val config: DbDataServiceConfig,
-    private val tableRef: DbTableRef,
-    private val dataSource: DbDataSource,
-    entityType: KClass<T>,
-    private val schemaDao: DbSchemaDao,
-    private val entityRepo: DbEntityRepo<T>,
-    private val tableMetaService: DbDataService<DbTableMetaEntity>?,
-    private val txnDataService: DbDataService<T>?
-) : DbDataService<T> {
+class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     companion object {
         private const val COLUMN_EXT_TXN_ID = "__ext_txn_id"
 
+        private const val META_TABLE_NAME = "ecos_data_table_meta"
+        private const val AUTHORITIES_TABLE_NAME = "ecos_authorities"
+
         private val log = KotlinLogging.logger {}
     }
 
-    private val typesConverter = DbTypesConverter()
-    private val entityMapper = DbEntityMapperImpl(entityType, typesConverter)
+    private val typesConverter: DbTypesConverter
+    private val entityMapper: DbEntityMapper<T>
+
+    private val tableMetaService: DbDataService<DbTableMetaEntity>?
+    private val txnDataService: DbDataService<T>?
+    private val authorityDataService: DbDataService<DbAuthorityEntity>?
+    private val permsDataService: DbDataService<DbPermsEntity>?
+
+    private val entityRepo: DbEntityRepo<T>
+    private val schemaDao: DbSchemaDao
+    private val dataSource: DbDataSource
+
+    private val config: DbDataServiceConfig
+
+    private val tableRef: DbTableRef
+    private val authEnabled: Boolean
+    private val maxItemsToAllowSchemaMigration: Long
 
     private var columns: List<DbColumnDef>? = null
 
+    constructor(
+        entityType: Class<T>,
+        config: DbDataServiceConfig,
+        dataSource: DbDataSource,
+        dataServiceFactory: DbDataServiceFactory
+    ) : this(entityType, config, dataSource, dataServiceFactory, null)
+
+    private constructor(
+        entityType: Class<T>,
+        config: DbDataServiceConfig,
+        dataSource: DbDataSource,
+        dataServiceFactory: DbDataServiceFactory,
+        parent: DbDataServiceImpl<*>?
+    ) {
+        this.config = config
+        this.dataSource = dataSource
+        this.tableRef = config.tableRef
+        this.authEnabled = config.authEnabled
+        this.maxItemsToAllowSchemaMigration = config.maxItemsToAllowSchemaMigration
+
+        typesConverter = parent?.typesConverter ?: DbTypesConverter()
+        if (parent == null) {
+            dataServiceFactory.registerConverters(typesConverter)
+        }
+
+        entityMapper = DbEntityMapperImpl(entityType.kotlin, typesConverter)
+
+        val tableRef = config.tableRef
+
+        val permsTableRef = tableRef.withTable(tableRef.table + "__perms")
+        val txnTableRef = tableRef.withTable(tableRef.table + "__ext_txn")
+        val authoritiesTableRef = tableRef.withTable(AUTHORITIES_TABLE_NAME)
+
+        tableMetaService = if (config.storeTableMeta && parent == null) {
+            DbDataServiceImpl(
+                DbTableMetaEntity::class.java,
+                DbDataServiceConfig.create()
+                    .withTableRef(tableRef.withTable(META_TABLE_NAME))
+                    .build(),
+                dataSource,
+                dataServiceFactory,
+                this
+            )
+        } else {
+            null
+        }
+
+        txnDataService = if (config.transactional && parent == null) {
+            DbDataServiceImpl(
+                entityType,
+                DbDataServiceConfig.create()
+                    .withTableRef(txnTableRef)
+                    .build(),
+                dataSource,
+                dataServiceFactory,
+                this
+            )
+        } else {
+            null
+        }
+
+        authorityDataService = if (authEnabled && parent == null) {
+            DbDataServiceImpl(
+                DbAuthorityEntity::class.java,
+                DbDataServiceConfig.create()
+                    .withTableRef(authoritiesTableRef)
+                    .build(),
+                dataSource,
+                dataServiceFactory,
+                this
+            )
+        } else {
+            null
+        }
+
+        permsDataService = if (authEnabled && parent == null) {
+            DbDataServiceImpl(
+                DbPermsEntity::class.java,
+                DbDataServiceConfig.create()
+                    .withTableRef(permsTableRef)
+                    .withFkConstraints(
+                        listOf(
+                            DbFkConstraint.create {
+                                withName("fk_" + permsTableRef.table + "_authority_id")
+                                withBaseColumnName(DbPermsEntity.AUTHORITY_ID)
+                                withReferencedTable(authoritiesTableRef)
+                                withReferencedColumn(DbAuthorityEntity.ID)
+                                withOnDelete(FkCascadeActionOptions.CASCADE)
+                            },
+                            DbFkConstraint.create {
+                                withName("fk_" + permsTableRef.table + "_record_id")
+                                withBaseColumnName(DbPermsEntity.RECORD_ID)
+                                withReferencedTable(tableRef)
+                                withReferencedColumn(DbEntity.ID)
+                                withOnDelete(FkCascadeActionOptions.CASCADE)
+                            }
+                        )
+                    )
+                    .build(),
+                dataSource,
+                dataServiceFactory,
+                this
+            )
+        } else {
+            null
+        }
+
+        schemaDao = dataServiceFactory.createSchemaDao(tableRef, dataSource)
+        entityRepo = dataServiceFactory.createEntityRepo(
+            config.tableRef,
+            dataSource,
+            entityMapper,
+            typesConverter,
+            DbEntityRepoConfig(
+                config.authEnabled,
+                permsTable = permsTableRef,
+                authoritiesTable = authoritiesTableRef
+            )
+        )
+    }
+
+    private fun isAuthTableRequiredAndDoesntExists(): Boolean {
+        return authorityDataService != null && !AuthContext.isRunAsSystem() && !authorityDataService.isTableExists()
+    }
+
     override fun findById(id: String): T? {
+        initColumns()
+        if (isAuthTableRequiredAndDoesntExists()) {
+            return null
+        }
         return dataSource.withTransaction(true) {
-            initColumns()
             val txnId = ExtTxnContext.getExtTxnId()
             if (txnDataService == null || txnId == null) {
                 entityRepo.findById(id)
@@ -76,8 +216,11 @@ class DbDataServiceImpl<T : Any>(
     }
 
     override fun findAll(): List<T> {
+        initColumns()
+        if (isAuthTableRequiredAndDoesntExists()) {
+            return emptyList()
+        }
         return dataSource.withTransaction(true) {
-            initColumns()
             entityRepo.findAll()
         }
     }
@@ -87,38 +230,52 @@ class DbDataServiceImpl<T : Any>(
     }
 
     override fun findAll(predicate: Predicate, withDeleted: Boolean): List<T> {
+        initColumns()
+        if (isAuthTableRequiredAndDoesntExists()) {
+            return emptyList()
+        }
         return dataSource.withTransaction(true) {
-            initColumns()
             entityRepo.findAll(predicate, withDeleted)
         }
     }
 
     override fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<T> {
+        initColumns()
+        if (isAuthTableRequiredAndDoesntExists()) {
+            return emptyList()
+        }
         return dataSource.withTransaction(true) {
-            initColumns()
             entityRepo.findAll(predicate, sort)
         }
     }
 
     override fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage): DbFindRes<T> {
+        initColumns()
+        if (isAuthTableRequiredAndDoesntExists()) {
+            return DbFindRes()
+        }
         return dataSource.withTransaction(true) {
-            initColumns()
             entityRepo.find(predicate, sort, page)
         }
     }
 
     override fun getCount(predicate: Predicate): Long {
+        initColumns()
+        if (isAuthTableRequiredAndDoesntExists()) {
+            return 0
+        }
         return dataSource.withTransaction(true) {
-            initColumns()
             entityRepo.getCount(predicate)
         }
     }
 
     override fun save(entity: T, columns: List<DbColumnDef>): T {
+
         val txnId = ExtTxnContext.getExtTxnId()
         val columnsBefore = this.columns
         try {
             return dataSource.withTransaction(false) {
+
                 runMigrationsInTxn(columns, mock = false, diff = true, onlyOwn = false)
 
                 if (txnDataService == null || txnId == null) {
@@ -185,42 +342,87 @@ class DbDataServiceImpl<T : Any>(
         }
     }
 
-    override fun commit(entitiesId: List<String>) {
-        completeExtTxn(entitiesId, true)
+    override fun forceDelete(entities: List<T>) {
+        if (entities.isEmpty()) {
+            return
+        }
+        initColumns()
+        dataSource.withTransaction(false) {
+            entityRepo.forceDelete(entities)
+        }
+    }
+
+    override fun commit(entities: Map<String, Set<String>>) {
+        dataSource.withTransaction(false) {
+            completeExtTxn(entities.keys.toList(), true)
+            if (config.authEnabled) {
+                AuthContext.runAsSystem {
+                    val authoritiesId = ensureAuthoritiesExists(entities.values.flatten().toSet())
+                    entityRepo.setReadPerms(
+                        entities.entries.associate {
+                            it.key to it.value.map { authName -> authoritiesId[authName]!! }.toSet()
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private fun ensureAuthoritiesExists(authorities: Set<String>): Map<String, Long> {
+
+        if (authorities.isEmpty() || authorityDataService == null) {
+            return emptyMap()
+        }
+
+        val authorityEntities = authorityDataService.findAll(Predicates.`in`(DbAuthorityEntity.EXT_ID, authorities))
+        val authoritiesId = mutableMapOf<String, Long>()
+
+        for (authEntity in authorityEntities) {
+            authoritiesId[authEntity.extId] = authEntity.id
+        }
+
+        for (authority in authorities) {
+            if (!authoritiesId.containsKey(authority)) {
+                val authEntity = DbAuthorityEntity()
+                authEntity.extId = authority
+                authoritiesId[authority] = authorityDataService.save(authEntity, emptyList()).id
+            }
+        }
+
+        return authoritiesId
     }
 
     override fun rollback(entitiesId: List<String>) {
-        completeExtTxn(entitiesId, false)
+        dataSource.withTransaction(false) {
+            completeExtTxn(entitiesId, false)
+        }
     }
 
     private fun completeExtTxn(entitiesId: List<String>, success: Boolean) {
 
-        val txnId = ExtTxnContext.getExtTxnId()
-            ?: error("External transaction ID is null. Entities: $entitiesId")
+        val txnId = ExtTxnContext.getExtTxnId() ?: return
 
         val txnDataService = this.txnDataService ?: return
-        dataSource.withTransaction(false) {
-            entitiesId.forEach { id ->
-                val txnEntity = findTxnEntityById(txnId, id)
-                if (txnEntity != null) {
-                    if (success) {
+        entitiesId.forEach { id ->
+            val txnEntity = findTxnEntityById(txnId, id)
+            if (txnEntity != null) {
+                if (success) {
 
-                        val entityMap = HashMap(entityMapper.convertToMap(txnEntity))
-                        entityMap.remove(DbEntity.ID)
-                        entityMap.remove(COLUMN_EXT_TXN_ID)
+                    val entityMap = HashMap(entityMapper.convertToMap(txnEntity))
+                    entityMap.remove(DbEntity.ID)
+                    entityMap.remove(COLUMN_EXT_TXN_ID)
 
-                        val entityFromRepo = entityRepo.findById(entityMap[DbEntity.EXT_ID] as String)
-                        if (entityFromRepo != null) {
-                            val entityMapFromRepo = entityMapper.convertToMap(entityFromRepo)
-                            entityMap[DbEntity.ID] = entityMapFromRepo[DbEntity.ID]
-                            entityMap[DbEntity.UPD_VERSION] = entityMapFromRepo[DbEntity.UPD_VERSION]
-                        }
-                        if (entityFromRepo != null || entityMap[DbEntity.DELETED] != true) {
-                            entityRepo.save(entityMapper.convertToEntity(entityMap))
-                        }
+                    val entityFromRepo = entityRepo.findById(entityMap[DbEntity.EXT_ID] as String)
+                    if (entityFromRepo != null) {
+                        val entityMapFromRepo = entityMapper.convertToMap(entityFromRepo)
+                        entityMap[DbEntity.ID] = entityMapFromRepo[DbEntity.ID]
+                        entityMap[DbEntity.UPD_VERSION] = entityMapFromRepo[DbEntity.UPD_VERSION]
                     }
-                    txnDataService.forceDelete(txnEntity)
+                    if (entityFromRepo != null || entityMap[DbEntity.DELETED] != true) {
+                        entityRepo.save(entityMapper.convertToEntity(entityMap))
+                    }
                 }
+                txnDataService.forceDelete(txnEntity)
             }
         }
     }
@@ -259,6 +461,10 @@ class DbDataServiceImpl<T : Any>(
             .build()
     }
 
+    override fun isTableExists(): Boolean {
+        return initColumns().isNotEmpty()
+    }
+
     override fun resetColumnsCache() {
         columns = null
         tableMetaService?.resetColumnsCache()
@@ -274,6 +480,10 @@ class DbDataServiceImpl<T : Any>(
         return dataSource.withTransaction(mock) {
             runMigrationsInTxn(expectedColumns, mock, diff, onlyOwn)
         }
+    }
+
+    override fun getTableRef(): DbTableRef {
+        return tableRef
     }
 
     @Synchronized
@@ -295,8 +505,10 @@ class DbDataServiceImpl<T : Any>(
             dataSource.watchSchemaCommands {
                 changedColumns.addAll(ensureColumnsExistImpl(expectedWithEntityColumns, mock, diff))
                 if (!onlyOwn) {
-                    tableMetaService?.runMigrations(emptyList(), true, diff, true)
+                    tableMetaService?.runMigrations(emptyList(), mock, diff, true)
                     txnDataService?.runMigrations(getTxnColumns(expectedColumns), mock, diff, true)
+                    authorityDataService?.runMigrations(emptyList(), mock, diff, true)
+                    permsDataService?.runMigrations(emptyList(), mock, diff, true)
                 }
             }
         }
@@ -320,7 +532,7 @@ class DbDataServiceImpl<T : Any>(
             val tableMetaNotNull = if (currentMeta == null) {
                 val newMeta = DbTableMetaEntity()
                 newMeta.extId = tableRef.table
-                val config = DbTableMetaConfig(DbTableMetaAuthConfig(this.config.authEnabled))
+                val config = DbTableMetaConfig(config)
                 newMeta.config = Json.mapper.toString(config) ?: "{}"
                 newMeta
             } else {
@@ -374,8 +586,11 @@ class DbDataServiceImpl<T : Any>(
         } else {
             emptyList()
         }
+        val expectedIndexes = entityMapper.getEntityIndexes()
+
         if (currentColumns.isEmpty()) {
             schemaDao.createTable(expectedColumns)
+            addIndexesAndConstraintsForNewColumns(expectedColumns, expectedIndexes, config.fkConstraints)
             return expectedColumns
         }
         val currentColumnsByName = currentColumns.associateBy { it.name }
@@ -391,7 +606,7 @@ class DbDataServiceImpl<T : Any>(
         if (columnsWithChangedType.isNotEmpty()) {
             if (!mock) {
                 val currentCount = entityRepo.getCount(VoidPredicate.INSTANCE)
-                if (currentCount > config.maxItemsToAllowSchemaMigration) {
+                if (currentCount > maxItemsToAllowSchemaMigration) {
                     val baseMsg = "Schema migration can't be performed because table has too much items: $currentCount."
                     val newColumnsMsg = columnsWithChangedType.joinToString { it.toString() }
                     val oldColumnsMsg = columnsWithChangedType.joinToString { currentColumnsByName[it.name].toString() }
@@ -403,13 +618,44 @@ class DbDataServiceImpl<T : Any>(
                 schemaDao.setColumnType(it.name, it.multiple, it.type)
             }
         }
+
         val missingColumns = expectedColumns.filter { !currentColumnsByName.containsKey(it.name) }
         schemaDao.addColumns(missingColumns)
+        addIndexesAndConstraintsForNewColumns(missingColumns, expectedIndexes, config.fkConstraints)
 
         val changedColumns = ArrayList(columnsWithChangedType)
         changedColumns.addAll(missingColumns)
 
         return changedColumns
+    }
+
+    private fun addIndexesAndConstraintsForNewColumns(
+        newColumns: List<DbColumnDef>,
+        indexes: List<DbIndexDef>,
+        fkConstraints: List<DbFkConstraint>
+    ) {
+
+        if (newColumns.isEmpty()) {
+            return
+        }
+
+        val currentColumnsNames = schemaDao.getColumns().map { it.name }.toSet()
+        val newColumnsNames = newColumns.map { it.name }.toSet()
+
+        val newIndexes = indexes.filter { index ->
+            val columns = index.columns
+            columns.any { newColumnsNames.contains(it) } &&
+                columns.all { currentColumnsNames.contains(it) }
+        }
+        if (newIndexes.isNotEmpty()) {
+            schemaDao.createIndexes(newIndexes)
+        }
+        val newConstraints = fkConstraints.filter { constraint ->
+            newColumnsNames.contains(constraint.baseColumnName)
+        }
+        if (newConstraints.isNotEmpty()) {
+            schemaDao.createFkConstraints(newConstraints)
+        }
     }
 
     private fun isColumnSchemaUpdateRequired(currentColumn: DbColumnDef, expectedColumn: DbColumnDef): Boolean {
@@ -426,8 +672,11 @@ class DbDataServiceImpl<T : Any>(
     private fun initColumns(): List<DbColumnDef> {
         var columns = this.columns
         if (columns == null) {
-            columns = schemaDao.getColumns()
-            entityRepo.setColumns(columns)
+            columns = dataSource.withTransaction(true) {
+                val schemaCols = schemaDao.getColumns()
+                entityRepo.setColumns(schemaCols)
+                schemaCols
+            }
             this.columns = columns
         }
         return columns

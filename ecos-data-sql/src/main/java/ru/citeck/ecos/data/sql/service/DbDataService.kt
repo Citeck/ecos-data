@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.service
 
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
+import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
@@ -25,13 +26,19 @@ interface DbDataService<T : Any> {
 
     fun save(entity: T, columns: List<DbColumnDef>): T
 
-    fun commit(entitiesId: List<String>)
+    fun commit(entities: Map<String, Set<String>>)
 
     fun rollback(entitiesId: List<String>)
 
     fun delete(id: String)
 
     fun forceDelete(entity: T)
+
+    fun forceDelete(entities: List<T>)
+
+    fun getTableRef(): DbTableRef
+
+    fun isTableExists(): Boolean
 
     fun getTableMeta(): DbTableMetaDto
 

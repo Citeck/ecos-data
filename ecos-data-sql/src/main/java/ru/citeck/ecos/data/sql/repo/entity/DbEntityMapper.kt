@@ -1,6 +1,10 @@
 package ru.citeck.ecos.data.sql.repo.entity
 
+import ru.citeck.ecos.data.sql.dto.DbIndexDef
+
 interface DbEntityMapper<T> {
+
+    fun getEntityIndexes(): List<DbIndexDef>
 
     fun getEntityColumns(): List<DbEntityColumn>
 

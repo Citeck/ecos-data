@@ -2,9 +2,9 @@ package ru.citeck.ecos.data.sql.meta
 
 import ru.citeck.ecos.data.sql.dto.DbColumnConstraint.*
 import ru.citeck.ecos.data.sql.dto.DbColumnType
-import ru.citeck.ecos.data.sql.repo.entity.ColumnType
-import ru.citeck.ecos.data.sql.repo.entity.Constraints
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.data.sql.repo.entity.annotation.ColumnType
+import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
 import java.time.Instant
 
 class DbTableMetaEntity {

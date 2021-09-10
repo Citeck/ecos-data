@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql.repo.entity
+package ru.citeck.ecos.data.sql.repo.entity.annotation
 
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 

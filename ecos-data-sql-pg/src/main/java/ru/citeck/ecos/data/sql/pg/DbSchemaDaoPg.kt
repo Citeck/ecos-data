@@ -2,11 +2,9 @@ package ru.citeck.ecos.data.sql.pg
 
 import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
-import ru.citeck.ecos.data.sql.dto.DbColumnConstraint
-import ru.citeck.ecos.data.sql.dto.DbColumnDef
-import ru.citeck.ecos.data.sql.dto.DbColumnType
-import ru.citeck.ecos.data.sql.dto.DbTableRef
-import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.data.sql.dto.*
+import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
+import ru.citeck.ecos.data.sql.dto.fk.FkCascadeActionOptions
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.utils.use
 
@@ -76,8 +74,6 @@ class DbSchemaDaoPg(
         queryBuilder.append(")")
 
         dataSource.updateSchema(queryBuilder.toString())
-
-        onColumnsCreated(columns)
     }
 
     @Synchronized
@@ -93,7 +89,6 @@ class DbSchemaDaoPg(
                 getColumnSqlConstraintsWithSpaceIfNotEmpty(column.constraints)
             dataSource.updateSchema(query)
         }
-        onColumnsCreated(columns)
     }
 
     @Synchronized
@@ -148,19 +143,61 @@ class DbSchemaDaoPg(
         }
     }
 
-    private fun onColumnsCreated(columns: List<DbColumnDef>) {
+    override fun createFkConstraints(constraints: List<DbFkConstraint>) {
 
-        if (columns.any { it.name == DbEntity.EXT_ID }) {
-            dataSource.updateSchema(
-                "CREATE UNIQUE INDEX ON ${tableRef.fullName} (\"${DbEntity.EXT_ID}\")"
-            )
-        }
-        listOf(DbEntity.DELETED, DbEntity.MODIFIED, DbEntity.CREATED).forEach { indexedColumn ->
-            if (columns.any { it.name == indexedColumn }) {
-                dataSource.updateSchema(
-                    "CREATE INDEX ON ${tableRef.fullName} (\"$indexedColumn\")"
-                )
+        constraints.forEach { constraint ->
+
+            if (constraint.name.isBlank()) {
+                error("Constraint name is missing: $constraint")
             }
+
+            val query = StringBuilder()
+            query.append("ALTER TABLE ")
+                .append(tableRef.fullName)
+                .append(" ADD CONSTRAINT \"")
+                .append(constraint.name)
+                .append("\" FOREIGN KEY (\"")
+                .append(constraint.baseColumnName)
+                .append("\") REFERENCES ")
+                .append(constraint.referencedTable.fullName)
+                .append(" (\"")
+                .append(constraint.referencedColumn)
+                .append("\")")
+
+            if (constraint.onDelete != FkCascadeActionOptions.NO_ACTION) {
+                val action = constraint.onDelete.name.replace("_", " ")
+                query.append(" ON DELETE ").append(action)
+            }
+            if (constraint.onUpdate != FkCascadeActionOptions.NO_ACTION) {
+                val action = constraint.onUpdate.name.replace("_", " ")
+                query.append(" ON UPDATE ").append(action)
+            }
+            query.append(";")
+
+            dataSource.updateSchema(query.toString())
+        }
+    }
+
+    override fun createIndexes(indexes: List<DbIndexDef>) {
+
+        indexes.forEach { index ->
+
+            val query = StringBuilder()
+            query.append("CREATE ")
+            if (index.unique) {
+                query.append("UNIQUE ")
+            }
+            query.append("INDEX ")
+            if (index.name.isNotBlank()) {
+                query.append("\"")
+                    .append(index.name)
+                    .append("\" ")
+            }
+            query.append("ON ${tableRef.fullName} (")
+            query.append(index.columns.joinToString(",") { '"' + it + '"' })
+            query.append(")")
+
+            dataSource.updateSchema(query.toString())
         }
     }
 
