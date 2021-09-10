@@ -385,7 +385,16 @@ class DbRecordsDao(
                 return setOf(user)
             }
         } else {
-            return permsComponent.getAuthoritiesWithReadPermission(RecordRef.create(getId(), recordId))
+            // Optimization to enable caching
+            return RequestContext.doWithCtx(
+                serviceFactory,
+                {
+                    it.withReadOnly(true)
+                },
+                {
+                    permsComponent.getAuthoritiesWithReadPermission(RecordRef.create(getId(), recordId))
+                }
+            )
         }
         return emptySet()
     }

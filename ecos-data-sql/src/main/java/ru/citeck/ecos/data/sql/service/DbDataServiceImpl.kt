@@ -394,7 +394,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     override fun rollback(entitiesId: List<String>) {
         dataSource.withTransaction(false) {
-            completeExtTxn(entitiesId, false)
+            AuthContext.runAsSystem {
+                completeExtTxn(entitiesId, false)
+            }
         }
     }
 

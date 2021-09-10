@@ -8,12 +8,10 @@ import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbIndexDef
 import ru.citeck.ecos.data.sql.repo.entity.annotation.ColumnType
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
-import ru.citeck.ecos.data.sql.repo.entity.annotation.FieldsColumnName
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import java.lang.reflect.Array
 import java.time.Instant
-import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.LinkedHashMap
 import kotlin.reflect.KClass
@@ -101,9 +99,6 @@ class DbEntityMapperImpl<T : Any>(
         val descriptors = PropertyUtils.getPropertyDescriptors(type.java)
         val defaultValue = type.java.getDeclaredConstructor().newInstance()
 
-        val fieldsColumnName = type.java.getAnnotation(FieldsColumnName::class.java)
-        val fieldsColumnNamePrefix = fieldsColumnName?.prefix ?: ""
-
         return descriptors.mapNotNull { prop ->
 
             if (prop.writeMethod == null || prop.readMethod == null || prop.name == ATTRIBUTES_FIELD) {
@@ -129,11 +124,9 @@ class DbEntityMapperImpl<T : Any>(
 
                 val columnName = if (prop.name == "id") {
                     prop.name
-                } else if (prop.name == "extId") {
-                    "__ext_id"
                 } else {
                     val snakeName = CAMEL_REGEX.replace(prop.name) { "_${it.value}" }.lowercase()
-                    "$fieldsColumnNamePrefix$snakeName"
+                    "__$snakeName"
                 }
 
                 DbEntityColumn(

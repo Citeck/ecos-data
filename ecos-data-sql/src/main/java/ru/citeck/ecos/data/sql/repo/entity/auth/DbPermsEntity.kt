@@ -16,8 +16,8 @@ class DbPermsEntity(
     var authorityId: Long
 ) {
     companion object {
-        const val RECORD_ID = "record_id"
-        const val AUTHORITY_ID = "authority_id"
+        const val RECORD_ID = "__record_id"
+        const val AUTHORITY_ID = "__authority_id"
     }
 
     constructor() : this(-1, -1)
