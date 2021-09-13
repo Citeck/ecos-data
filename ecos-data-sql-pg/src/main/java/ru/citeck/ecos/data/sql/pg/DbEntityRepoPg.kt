@@ -144,15 +144,15 @@ class DbEntityRepoPg<T : Any>(
         forceDelete(mapper.convertToMap(entity))
     }
 
-    override fun delete(id: String) {
+    override fun delete(entity: T) {
 
         if (columns.isEmpty()) {
             return
         }
 
-        val entity = findByExtIdAsMap(id, columns) ?: return
+        val entityMap = mapper.convertToMap(entity)
         if (hasDeletedFlag) {
-            val mutableEntity = LinkedHashMap(entity)
+            val mutableEntity = LinkedHashMap(entityMap)
             mutableEntity[DbEntity.DELETED] = true
             saveImpl(mutableEntity)
         } else {

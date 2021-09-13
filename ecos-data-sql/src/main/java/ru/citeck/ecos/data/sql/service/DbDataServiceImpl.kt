@@ -33,6 +33,7 @@ import java.time.Instant
 import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
+import kotlin.collections.LinkedHashMap
 
 class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
@@ -307,7 +308,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
     }
 
-    override fun delete(id: String) {
+    override fun delete(entity: T) {
 
         val columns = initColumns()
 
@@ -316,20 +317,16 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             val txnDataService = this.txnDataService
             val txnId = ExtTxnContext.getExtTxnId()
             if (txnDataService == null || txnId == null) {
-                entityRepo.delete(id)
+                entityRepo.delete(entity)
             } else {
-                var txnEntity = findTxnEntityById(txnId, id)
-                if (txnEntity != null) {
-                    txnDataService.delete(id)
+                val entityMap = LinkedHashMap(entityMapper.convertToMap(entity))
+                if (entityMap.containsKey(COLUMN_EXT_TXN_ID)) {
+                    txnDataService.delete(entity)
                 } else {
-                    txnEntity = entityRepo.findById(id)
-                    if (txnEntity != null) {
-                        val entityMap = HashMap(entityMapper.convertToMap(txnEntity))
-                        entityMap[COLUMN_EXT_TXN_ID] = txnId
-                        entityMap[DbEntity.DELETED] = true
-                        entityMap.remove(DbEntity.ID)
-                        txnDataService.save(entityMapper.convertToEntity(entityMap), getTxnColumns(columns))
-                    }
+                    entityMap[COLUMN_EXT_TXN_ID] = txnId
+                    entityMap[DbEntity.DELETED] = true
+                    entityMap.remove(DbEntity.ID)
+                    txnDataService.save(entityMapper.convertToEntity(entityMap), getTxnColumns(columns))
                 }
             }
         }

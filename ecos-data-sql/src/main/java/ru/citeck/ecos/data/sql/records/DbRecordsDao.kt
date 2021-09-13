@@ -6,13 +6,18 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.context.lib.auth.AuthRole
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
+import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
+import ru.citeck.ecos.data.sql.records.listener.DeletionEvent
+import ru.citeck.ecos.data.sql.records.listener.MutationEvent
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
+import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
@@ -32,6 +37,7 @@ import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.value.AttValue
+import ru.citeck.ecos.records3.record.atts.value.RecordAttValueCtx
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.records3.record.dao.AbstractRecordsDao
 import ru.citeck.ecos.records3.record.dao.atts.RecordsAttsDao
@@ -44,6 +50,7 @@ import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import java.util.*
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.min
 
 class DbRecordsDao(
@@ -51,7 +58,7 @@ class DbRecordsDao(
     private val config: DbRecordsDaoConfig,
     private val ecosTypeRepo: DbEcosTypeRepo,
     private val dbDataService: DbDataService<DbEntity>,
-    private val permsComponent: DbPermsComponent?
+    private val permsComponent: DbPermsComponent
 ) : AbstractRecordsDao(),
     RecordsAttsDao,
     RecordsQueryDao,
@@ -97,6 +104,8 @@ class DbRecordsDao(
     }
 
     private lateinit var ecosTypeService: DbEcosTypeService
+
+    private val listeners: MutableList<DbRecordsListener> = CopyOnWriteArrayList()
 
     fun runMigrations(typeRef: RecordRef, mock: Boolean = true, diff: Boolean = true): List<String> {
         val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
@@ -234,17 +243,26 @@ class DbRecordsDao(
 
         return if (txnId != null) {
             ExtTxnContext.withExtTxn(txnId, false) {
-                recordsId.map {
-                    dbDataService.delete(it)
-                    DelStatus.OK
-                }
+                deleteInTxn(recordsId)
             }
         } else {
-            recordsId.map {
-                dbDataService.delete(it)
-                DelStatus.OK
+            deleteInTxn(recordsId)
+        }
+    }
+
+    private fun deleteInTxn(recordsId: List<String>): List<DelStatus> {
+
+        for (recordId in recordsId) {
+            dbDataService.findById(recordId)?.let { entity ->
+                dbDataService.delete(entity)
+                val event = DeletionEvent(RecordAttValueCtx(Record(entity), recordsService))
+                listeners.forEach {
+                    it.onDeleted(event)
+                }
             }
         }
+
+        return recordsId.map { DelStatus.OK }
     }
 
     private fun getTypeIdForRecord(record: LocalRecordAtts): String {
@@ -293,6 +311,21 @@ class DbRecordsDao(
 
         return records.mapIndexed { recordIdx, record ->
 
+            if (record.attributes.get("__updatePermissions").asBoolean()) {
+                if (!AuthContext.getCurrentAuthorities().contains(AuthRole.ADMIN)) {
+                    error("Permissions update allowed only for admin. Record: $record sourceId: '${getId()}'")
+                }
+                updatePermissions(listOf(record.id))
+                return@mapIndexed record.id
+            }
+
+            if (record.id.isNotBlank()) {
+                val recordPerms = getRecordPerms(record.id)
+                if (!recordPerms.isCurrentUserHasWritePerms()) {
+                    error("Permissions Denied. You can't change record '${record.id}'")
+                }
+            }
+
             val recordTypeId = typesId[recordIdx]
 
             val recToMutate: DbEntity = if (record.id.isEmpty()) {
@@ -307,6 +340,7 @@ class DbRecordsDao(
                     newEntity
                 }
             }
+
             val localId = record.attributes.get(ScalarType.LOCAL_ID.mirrorAtt).asText()
             if (localId.isNotBlank()) {
                 if (recToMutate.extId != localId) {
@@ -329,6 +363,8 @@ class DbRecordsDao(
                     error("Records DAO doesn't support records updating. Record ID: '${record.id}'")
                 }
             }
+
+            val recordEntityBeforeMutation = recToMutate.copy()
 
             val fullColumns = ArrayList(typesColumns)
             setMutationAtts(recToMutate, record.attributes, typesColumns)
@@ -360,43 +396,50 @@ class DbRecordsDao(
                 }
             }
 
-            val recAfterSave = dbDataService.save(recToMutate, fullColumns)
+            var recAfterSave = dbDataService.save(recToMutate, fullColumns)
 
-            AuthContext.runAsSystem {
-                val resId = if (ecosTypeService.fillComputedAtts(getId(), recAfterSave)) {
+            recAfterSave = AuthContext.runAsSystem {
+                val resRecord = if (ecosTypeService.fillComputedAtts(getId(), recAfterSave)) {
                     dbDataService.save(recAfterSave, fullColumns)
                 } else {
                     recAfterSave
-                }.extId
+                }
+                val extId = resRecord.extId
 
                 if (!txnExists) {
-                    dbDataService.commit(mapOf(resId to getAuthoritiesWithReadPerms(resId)))
+                    dbDataService.commit(mapOf(extId to getAuthoritiesWithReadPerms(extId)))
                 }
-
-                resId
+                resRecord
             }
+
+            // emit event
+            val valueBefore = RecordAttValueCtx(Record(recordEntityBeforeMutation), recordsService)
+            val valueAfter = RecordAttValueCtx(Record(recAfterSave), recordsService)
+            val isNewRecord = recToMutate.id == DbEntity.NEW_REC_ID
+            val mutationEvent = MutationEvent(valueBefore, valueAfter, isNewRecord)
+
+            listeners.forEach {
+                it.onMutated(mutationEvent)
+            }
+            recAfterSave.extId
         }
     }
 
     private fun getAuthoritiesWithReadPerms(recordId: String): Set<String> {
-        if (permsComponent == null) {
-            val user = AuthContext.getCurrentUser()
-            if (user.isNotBlank()) {
-                return setOf(user)
+        return getRecordPerms(recordId).getAuthoritiesWithReadPermission()
+    }
+
+    private fun getRecordPerms(recordId: String): DbRecordPerms {
+        // Optimization to enable caching
+        return RequestContext.doWithCtx(
+            serviceFactory,
+            {
+                it.withReadOnly(true)
+            },
+            {
+                permsComponent.getRecordPerms(RecordRef.create(getId(), recordId))
             }
-        } else {
-            // Optimization to enable caching
-            return RequestContext.doWithCtx(
-                serviceFactory,
-                {
-                    it.withReadOnly(true)
-                },
-                {
-                    permsComponent.getAuthoritiesWithReadPermission(RecordRef.create(getId(), recordId))
-                }
-            )
-        }
-        return emptySet()
+        )
     }
 
     private fun setMutationAtts(recToMutate: DbEntity, atts: ObjectData, types: List<DbColumnDef>): List<DbColumnDef> {
@@ -466,6 +509,14 @@ class DbRecordsDao(
     }
 
     override fun getId() = id
+
+    fun addListener(listener: DbRecordsListener) {
+        this.listeners.add(listener)
+    }
+
+    fun removeListener(listener: DbRecordsListener) {
+        this.listeners.remove(listener)
+    }
 
     inner class Record(
         val entity: DbEntity

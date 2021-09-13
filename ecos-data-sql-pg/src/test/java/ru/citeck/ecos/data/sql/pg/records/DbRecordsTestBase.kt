@@ -14,8 +14,9 @@ import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.pg.PgUtils
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
-import ru.citeck.ecos.data.sql.records.perms.CreatorPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
+import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
+import ru.citeck.ecos.data.sql.records.perms.DefaultDbPermsComponent
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
@@ -63,7 +64,7 @@ abstract class DbRecordsTestBase {
     }
 
     private val typesDef = mutableMapOf<String, DbEcosTypeInfo>()
-    private val recPerms = mutableMapOf<RecordRef, Set<String>>()
+    private val recReadPerms = mutableMapOf<RecordRef, Set<String>>()
 
     lateinit var recordsDao: DbRecordsDao
     lateinit var records: RecordsService
@@ -78,13 +79,13 @@ abstract class DbRecordsTestBase {
 
         cleanData()
         typesDef.clear()
-        recPerms.clear()
+        recReadPerms.clear()
 
         initWithTable(DbTableRef("records-test-schema", "test-records-table"), false)
     }
 
     fun setPerms(rec: RecordRef, perms: Collection<String>) {
-        recPerms[rec] = perms.toSet()
+        recReadPerms[rec] = perms.toSet()
         recordsDao.updatePermissions(listOf(rec.id))
     }
 
@@ -122,13 +123,21 @@ abstract class DbRecordsTestBase {
         records = recordsServiceFactory.recordsServiceV1
         RequestContext.setDefaultServices(recordsServiceFactory)
 
-        val defaultPermsComponent = CreatorPermsComponent(records)
+        val defaultPermsComponent = DefaultDbPermsComponent(records)
         val permsComponent = object : DbPermsComponent {
-            override fun getAuthoritiesWithReadPermission(recordRef: RecordRef): Set<String> {
-                if (recPerms.containsKey(recordRef)) {
-                    return recPerms[recordRef]!!
+            override fun getRecordPerms(recordRef: RecordRef): DbRecordPerms {
+                return object : DbRecordPerms {
+                    override fun getAuthoritiesWithReadPermission(): Set<String> {
+                        if (recReadPerms.containsKey(recordRef)) {
+                            return recReadPerms[recordRef]!!
+                        }
+                        return defaultPermsComponent.getRecordPerms(recordRef)
+                            .getAuthoritiesWithReadPermission()
+                    }
+                    override fun isCurrentUserHasWritePerms(): Boolean {
+                        return true
+                    }
                 }
-                return defaultPermsComponent.getAuthoritiesWithReadPermission(recordRef)
             }
         }
 

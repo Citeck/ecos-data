@@ -23,6 +23,7 @@ class DbEntityMapperImpl<T : Any>(
 
     companion object {
         private const val ATTRIBUTES_FIELD = "attributes"
+        private const val EXT_ID_FIELD = "extId"
 
         private val CAMEL_REGEX = "(?<=[a-zA-Z])[A-Z]".toRegex()
     }
@@ -38,6 +39,10 @@ class DbEntityMapperImpl<T : Any>(
 
     override fun getEntityColumns(): List<DbEntityColumn> {
         return columns
+    }
+
+    override fun getExtId(entity: T): String {
+        return PropertyUtils.getProperty(entity, EXT_ID_FIELD) as? String ?: ""
     }
 
     override fun convertToEntity(data: Map<String, Any?>): T {

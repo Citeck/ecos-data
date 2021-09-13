@@ -61,4 +61,21 @@ class DbEntity {
     var name: MLText = MLText.EMPTY
 
     var attributes: MutableMap<String, Any?> = LinkedHashMap()
+
+    fun copy(): DbEntity {
+        val newEntity = DbEntity()
+        newEntity.id = id
+        newEntity.extId = extId
+        newEntity.updVersion = updVersion
+        newEntity.modified = modified
+        newEntity.modifier = modifier
+        newEntity.created = created
+        newEntity.creator = creator
+        newEntity.deleted = deleted
+        newEntity.type = type
+        newEntity.status = status
+        newEntity.name = name
+        newEntity.attributes = LinkedHashMap(attributes)
+        return newEntity
+    }
 }

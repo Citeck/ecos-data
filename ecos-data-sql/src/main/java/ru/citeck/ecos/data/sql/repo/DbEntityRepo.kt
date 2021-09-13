@@ -28,7 +28,7 @@ interface DbEntityRepo<T : Any> {
 
     fun setReadPerms(permissions: Map<String, Set<Long>>)
 
-    fun delete(id: String)
+    fun delete(entity: T)
 
     fun forceDelete(entity: T)
 

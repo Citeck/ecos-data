@@ -30,7 +30,7 @@ interface DbDataService<T : Any> {
 
     fun rollback(entitiesId: List<String>)
 
-    fun delete(id: String)
+    fun delete(entity: T)
 
     fun forceDelete(entity: T)
 
