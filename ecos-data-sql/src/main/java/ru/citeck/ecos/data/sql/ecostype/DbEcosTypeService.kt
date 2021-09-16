@@ -102,7 +102,7 @@ class DbEcosTypeService(
             AttributeType.MLTEXT -> DbColumnType.TEXT
             AttributeType.NUMBER -> DbColumnType.DOUBLE
             AttributeType.BOOLEAN -> DbColumnType.BOOLEAN
-            AttributeType.DATE -> DbColumnType.DATETIME
+            AttributeType.DATE -> DbColumnType.DATE
             AttributeType.DATETIME -> DbColumnType.DATETIME
             AttributeType.CONTENT -> DbColumnType.TEXT
             AttributeType.JSON -> DbColumnType.JSON

@@ -11,7 +11,10 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import java.lang.reflect.Array
+import java.sql.Date
+import java.sql.Timestamp
 import java.time.Instant
+import java.time.ZoneOffset
 import kotlin.collections.ArrayList
 import kotlin.collections.LinkedHashMap
 import kotlin.reflect.KClass
@@ -54,16 +57,7 @@ class DbEntityMapperImpl<T : Any>(
         data.forEach { (k, v) ->
             val entityField = entityColumns[k]
             if (entityField == null) {
-                if (v != null && v::class.java.isArray) {
-                    val arraySize = Array.getLength(v)
-                    val list = ArrayList<Any>(arraySize)
-                    for (i in 0 until arraySize) {
-                        list.add(Array.get(v, i))
-                    }
-                    additionalAtts[k] = list
-                } else {
-                    additionalAtts[k] = v
-                }
+                additionalAtts[k] = convertAdditionalAttValue(v)
             } else {
                 entityAtts[entityField.fieldName] = converter.convert(v, entityField.fieldType)
             }
@@ -73,6 +67,25 @@ class DbEntityMapperImpl<T : Any>(
             PropertyUtils.setProperty(entity, ATTRIBUTES_FIELD, additionalAtts)
         }
         return entity
+    }
+
+    private fun convertAdditionalAttValue(value: Any?): Any? {
+        if (value == null) {
+            return null
+        }
+        if (value::class.java.isArray) {
+            val arraySize = Array.getLength(value)
+            val list = ArrayList<Any?>(arraySize)
+            for (i in 0 until arraySize) {
+                list.add(convertAdditionalAttValue(Array.get(value, i)))
+            }
+            return list
+        } else if (value is Date) {
+            return value.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant()
+        } else if (value is Timestamp) {
+            return value.toInstant()
+        }
+        return value
     }
 
     override fun convertToMap(entity: T): Map<String, Any?> {

@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.dto
 
-import java.time.Instant
+import java.sql.Date
+import java.sql.Timestamp
 import kotlin.reflect.KClass
 
 enum class DbColumnType(val type: KClass<*>) {
@@ -10,7 +11,8 @@ enum class DbColumnType(val type: KClass<*>) {
     INT(Integer::class),
     LONG(Long::class),
     BOOLEAN(Boolean::class),
-    DATETIME(Instant::class),
+    DATETIME(Timestamp::class),
+    DATE(Date::class),
     JSON(String::class),
     BINARY(ByteArray::class),
     UUID(java.util.UUID::class);

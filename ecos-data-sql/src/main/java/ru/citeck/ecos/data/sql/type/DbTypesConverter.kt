@@ -3,8 +3,12 @@ package ru.citeck.ecos.data.sql.type
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
 import java.lang.reflect.Array
+import java.sql.Date
 import java.sql.Timestamp
 import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
 
@@ -86,7 +90,10 @@ class DbTypesConverter {
         register(Long::class, Instant::class) { Instant.ofEpochMilli(it) }
         register(Instant::class, Long::class) { it.toEpochMilli() }
         register(Instant::class, Timestamp::class) { Timestamp.from(it) }
+        register(Instant::class, Date::class) { Date(it.truncatedTo(ChronoUnit.DAYS).toEpochMilli()) }
         register(Timestamp::class, Instant::class) { it.toInstant() }
+        register(Instant::class, OffsetDateTime::class) { OffsetDateTime.ofInstant(it, ZoneOffset.UTC) }
+        register(OffsetDateTime::class, Instant::class) { it.toInstant() }
         register(MLText::class, String::class) { Json.mapper.toString(it) ?: "" }
         register(String::class, MLText::class) { Json.mapper.read(it, MLText::class.java) ?: MLText.EMPTY }
     }

@@ -19,11 +19,11 @@ import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
 import ru.citeck.ecos.records2.predicate.model.*
+import java.sql.Date
 import java.sql.ResultSet
 import java.sql.Timestamp
-import java.time.Instant
+import java.time.*
 import java.util.*
-import kotlin.collections.ArrayList
 import kotlin.reflect.KClass
 
 class DbEntityRepoPg<T : Any>(
@@ -594,6 +594,7 @@ class DbEntityRepoPg<T : Any>(
             DbColumnType.DOUBLE -> Double::class
             DbColumnType.BOOLEAN -> Boolean::class
             DbColumnType.DATETIME -> Timestamp::class
+            DbColumnType.DATE -> Date::class
             DbColumnType.LONG -> Long::class
             DbColumnType.JSON -> String::class
             DbColumnType.TEXT -> String::class
@@ -736,14 +737,29 @@ class DbEntityRepoPg<T : Any>(
                     ValuePredicate.Type.LT,
                     ValuePredicate.Type.LE,
                     ValuePredicate.Type.CONTAINS -> {
+
                         appendRecordColumnName(query, attribute)
                         query.append(' ')
                             .append(operator)
                             .append(" ?")
+
                         if (value.isTextual() && type == ValuePredicate.Type.CONTAINS) {
                             queryParams.add("%" + value.asText() + "%")
                         } else if (value.isTextual() && columnDef.type == DbColumnType.UUID) {
                             queryParams.add(UUID.fromString(value.asText()))
+                        } else if (columnDef.type == DbColumnType.DATETIME || columnDef.type == DbColumnType.DATE) {
+                            val offsetDateTime: OffsetDateTime = if (value.isTextual()) {
+                                OffsetDateTime.parse(value.asText())
+                            } else if (value.isNumber()) {
+                                OffsetDateTime.ofInstant(Instant.ofEpochMilli(value.asLong()), ZoneOffset.UTC)
+                            } else {
+                                error("Unknown datetime value: '$value'")
+                            }
+                            if (columnDef.type == DbColumnType.DATE) {
+                                queryParams.add(offsetDateTime.toLocalDate())
+                            } else {
+                                queryParams.add(offsetDateTime)
+                            }
                         } else {
                             queryParams.add(value.asJavaObj())
                         }

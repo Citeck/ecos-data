@@ -214,7 +214,9 @@ class DbSchemaDaoPg(
             "int4" -> DbColumnType.INT
             "float8" -> DbColumnType.DOUBLE
             "bool" -> DbColumnType.BOOLEAN
+            "date" -> DbColumnType.DATE
             "timestamp" -> DbColumnType.DATETIME
+            "timestamptz" -> DbColumnType.DATETIME
             "int8" -> DbColumnType.LONG
             "jsonb" -> DbColumnType.JSON
             "varchar" -> DbColumnType.TEXT
@@ -244,7 +246,8 @@ class DbSchemaDaoPg(
             DbColumnType.INT -> "INT"
             DbColumnType.DOUBLE -> "DOUBLE PRECISION"
             DbColumnType.BOOLEAN -> "BOOLEAN"
-            DbColumnType.DATETIME -> "TIMESTAMP WITHOUT TIME ZONE"
+            DbColumnType.DATE -> "DATE"
+            DbColumnType.DATETIME -> "TIMESTAMPTZ"
             DbColumnType.LONG -> "BIGINT"
             DbColumnType.JSON -> "JSONB"
             DbColumnType.TEXT -> "VARCHAR"
