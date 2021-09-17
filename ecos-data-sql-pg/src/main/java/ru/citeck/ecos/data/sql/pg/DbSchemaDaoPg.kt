@@ -124,7 +124,8 @@ class DbSchemaDaoPg(
                                 "text"
                             } else {
                                 error(
-                                    "Conversion $currentType to $newType is not supported. " +
+                                    "Conversion of column '$name' from type $currentType " +
+                                        "to $newType is not supported. " +
                                         "Multiple flag: $currentMultiple -> $multiple"
                                 )
                             }
