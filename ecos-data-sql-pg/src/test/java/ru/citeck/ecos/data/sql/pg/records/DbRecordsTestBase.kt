@@ -271,6 +271,14 @@ abstract class DbRecordsTestBase {
         }
     }
 
+    fun sqlUpdate(sql: String): Int {
+        return dataSource.connection.use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.executeUpdate(sql)
+            }
+        }
+    }
+
     fun registerType(type: DbEcosTypeInfo) {
         this.typesDef[type.id] = type
     }

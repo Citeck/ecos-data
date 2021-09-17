@@ -13,6 +13,48 @@ import ru.citeck.ecos.records2.RecordRef
 class DbRecordsDaoColumnUpdateTest : DbRecordsTestBase() {
 
     @Test
+    fun dateTimeTest() {
+
+        val attId = "att-id"
+        val registerTypeWithAtt = { type: AttributeType ->
+            registerAtts(
+                listOf(
+                    AttributeDef.create()
+                        .withId(attId)
+                        .withType(type)
+                        .build()
+                )
+            )
+        }
+
+        registerTypeWithAtt(AttributeType.DATETIME)
+
+        val dateTimeValue = "2021-01-01T00:00:00Z"
+        val rec = createRecord(attId to dateTimeValue)
+        assertThat(records.getAtt(rec, attId).asText()).isEqualTo(dateTimeValue)
+
+        registerTypeWithAtt(AttributeType.DATE)
+
+        sqlUpdate("ALTER TABLE ${tableRef.fullName} ALTER COLUMN \"$attId\" TYPE DATE USING \"$attId\"::date;")
+        sqlUpdate("ALTER TABLE ${tableRef.fullName.removeSuffix("\"")}__ext_txn\" ALTER COLUMN \"$attId\" TYPE DATE USING \"$attId\"::date;")
+
+        val rec2 = createRecord(attId to dateTimeValue)
+        assertThat(records.getAtt(rec2, attId).asText()).isEqualTo(dateTimeValue)
+/*
+        //automatic conversion is not allowed yet because when we convert 2021-01-01
+
+        registerTypeWithAtt(AttributeType.DATETIME)
+        val rec3 = createRecord(attId to dateTimeValue)
+
+        var idx = 0
+        listOf(rec, rec2, rec3).forEach {
+            assertThat(records.getAtt(it, attId).asText())
+                .describedAs(it.toString() + "-" + (idx++))
+                .isEqualTo(dateTimeValue)
+        }*/
+    }
+
+    @Test
     fun convertToArrayTest() {
 
         val testTypeId = "test-type"
@@ -24,7 +66,7 @@ class DbRecordsDaoColumnUpdateTest : DbRecordsTestBase() {
                         AttributeDef.create()
                             .withId(attId)
                             .withType(AttributeType.TEXT)
-                            .withMultiple(multiple)
+                            .withMultiple(multiple),
                     ).map { it.build() },
                     emptyList()
                 )

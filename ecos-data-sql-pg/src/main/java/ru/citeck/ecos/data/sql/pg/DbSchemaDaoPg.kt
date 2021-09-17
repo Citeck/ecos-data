@@ -122,7 +122,10 @@ class DbSchemaDaoPg(
                                 "jsonb"
                             } else if (currentType == DbColumnType.JSON && newType == DbColumnType.TEXT) {
                                 "text"
-                            } else {
+                            } /* timezone problems.... oh...
+                            else if (currentType == DbColumnType.DATE && newType == DbColumnType.DATETIME) {
+                                getColumnSqlType(DbColumnType.DATETIME, false) + " AT TIME ZONE 'UTC'"
+                            } */else {
                                 error(
                                     "Conversion of column '$name' from type $currentType " +
                                         "to $newType is not supported. " +
