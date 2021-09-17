@@ -74,10 +74,16 @@ abstract class DbRecordsTestBase {
     lateinit var dbSchemaDao: DbSchemaDao
     lateinit var ecosTypeRepo: DbEcosTypeRepo
 
+    val baseQuery = RecordsQuery.create {
+        withSourceId(RECS_DAO_ID)
+        withLanguage(PredicateService.LANGUAGE_PREDICATE)
+        withQuery(VoidPredicate.INSTANCE)
+    }
+
     @BeforeEach
     fun beforeEachBase() {
 
-        cleanData()
+        dropAllTables()
         typesDef.clear()
         recReadPerms.clear()
 
@@ -200,7 +206,16 @@ abstract class DbRecordsTestBase {
         }
     }
 
-    fun cleanData() {
+    fun cleanRecords() {
+        dataSource.connection.use { conn ->
+            val truncCommand = "TRUNCATE TABLE " + tableRef.fullName + " CASCADE"
+            println("EXEC: $truncCommand")
+            conn.createStatement().use { it.executeUpdate(truncCommand) }
+            conn.createStatement().use { it.executeUpdate("DEALLOCATE ALL") }
+        }
+    }
+
+    fun dropAllTables() {
         dataSource.connection.use { conn ->
             val tables = ArrayList<String>()
             conn.metaData.getTables(null, null, "", arrayOf("TABLE")).use { res ->
@@ -241,13 +256,13 @@ abstract class DbRecordsTestBase {
                 stmt.executeQuery(sql).use {
                     var line = ""
                     for (i in 1..it.metaData.columnCount) {
-                        line += it.metaData.getColumnName(i) + "\t\t\t\t"
+                        line += it.metaData.getColumnName(i) + "\t\t\t\t\t"
                     }
                     println(line)
                     while (it.next()) {
                         line = ""
                         for (i in 1..it.metaData.columnCount) {
-                            line += (it.getObject(i) ?: "").toString() + "\t\t\t\t"
+                            line += (it.getObject(i) ?: "").toString() + "\t\t\t\t\t"
                         }
                         println(line)
                     }

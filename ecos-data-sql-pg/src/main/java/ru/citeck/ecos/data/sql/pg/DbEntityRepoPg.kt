@@ -192,8 +192,7 @@ class DbEntityRepoPg<T : Any>(
 
         for ((entityId, authoritiesId) in permissions) {
 
-            val recordEntity = findByExtIdAsMap(entityId, columns, false)
-                ?: error("Entity with id '$entityId' is not found in table $tableRef")
+            val recordEntity = findByExtIdAsMap(entityId, columns, true) ?: continue
             val recordEntityId = recordEntity[DbEntity.ID] as Long
 
             val permsTableName = config.permsTable.fullName
