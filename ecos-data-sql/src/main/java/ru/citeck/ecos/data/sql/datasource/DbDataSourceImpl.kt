@@ -98,7 +98,7 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
 
     override fun <T> withTransaction(readOnly: Boolean, action: () -> T): T {
         val currentTxn = currentThreadTxn.get()
-        if (currentTxn != null) {
+        if (currentTxn != null && !currentTxn.connection.isClosed) {
             if (currentTxn.readOnly && !readOnly) {
                 error("Write transaction can't be started from readOnly context")
             }

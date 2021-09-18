@@ -13,6 +13,7 @@ import ru.citeck.ecos.data.sql.meta.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.meta.dto.DbTableChangeSet
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaConfig
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
+import ru.citeck.ecos.data.sql.repo.DbEntityPermissionsDto
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.DbEntityRepoConfig
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -33,6 +34,7 @@ import java.time.Instant
 import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
+import kotlin.collections.HashSet
 import kotlin.collections.LinkedHashMap
 
 class DbDataServiceImpl<T : Any> : DbDataService<T> {
@@ -349,15 +351,24 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
     }
 
-    override fun commit(entities: Map<String, Set<String>>) {
+    override fun commit(entities: List<DbCommitEntityDto>) {
         dataSource.withTransaction(false) {
-            completeExtTxn(entities.keys.toList(), true)
+            completeExtTxn(entities.map { it.id }, true)
             if (config.authEnabled) {
                 AuthContext.runAsSystem {
-                    val authoritiesId = ensureAuthoritiesExists(entities.values.flatten().toSet())
+                    val allAuthorities = mutableSetOf<String>()
+                    entities.forEach {
+                        allAuthorities.addAll(it.readAllowed)
+                        allAuthorities.addAll(it.readDenied)
+                    }
+                    val authoritiesId = ensureAuthoritiesExists(allAuthorities)
                     entityRepo.setReadPerms(
-                        entities.entries.associate {
-                            it.key to it.value.map { authName -> authoritiesId[authName]!! }.toSet()
+                        entities.map { entity ->
+                            DbEntityPermissionsDto(
+                                entity.id,
+                                entity.readAllowed.mapTo(HashSet()) { authoritiesId[it]!! },
+                                entity.readDenied.mapTo(HashSet()) { authoritiesId[it]!! }
+                            )
                         }
                     )
                 }

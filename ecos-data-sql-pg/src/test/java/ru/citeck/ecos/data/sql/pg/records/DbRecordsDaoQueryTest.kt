@@ -214,12 +214,20 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
 
         listOf(time01_00, time01_10, time02_00).forEach { time ->
             val fixedTime = fixTime(time)
-            val result = records.query(
-                baseQuery.copy {
-                    withQuery(Predicates.eq(attName, fixedTime))
-                }
-            )
-            assertThat(result.getRecords()).describedAs(time).containsExactlyElementsOf(recsByTime[fixedTime])
+            val times = if (withTime) {
+                listOf(fixedTime)
+            } else {
+                val dateWithoutTime = fixedTime.split("T")[0]
+                listOf(fixedTime, dateWithoutTime)
+            }
+            times.forEach { timeToTest ->
+                val result = records.query(
+                    baseQuery.copy {
+                        withQuery(Predicates.eq(attName, timeToTest))
+                    }
+                )
+                assertThat(result.getRecords()).describedAs(timeToTest).containsExactlyElementsOf(recsByTime[fixedTime])
+            }
         }
 
         val result8 = records.query(

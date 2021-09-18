@@ -21,6 +21,7 @@ import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.service.DbCommitEntityDto
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -116,7 +117,7 @@ class DbRecordsDao(
 
     fun updatePermissions(records: List<String>) {
         AuthContext.runAsSystem {
-            dbDataService.commit(records.associateWith { getAuthoritiesWithReadPerms(it) })
+            dbDataService.commit(records.map { getEntityToCommit(it) })
         }
     }
 
@@ -144,7 +145,7 @@ class DbRecordsDao(
     override fun commit(txnId: UUID, recordsId: List<String>) {
         log.debug { "${this.hashCode()} commit " + txnId + " records: " + recordsId }
         ExtTxnContext.withExtTxn(txnId, false) {
-            dbDataService.commit(recordsId.associateWith { getAuthoritiesWithReadPerms(it) })
+            dbDataService.commit(recordsId.map { getEntityToCommit(it) })
         }
     }
 
@@ -407,7 +408,7 @@ class DbRecordsDao(
                 val extId = resRecord.extId
 
                 if (!txnExists) {
-                    dbDataService.commit(mapOf(extId to getAuthoritiesWithReadPerms(extId)))
+                    dbDataService.commit(listOf(getEntityToCommit(extId)))
                 }
                 resRecord
             }
@@ -425,8 +426,13 @@ class DbRecordsDao(
         }
     }
 
-    private fun getAuthoritiesWithReadPerms(recordId: String): Set<String> {
-        return getRecordPerms(recordId).getAuthoritiesWithReadPermission()
+    private fun getEntityToCommit(recordId: String): DbCommitEntityDto {
+        return DbCommitEntityDto(
+            recordId,
+            getRecordPerms(recordId).getAuthoritiesWithReadPermission(),
+            // todo
+            emptySet()
+        )
     }
 
     private fun getRecordPerms(recordId: String): DbRecordPerms {

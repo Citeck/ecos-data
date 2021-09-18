@@ -6,6 +6,7 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbTableRef
+import ru.citeck.ecos.data.sql.repo.DbEntityPermissionsDto
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.DbEntityRepoConfig
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -24,6 +25,7 @@ import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.*
 import java.util.*
+import kotlin.collections.HashSet
 import kotlin.reflect.KClass
 
 class DbEntityRepoPg<T : Any>(
@@ -188,17 +190,20 @@ class DbEntityRepoPg<T : Any>(
         return mapper.convertToEntity(saveAndGet(entityMap))
     }
 
-    override fun setReadPerms(permissions: Map<String, Set<Long>>) {
+    override fun setReadPerms(permissions: List<DbEntityPermissionsDto>) {
 
-        for ((entityId, authoritiesId) in permissions) {
+        for (entity in permissions) {
 
-            val recordEntity = findByExtIdAsMap(entityId, columns, true) ?: continue
+            val recordEntity = findByExtIdAsMap(entity.id, columns, true) ?: continue
             val recordEntityId = recordEntity[DbEntity.ID] as Long
 
             val permsTableName = config.permsTable.fullName
 
             val currentPerms: List<DbPermsEntity> = dataSource.query(
-                "SELECT \"${DbPermsEntity.RECORD_ID}\",\"${DbPermsEntity.AUTHORITY_ID}\" " +
+                "SELECT " +
+                    "\"${DbPermsEntity.RECORD_ID}\"," +
+                    "\"${DbPermsEntity.AUTHORITY_ID}\"," +
+                    "\"${DbPermsEntity.ALLOWED}\" " +
                     "FROM $permsTableName WHERE \"${DbPermsEntity.RECORD_ID}\"=$recordEntityId",
                 emptyList()
             ) { resultSet ->
@@ -207,13 +212,21 @@ class DbEntityRepoPg<T : Any>(
                 while (resultSet.next()) {
                     val recordId = resultSet.getLong(DbPermsEntity.RECORD_ID)
                     val authorityId = resultSet.getLong(DbPermsEntity.AUTHORITY_ID)
-                    res.add(DbPermsEntity(recordId, authorityId))
+                    val allowed = resultSet.getBoolean(DbPermsEntity.ALLOWED)
+                    res.add(DbPermsEntity(recordId, authorityId, allowed))
                 }
                 res
             }
 
+            val allowedAuth = HashSet(entity.readAllowed)
+            val deniedAuth = HashSet(entity.readDenied)
+
             val permsAuthToDelete = currentPerms.filter {
-                !authoritiesId.contains(it.authorityId)
+                if (it.allowed) {
+                    !allowedAuth.contains(it.authorityId)
+                } else {
+                    !deniedAuth.contains(it.authorityId)
+                }
             }.map {
                 it.authorityId
             }
@@ -226,26 +239,38 @@ class DbEntityRepoPg<T : Any>(
                 )
             }
 
-            val newPermsAuthIds = authoritiesId.toMutableSet()
-            newPermsAuthIds.removeAll(currentPerms.map { it.authorityId })
+            allowedAuth.removeAll(currentPerms.filter { it.allowed }.map { it.authorityId })
+            deniedAuth.removeAll(currentPerms.filter { !it.allowed }.map { it.authorityId })
 
-            if (newPermsAuthIds.isNotEmpty()) {
+            if (allowedAuth.isEmpty() && deniedAuth.isEmpty()) {
+                return
+            }
 
-                val query = StringBuilder()
-                query.append(
-                    "INSERT INTO $permsTableName " +
-                        "(\"${DbPermsEntity.RECORD_ID}\",\"${DbPermsEntity.AUTHORITY_ID}\") VALUES "
-                )
-                newPermsAuthIds.forEach {
+            val query = StringBuilder()
+            query.append(
+                "INSERT INTO $permsTableName " +
+                    "(" +
+                    "\"${DbPermsEntity.RECORD_ID}\"," +
+                    "\"${DbPermsEntity.AUTHORITY_ID}\"," +
+                    "\"${DbPermsEntity.ALLOWED}\"" +
+                    ") VALUES "
+            )
+            val append = { authorities: Set<Long>, allowed: Boolean ->
+                authorities.forEach {
                     query.append("(")
                         .append(recordEntityId)
                         .append(",")
                         .append(it)
+                        .append(",")
+                        .append(allowed)
                         .append("),")
                 }
-                query.setLength(query.length - 1)
-                dataSource.update(query.toString(), emptyList())
             }
+            append(allowedAuth, true)
+            append(deniedAuth, false)
+
+            query.setLength(query.length - 1)
+            dataSource.update(query.toString(), emptyList())
         }
     }
 
@@ -492,6 +517,11 @@ class DbEntityRepoPg<T : Any>(
                 }
                 query.append(" GROUP BY ")
                 appendRecordColumnName(query, "id")
+                query.append(" HAVING bool_and(\"")
+                    .append(PERMS_TABLE_ALIAS)
+                    .append("\".\"")
+                    .append(DbPermsEntity.ALLOWED)
+                    .append("\")")
                 addSortAndPage(query, sort, page)
             } else {
                 val innerQuery = createSelectQuery(
@@ -748,7 +778,14 @@ class DbEntityRepoPg<T : Any>(
                             queryParams.add(UUID.fromString(value.asText()))
                         } else if (columnDef.type == DbColumnType.DATETIME || columnDef.type == DbColumnType.DATE) {
                             val offsetDateTime: OffsetDateTime = if (value.isTextual()) {
-                                OffsetDateTime.parse(value.asText())
+                                val txt = value.asText()
+                                OffsetDateTime.parse(
+                                    if (!txt.contains('T')) {
+                                        "${txt}T00:00:00Z"
+                                    } else {
+                                        txt
+                                    }
+                                )
                             } else if (value.isNumber()) {
                                 OffsetDateTime.ofInstant(Instant.ofEpochMilli(value.asLong()), ZoneOffset.UTC)
                             } else {

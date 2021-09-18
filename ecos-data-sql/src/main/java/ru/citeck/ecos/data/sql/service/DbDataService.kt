@@ -26,7 +26,7 @@ interface DbDataService<T : Any> {
 
     fun save(entity: T, columns: List<DbColumnDef>): T
 
-    fun commit(entities: Map<String, Set<String>>)
+    fun commit(entities: List<DbCommitEntityDto>)
 
     fun rollback(entitiesId: List<String>)
 

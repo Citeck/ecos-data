@@ -26,7 +26,7 @@ interface DbEntityRepo<T : Any> {
 
     fun save(entity: T): T
 
-    fun setReadPerms(permissions: Map<String, Set<Long>>)
+    fun setReadPerms(permissions: List<DbEntityPermissionsDto>)
 
     fun delete(entity: T)
 
