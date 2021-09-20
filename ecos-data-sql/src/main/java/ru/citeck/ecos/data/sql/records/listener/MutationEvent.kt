@@ -1,9 +1,9 @@
 package ru.citeck.ecos.data.sql.records.listener
 
-import ru.citeck.ecos.records3.record.atts.value.RecordAttValueCtx
+import ru.citeck.ecos.records3.record.atts.value.AttValueCtx
 
 class MutationEvent(
-    val recordBefore: RecordAttValueCtx,
-    val recordAfter: RecordAttValueCtx,
+    val recordBefore: AttValueCtx,
+    val recordAfter: AttValueCtx,
     val isNewRecord: Boolean
 )
