@@ -511,7 +511,11 @@ class DbRecordsDao(
             return result
         }
 
-        return Json.mapper.convert(value, javaType)
+        return if (value.isObject() && javaType == String::class.java) {
+            Json.mapper.toString(value)
+        } else {
+            Json.mapper.convert(value, javaType)
+        }
     }
 
     override fun getId() = id
