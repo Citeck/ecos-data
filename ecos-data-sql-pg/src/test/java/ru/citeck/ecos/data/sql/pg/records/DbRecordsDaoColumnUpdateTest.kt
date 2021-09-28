@@ -3,12 +3,11 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import ru.citeck.ecos.commons.data.MLText
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 
 class DbRecordsDaoColumnUpdateTest : DbRecordsTestBase() {
 
@@ -60,16 +59,22 @@ class DbRecordsDaoColumnUpdateTest : DbRecordsTestBase() {
         val testTypeId = "test-type"
         val registerTypeWithAtt = { attId: String, multiple: Boolean ->
             registerType(
-                DbEcosTypeInfo(
-                    testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                    listOf(
-                        AttributeDef.create()
-                            .withId(attId)
-                            .withType(AttributeType.TEXT)
-                            .withMultiple(multiple),
-                    ).map { it.build() },
-                    emptyList()
-                )
+                TypeInfo.create {
+                    withId(testTypeId)
+                    withModel(
+                        TypeModelDef.create()
+                            .withAttributes(
+                                listOf(
+                                    AttributeDef.create()
+                                        .withId(attId)
+                                        .withType(AttributeType.TEXT)
+                                        .withMultiple(multiple)
+                                        .build()
+                                )
+                            )
+                            .build()
+                    )
+                }
             )
         }
 

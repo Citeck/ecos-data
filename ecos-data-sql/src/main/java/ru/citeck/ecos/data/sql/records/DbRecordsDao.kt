@@ -9,10 +9,9 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthRole
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
+import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
 import ru.citeck.ecos.data.sql.records.listener.DeletionEvent
 import ru.citeck.ecos.data.sql.records.listener.MutationEvent
@@ -26,6 +25,8 @@ import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.RecordRef
@@ -57,9 +58,10 @@ import kotlin.math.min
 class DbRecordsDao(
     private val id: String,
     private val config: DbRecordsDaoConfig,
-    private val ecosTypeRepo: DbEcosTypeRepo,
+    private val ecosTypesRepo: TypesRepo,
     private val dbDataService: DbDataService<DbEntity>,
-    private val permsComponent: DbPermsComponent
+    private val permsComponent: DbPermsComponent,
+    private val computedAttsComponent: DbComputedAttsComponent?
 ) : AbstractRecordsDao(),
     RecordsAttsDao,
     RecordsQueryDao,
@@ -125,13 +127,13 @@ class DbRecordsDao(
         return dbDataService.getTableMeta()
     }
 
-    private fun getRecordsTypeInfo(typeRef: RecordRef): DbEcosTypeInfo? {
+    private fun getRecordsTypeInfo(typeRef: RecordRef): TypeInfo? {
         val type = getRecordsTypeRef(typeRef)
         if (RecordRef.isEmpty(type)) {
             log.warn { "Type is not defined for Records DAO" }
             return null
         }
-        return ecosTypeRepo.getTypeInfo(type.id)
+        return ecosTypeService.getTypeInfo(type.id)
     }
 
     private fun getRecordsTypeRef(typeRef: RecordRef): RecordRef {
@@ -304,7 +306,8 @@ class DbRecordsDao(
 
         val typesId = records.map { getTypeIdForRecord(it) }
         val typesInfo = typesId.mapIndexed { idx, typeId ->
-            ecosTypeRepo.getTypeInfo(typeId) ?: error("Type is not found: '$typeId'. Record ID: '${records[idx]}'")
+            ecosTypeService.getTypeInfo(typeId)
+                ?: error("Type is not found: '$typeId'. Record ID: '${records[idx]}'")
         }
 
         val typesColumns = ecosTypeService.getColumnsForTypes(typesInfo)
@@ -386,37 +389,41 @@ class DbRecordsDao(
             if (record.attributes.has(StatusConstants.ATT_STATUS)) {
                 val newStatus = record.attributes.get(StatusConstants.ATT_STATUS).asText()
                 if (newStatus.isNotBlank()) {
-                    if (typeDef.statuses.any { it.id == newStatus }) {
+                    if (typeDef.model.statuses.any { it.id == newStatus }) {
                         recToMutate.status = newStatus
                     } else {
                         error(
                             "Unknown status: '$newStatus'. " +
-                                "Available statuses: ${typeDef.statuses.joinToString { it.id }}"
+                                "Available statuses: ${typeDef.model.statuses.joinToString { it.id }}"
                         )
                     }
                 }
             }
 
+            val isNewRecord = recToMutate.id == DbEntity.NEW_REC_ID
             var recAfterSave = dbDataService.save(recToMutate, fullColumns)
 
             recAfterSave = AuthContext.runAsSystem {
-                val resRecord = if (ecosTypeService.fillComputedAtts(getId(), recAfterSave)) {
-                    dbDataService.save(recAfterSave, fullColumns)
+                val newEntity = if (computedAttsComponent != null) {
+                    computeAttsToStore(
+                        computedAttsComponent,
+                        recAfterSave,
+                        isNewRecord,
+                        recordTypeId,
+                        fullColumns
+                    )
                 } else {
                     recAfterSave
                 }
-                val extId = resRecord.extId
-
                 if (!txnExists) {
-                    dbDataService.commit(listOf(getEntityToCommit(extId)))
+                    dbDataService.commit(listOf(getEntityToCommit(newEntity.extId)))
                 }
-                resRecord
+                newEntity
             }
 
             // emit event
             val valueBefore = RecordAttValueCtx(Record(recordEntityBeforeMutation), recordsService)
             val valueAfter = RecordAttValueCtx(Record(recAfterSave), recordsService)
-            val isNewRecord = recToMutate.id == DbEntity.NEW_REC_ID
             val mutationEvent = MutationEvent(valueBefore, valueAfter, isNewRecord)
 
             listeners.forEach {
@@ -424,6 +431,40 @@ class DbRecordsDao(
             }
             recAfterSave.extId
         }
+    }
+
+    private fun computeAttsToStore(
+        component: DbComputedAttsComponent,
+        entity: DbEntity,
+        isNewRecord: Boolean,
+        recTypeId: String,
+        columns: List<DbColumnDef>
+    ): DbEntity {
+
+        val typeRef = TypeUtils.getTypeRef(recTypeId)
+        val atts = component.computeAttsToStore(Record(entity), isNewRecord, typeRef)
+
+        if (atts.size() == 0) {
+            return entity
+        }
+        var changed = false
+
+        if (atts.has(RecordConstants.ATT_DISP)) {
+            val newName = atts.get(RecordConstants.ATT_DISP).getAs(MLText::class.java) ?: entity.name
+            if (entity.name != newName) {
+                entity.name = newName
+                changed = true
+            }
+            atts.remove(RecordConstants.ATT_DISP)
+        }
+
+        changed = setMutationAtts(entity, atts, columns).isNotEmpty() || changed
+
+        if (!changed) {
+            return entity
+        }
+
+        return dbDataService.save(entity, columns)
     }
 
     private fun getEntityToCommit(recordId: String): DbCommitEntityDto {
@@ -448,9 +489,14 @@ class DbRecordsDao(
         )
     }
 
-    private fun setMutationAtts(recToMutate: DbEntity, atts: ObjectData, types: List<DbColumnDef>): List<DbColumnDef> {
+    private fun setMutationAtts(
+        recToMutate: DbEntity,
+        atts: ObjectData,
+        columns: List<DbColumnDef>
+    ): List<DbColumnDef> {
+
         val notEmptyColumns = ArrayList<DbColumnDef>()
-        for (dbColumnDef in types) {
+        for (dbColumnDef in columns) {
             if (!atts.has(dbColumnDef.name)) {
                 continue
             }
@@ -538,7 +584,7 @@ class DbRecordsDao(
             val recData = LinkedHashMap(entity.attributes)
 
             val attTypes = HashMap<String, AttributeType>()
-            ecosTypeRepo.getTypeInfo(entity.type)?.attributes?.forEach {
+            ecosTypeService.getTypeInfo(entity.type)?.model?.attributes?.forEach {
                 attTypes[it.id] = it.type
             }
             OPTIONAL_COLUMNS.forEach {
@@ -577,7 +623,8 @@ class DbRecordsDao(
                             recData[attId] = Json.mapper.read(value, MLText::class.java)
                         }
                     }
-                    else -> {}
+                    else -> {
+                    }
                 }
             }
             this.additionalAtts = recData
@@ -628,6 +675,6 @@ class DbRecordsDao(
 
     override fun setRecordsServiceFactory(serviceFactory: RecordsServiceFactory) {
         super.setRecordsServiceFactory(serviceFactory)
-        ecosTypeService = DbEcosTypeService(ecosTypeRepo, serviceFactory)
+        ecosTypeService = DbEcosTypeService(ecosTypesRepo)
     }
 }

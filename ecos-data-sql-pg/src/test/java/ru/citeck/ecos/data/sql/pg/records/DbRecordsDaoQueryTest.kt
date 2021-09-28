@@ -3,12 +3,12 @@ package ru.citeck.ecos.data.sql.pg.records
 import mu.KotlinLogging
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import ru.citeck.ecos.commons.data.MLText
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.model.Predicates
@@ -30,30 +30,34 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
     fun test() {
 
         registerType(
-            DbEcosTypeInfo(
-                REC_TEST_TYPE_ID,
-                MLText.EMPTY,
-                MLText.EMPTY,
-                RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT)
-                        .build(),
-                    AttributeDef.create()
-                        .withId("dateTimeAtt")
-                        .withType(AttributeType.DATETIME)
-                        .build()
-                ),
-                listOf(
-                    StatusDef.create {
-                        withId("draft")
-                    },
-                    StatusDef.create {
-                        withId("new")
-                    }
+            TypeInfo.create {
+                withId(REC_TEST_TYPE_ID)
+                withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .withType(AttributeType.TEXT)
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("dateTimeAtt")
+                                    .withType(AttributeType.DATETIME)
+                                    .build()
+                            )
+                        )
+                        .withStatuses(
+                            listOf(
+                                StatusDef.create {
+                                    withId("draft")
+                                },
+                                StatusDef.create {
+                                    withId("new")
+                                }
+                            )
+                        ).build()
                 )
-            )
+            }
         )
 
         val baseQuery = RecordsQuery.create {
@@ -103,34 +107,39 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
     fun test2() {
 
         registerType(
-            DbEcosTypeInfo(
-                REC_TEST_TYPE_ID,
-                MLText.EMPTY,
-                MLText.EMPTY,
-                RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT)
-                        .build(),
-                    AttributeDef.create()
-                        .withId("dateTimeAtt")
-                        .withType(AttributeType.DATETIME)
-                        .build(),
-                    AttributeDef.create()
-                        .withId("dateAtt")
-                        .withType(AttributeType.DATE)
-                        .build()
-                ),
-                listOf(
-                    StatusDef.create {
-                        withId("draft")
-                    },
-                    StatusDef.create {
-                        withId("new")
+            TypeInfo.create {
+                withId(REC_TEST_TYPE_ID)
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .withType(AttributeType.TEXT)
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("dateTimeAtt")
+                                    .withType(AttributeType.DATETIME)
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("dateAtt")
+                                    .withType(AttributeType.DATE)
+                                    .build()
+                            )
+                        )
+                            .withStatuses(
+                                listOf(
+                                    StatusDef.create {
+                                        withId("draft")
+                                    },
+                                    StatusDef.create {
+                                        withId("new")
+                                    }
+                                )
+                            )
                     }
                 )
-            )
+            }
         )
 
         testForDateAtt("dateTimeAtt", true)

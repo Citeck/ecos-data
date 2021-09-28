@@ -6,9 +6,10 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.dto.DbTableRef
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicates
@@ -28,7 +29,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         initWithTable(firstTableRef)
 
         val testTypeId = "test-type"
-        registerType(
+        registerAttributes(
             testTypeId,
             listOf(
                 AttributeDef.create()
@@ -74,15 +75,20 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         val testTypeId = "test-type"
         registerType(
-            DbEcosTypeInfo(
-                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT)
-                ).map { it.build() },
-                emptyList()
-            )
+            TypeInfo.create {
+                withId(testTypeId)
+                withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .withType(AttributeType.TEXT)
+                            ).map { it.build() }
+                        )
+                        .build()
+                )
+            }
         )
 
         val typeRef = TypeUtils.getTypeRef(testTypeId)
@@ -94,18 +100,23 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         records.create(RECS_DAO_ID, mapOf("textAtt" to "value", "_type" to testTypeId))
 
         registerType(
-            DbEcosTypeInfo(
-                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT),
-                    AttributeDef.create()
-                        .withId("textAtt2")
-                        .withType(AttributeType.TEXT)
-                ).map { it.build() },
-                emptyList()
-            )
+            TypeInfo.create {
+                withId(testTypeId)
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .withType(AttributeType.TEXT),
+                                AttributeDef.create()
+                                    .withId("textAtt2")
+                                    .withType(AttributeType.TEXT)
+                            ).map { it.build() }
+                        )
+                    }
+                )
+            }
         )
 
         assertThat(recordsDao.runMigrations(typeRef, diff = true))
@@ -121,27 +132,32 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         val testTypeId = "test-type"
         registerType(
-            DbEcosTypeInfo(
-                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT),
-                    AttributeDef.create()
-                        .withId("textArrayAtt")
-                        .withType(AttributeType.TEXT)
-                        .withMultiple(true),
-                    AttributeDef.create()
-                        .withId("numArrayAtt")
-                        .withType(AttributeType.NUMBER)
-                        .withMultiple(true),
-                    AttributeDef.create()
-                        .withId("dateTimeArrayAtt")
-                        .withType(AttributeType.DATETIME)
-                        .withMultiple(true)
-                ).map { it.build() },
-                emptyList()
-            )
+            TypeInfo.create {
+                withId(testTypeId)
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .withType(AttributeType.TEXT),
+                                AttributeDef.create()
+                                    .withId("textArrayAtt")
+                                    .withType(AttributeType.TEXT)
+                                    .withMultiple(true),
+                                AttributeDef.create()
+                                    .withId("numArrayAtt")
+                                    .withType(AttributeType.NUMBER)
+                                    .withMultiple(true),
+                                AttributeDef.create()
+                                    .withId("dateTimeArrayAtt")
+                                    .withType(AttributeType.DATETIME)
+                                    .withMultiple(true)
+                            ).map { it.build() }
+                        )
+                    }
+                )
+            }
         )
 
         val attsMap = mapOf(
@@ -161,7 +177,11 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         val result = records.getAtts(newRecId, attsToReq)
         assertThat(result.getAtt("textArrayAtt").asText()).isEqualTo((attsMap["textArrayAtt"] as List<*>)[0])
         assertThat(result.getAtt("numArrayAtt?num").asInt()).isEqualTo((attsMap["numArrayAtt"] as List<*>)[0])
-        assertThat(Instant.parse(result.getAtt("dateTimeArrayAtt").asText())).isEqualTo((attsMap["dateTimeArrayAtt"] as List<*>)[0])
+        assertThat(
+            Instant.parse(
+                result.getAtt("dateTimeArrayAtt").asText()
+            )
+        ).isEqualTo((attsMap["dateTimeArrayAtt"] as List<*>)[0])
 
         val strList = arrayListOf("aaa", "bbb", "ccc")
         records.mutateAtt(newRecId, "textArrayAtt", strList)
@@ -179,24 +199,27 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         val testTypeId = "test-type"
         registerType(
-            DbEcosTypeInfo(
-                testTypeId,
-                MLText(),
-                MLText("Имя #\${numAtt}"),
-                RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT),
-                    AttributeDef.create()
-                        .withId("numAtt")
-                        .withType(AttributeType.NUMBER),
-                    AttributeDef.create()
-                        .withId("dateTimeAtt")
-                        .withType(AttributeType.DATETIME)
-                ).map { it.build() },
-                emptyList()
-            )
+            TypeInfo.create {
+                withId(testTypeId)
+                withDispNameTemplate(MLText("Имя #\${numAtt}"))
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .withType(AttributeType.TEXT),
+                                AttributeDef.create()
+                                    .withId("numAtt")
+                                    .withType(AttributeType.NUMBER),
+                                AttributeDef.create()
+                                    .withId("dateTimeAtt")
+                                    .withType(AttributeType.DATETIME)
+                            ).map { it.build() }
+                        )
+                    }
+                )
+            }
         )
 
         val timeBeforeCreated = Instant.now().truncatedTo(ChronoUnit.MILLIS)

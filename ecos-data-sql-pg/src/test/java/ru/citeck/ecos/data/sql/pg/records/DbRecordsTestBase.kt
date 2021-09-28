@@ -3,17 +3,16 @@ package ru.citeck.ecos.data.sql.pg.records
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
-import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeRepo
 import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.pg.PgUtils
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
+import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.records.perms.DefaultDbPermsComponent
@@ -22,7 +21,11 @@ import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.utils.use
+import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.PredicateService
@@ -63,7 +66,8 @@ abstract class DbRecordsTestBase {
         }
     }
 
-    private val typesDef = mutableMapOf<String, DbEcosTypeInfo>()
+    private val typesInfo = mutableMapOf<String, TypeInfo>()
+
     private val recReadPerms = mutableMapOf<RecordRef, Set<String>>()
 
     lateinit var recordsDao: DbRecordsDao
@@ -72,7 +76,7 @@ abstract class DbRecordsTestBase {
     lateinit var dbDataSource: DbDataSource
     lateinit var tableRef: DbTableRef
     lateinit var dbSchemaDao: DbSchemaDao
-    lateinit var ecosTypeRepo: DbEcosTypeRepo
+    lateinit var ecosTypeRepo: TypesRepo
 
     val baseQuery = RecordsQuery.create {
         withSourceId(RECS_DAO_ID)
@@ -84,7 +88,7 @@ abstract class DbRecordsTestBase {
     fun beforeEachBase() {
 
         dropAllTables()
-        typesDef.clear()
+        typesInfo.clear()
         recReadPerms.clear()
 
         initWithTable(DbTableRef("records-test-schema", "test-records-table"), false)
@@ -103,12 +107,6 @@ abstract class DbRecordsTestBase {
 
         this.tableRef = tableRef
 
-        ecosTypeRepo = object : DbEcosTypeRepo {
-            override fun getTypeInfo(typeId: String): DbEcosTypeInfo? {
-                return typesDef[typeId]
-            }
-        }
-
         dbDataSource = DbDataSourceImpl(dataSource)
 
         val pgDataServiceFactory = PgDataServiceFactory()
@@ -126,6 +124,19 @@ abstract class DbRecordsTestBase {
         )
 
         recordsServiceFactory = RecordsServiceFactory()
+        val modelServiceFactory = object : ModelServiceFactory() {
+            override fun createTypesRepo(): TypesRepo {
+                return object : TypesRepo {
+                    override fun getChildren(typeRef: RecordRef) = emptyList<RecordRef>()
+                    override fun getTypeInfo(typeRef: RecordRef): TypeInfo? {
+                        return typesInfo[typeRef.id]
+                    }
+                }
+            }
+        }
+        modelServiceFactory.setRecordsServices(recordsServiceFactory)
+        ecosTypeRepo = modelServiceFactory.typesRepo
+
         records = recordsServiceFactory.recordsServiceV1
         RequestContext.setDefaultServices(recordsServiceFactory)
 
@@ -157,7 +168,12 @@ abstract class DbRecordsTestBase {
             ),
             ecosTypeRepo,
             dataService,
-            permsComponent
+            permsComponent,
+            object : DbComputedAttsComponent {
+                override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: RecordRef): ObjectData {
+                    return modelServiceFactory.computedAttsService.computeAttsToStore(value, isNewRecord, typeRef)
+                }
+            }
         )
         dbSchemaDao = pgDataServiceFactory.createSchemaDao(tableRef, dbDataSource)
         records.register(recordsDao)
@@ -279,15 +295,24 @@ abstract class DbRecordsTestBase {
         }
     }
 
-    fun registerType(type: DbEcosTypeInfo) {
-        this.typesDef[type.id] = type
+    fun registerType(type: TypeInfo) {
+        this.typesInfo[type.id] = type
     }
 
     fun registerAtts(atts: List<AttributeDef>) {
-        registerType(REC_TEST_TYPE_ID, atts)
+        registerAttributes(REC_TEST_TYPE_ID, atts)
     }
 
-    fun registerType(id: String, atts: List<AttributeDef>) {
-        this.typesDef[id] = DbEcosTypeInfo(id, MLText(), MLText(), RecordRef.EMPTY, atts, emptyList())
+    fun registerAttributes(id: String, atts: List<AttributeDef>) {
+        registerType(
+            TypeInfo.create {
+                withId(id)
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(atts)
+                    }
+                )
+            }
+        )
     }
 }
