@@ -25,6 +25,7 @@ import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
+import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
@@ -38,6 +39,7 @@ import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
+import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.RecordAttValueCtx
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
@@ -173,9 +175,13 @@ class DbRecordsDao(
 
     private fun getRecordsAttsInTxn(recordsId: List<String>): List<*> {
         return recordsId.map { id ->
-            dbDataService.findById(id)?.let {
-                Record(it)
-            } ?: EmptyAttValue.INSTANCE
+            if (id.isEmpty()) {
+                EmptyRecord()
+            } else {
+                dbDataService.findById(id)?.let {
+                    Record(it)
+                } ?: EmptyAttValue.INSTANCE
+            }
         }
     }
 
@@ -574,6 +580,16 @@ class DbRecordsDao(
         this.listeners.remove(listener)
     }
 
+    inner class EmptyRecord : AttValue {
+
+        override fun getEdge(name: String?): AttEdge? {
+            if (name == StatusConstants.ATT_STATUS) {
+                return StatusEdge(config.typeRef)
+            }
+            return super.getEdge(name)
+        }
+    }
+
     inner class Record(
         val entity: DbEntity
     ) : AttValue {
@@ -656,9 +672,21 @@ class DbRecordsDao(
                 RecordConstants.ATT_CREATED, "cm:created" -> entity.created
                 RecordConstants.ATT_MODIFIER -> getAsPersonRef(entity.modifier)
                 RecordConstants.ATT_CREATOR -> getAsPersonRef(entity.creator)
-                StatusConstants.ATT_STATUS -> entity.status
+                StatusConstants.ATT_STATUS -> {
+                    val statusId = entity.status
+                    val typeInfo = ecosTypeService.getTypeInfo(entity.type) ?: return statusId
+                    val statusDef = typeInfo.model.statuses.firstOrNull { it.id == statusId } ?: return statusId
+                    return StatusValue(statusDef)
+                }
                 else -> additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
             }
+        }
+
+        override fun getEdge(name: String): AttEdge? {
+            if (name == StatusConstants.ATT_STATUS) {
+                return StatusEdge(type)
+            }
+            return super.getEdge(name)
         }
 
         private fun getAsPersonRef(name: String): RecordRef {
@@ -676,5 +704,25 @@ class DbRecordsDao(
     override fun setRecordsServiceFactory(serviceFactory: RecordsServiceFactory) {
         super.setRecordsServiceFactory(serviceFactory)
         ecosTypeService = DbEcosTypeService(ecosTypesRepo)
+    }
+
+    inner class StatusEdge(val type: RecordRef) : AttEdge {
+        override fun isMultiple() = false
+        override fun getOptions(): List<Any> {
+            if (type.id.isBlank()) {
+                return emptyList()
+            }
+            val typeInfo = ecosTypeService.getTypeInfo(type.id) ?: return emptyList()
+            return typeInfo.model.statuses.map { StatusValue(it) }
+        }
+    }
+
+    class StatusValue(private val def: StatusDef) : AttValue {
+        override fun getDisplayName(): Any {
+            return def.name
+        }
+        override fun asText(): String {
+            return def.id
+        }
     }
 }
