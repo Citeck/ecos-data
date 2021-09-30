@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.pg.records
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
+import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
@@ -172,6 +173,9 @@ abstract class DbRecordsTestBase {
             object : DbComputedAttsComponent {
                 override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: RecordRef): ObjectData {
                     return modelServiceFactory.computedAttsService.computeAttsToStore(value, isNewRecord, typeRef)
+                }
+                override fun computeDisplayName(value: Any, typeRef: RecordRef): MLText {
+                    return modelServiceFactory.computedAttsService.computeDisplayName(value, typeRef)
                 }
             }
         )

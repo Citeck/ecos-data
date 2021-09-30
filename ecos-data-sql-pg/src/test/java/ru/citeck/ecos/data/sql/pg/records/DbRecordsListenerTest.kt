@@ -2,42 +2,65 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
-import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
-import ru.citeck.ecos.data.sql.records.listener.DeletionEvent
-import ru.citeck.ecos.data.sql.records.listener.MutationEvent
+import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.status.dto.StatusDef
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.records2.RecordRef
 
 class DbRecordsListenerTest : DbRecordsTestBase() {
 
     @Test
     fun test() {
-        registerAtts(
-            listOf(
-                AttributeDef.create {
-                    withId("textAtt")
-                }
-            )
+        registerType(
+            TypeInfo.create {
+                withId(REC_TEST_TYPE_ID)
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(
+                            listOf(
+                                AttributeDef.create {
+                                    withId("textAtt")
+                                }
+                            )
+                        )
+                        withStatuses(
+                            listOf(
+                                StatusDef.create {
+                                    withId("draft")
+                                    withName(MLText("olala"))
+                                },
+                                StatusDef.create {
+                                    withId("approve")
+                                    withName(MLText("olala-approve"))
+                                }
+                            )
+                        )
+                    }
+                )
+            }
         )
 
         val attsToReq = mapOf("attKey" to "textAtt")
 
-        val mutationEvents = mutableListOf<MutationEvent>()
+        val mutationEvents = mutableListOf<DbRecordChangedEvent>()
         val mutationBeforeAtts = mutableListOf<ObjectData>()
         val mutationAfterAtts = mutableListOf<ObjectData>()
-        val mutationBeforeRefs = mutableListOf<RecordRef>()
-        val mutationAfterRefs = mutableListOf<RecordRef>()
+        val mutationRefs = mutableListOf<RecordRef>()
+
+        val createdEvents = mutableListOf<RecordRef>()
 
         val mutationLists = listOf(
             mutationEvents,
             mutationBeforeAtts,
             mutationAfterAtts,
-            mutationBeforeRefs,
-            mutationAfterRefs
+            mutationRefs
         )
 
-        val deletionEvents = mutableListOf<DeletionEvent>()
+        val deletionEvents = mutableListOf<DbRecordDeletedEvent>()
         val deletionAtts = mutableListOf<ObjectData>()
 
         val deletionLists = listOf(
@@ -45,41 +68,65 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
             deletionAtts
         )
 
-        val listener = object : DbRecordsListener {
-            override fun onMutated(event: MutationEvent) {
-                mutationEvents.add(event)
-                mutationBeforeAtts.add(event.recordBefore.getAtts(attsToReq))
-                mutationBeforeRefs.add(event.recordBefore.getRef())
-                mutationAfterAtts.add(event.recordAfter.getAtts(attsToReq))
-                mutationAfterRefs.add(event.recordAfter.getRef())
-            }
+        val statusChangedEvents = mutableListOf<Pair<String, String>>()
 
-            override fun onDeleted(event: DeletionEvent) {
+        val listener = object : DbRecordsListener {
+            override fun onChanged(event: DbRecordChangedEvent) {
+                mutationEvents.add(event)
+                val beforeAtts = records.getAtts(event.before, attsToReq)
+                val afterAtts = records.getAtts(event.after, attsToReq)
+                mutationBeforeAtts.add(beforeAtts.getAtts())
+                mutationRefs.add(records.getAtt(event.record, "?id").getAs(RecordRef::class.java)!!)
+                mutationAfterAtts.add(afterAtts.getAtts())
+            }
+            override fun onDeleted(event: DbRecordDeletedEvent) {
                 deletionEvents.add(event)
-                deletionAtts.add(event.record.getAtts(attsToReq))
+                deletionAtts.add(records.getAtts(event.record, attsToReq).getAtts())
+            }
+            override fun onCreated(event: DbRecordCreatedEvent) {
+                createdEvents.add(records.getAtt(event.record, "?id").getAs(RecordRef::class.java)!!)
+            }
+            override fun onStatusChanged(event: DbRecordStatusChangedEvent) {
+                val beforeStr = records.getAtt(event.before, "?str").asText()
+                val afterStr = records.getAtt(event.after, "?str").asText()
+                statusChangedEvents.add(beforeStr to afterStr)
             }
         }
         recordsDao.addListener(listener)
 
         val rec = createRecord("textAtt" to "value")
 
-        assertThat(mutationLists.all { it.size == 1 }).isTrue
-        assertThat(mutationBeforeAtts[0].get("attKey").asText()).isEmpty()
-        assertThat(mutationAfterAtts[0].get("attKey").asText()).isEqualTo("value")
-        assertThat(mutationBeforeRefs[0]).isEqualTo(RecordRef.create(recordsDao.getId(), ""))
-        assertThat(mutationAfterRefs[0]).isEqualTo(rec)
-        assertThat(mutationEvents[0].isNewRecord).isTrue
+        assertThat(createdEvents).hasSize(1)
 
+        assertThat(mutationLists.all { it.isEmpty() }).isTrue
+
+        createdEvents.clear()
         mutationLists.forEach { it.clear() }
 
         updateRecord(rec, "textAtt" to "afterValue")
 
+        assertThat(createdEvents).isEmpty()
+
         assertThat(mutationLists.all { it.size == 1 }).isTrue
         assertThat(mutationBeforeAtts[0].get("attKey").asText()).isEqualTo("value")
         assertThat(mutationAfterAtts[0].get("attKey").asText()).isEqualTo("afterValue")
-        assertThat(mutationBeforeRefs[0]).isEqualTo(rec)
-        assertThat(mutationAfterRefs[0]).isEqualTo(rec)
-        assertThat(mutationEvents[0].isNewRecord).isFalse
+        assertThat(mutationRefs[0]).isEqualTo(rec)
+
+        mutationLists.forEach { it.clear() }
+
+        updateRecord(rec, "_status" to "draft")
+
+        assertThat(mutationLists.all { it.isEmpty() }).isTrue
+        assertThat(statusChangedEvents).containsExactly("" to "draft")
+
+        statusChangedEvents.clear()
+
+        updateRecord(rec, "_status" to "approve")
+
+        assertThat(mutationLists.all { it.isEmpty() }).isTrue
+        assertThat(statusChangedEvents).containsExactly("draft" to "approve")
+
+        statusChangedEvents.clear()
 
         records.delete(rec)
 
@@ -95,6 +142,6 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
         updateRecord(newRec, "textAtt" to "newVal")
         records.delete(newRec)
 
-        assertThat(listOf(mutationLists, deletionLists).flatten().all { it.isEmpty() }).isTrue
+        assertThat(listOf(mutationLists, deletionLists, listOf(createdEvents)).flatten().all { it.isEmpty() }).isTrue
     }
 }

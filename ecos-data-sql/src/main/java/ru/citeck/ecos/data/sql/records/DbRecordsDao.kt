@@ -12,9 +12,7 @@ import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
-import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
-import ru.citeck.ecos.data.sql.records.listener.DeletionEvent
-import ru.citeck.ecos.data.sql.records.listener.MutationEvent
+import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -41,7 +39,6 @@ import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
-import ru.citeck.ecos.records3.record.atts.value.RecordAttValueCtx
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.records3.record.dao.AbstractRecordsDao
 import ru.citeck.ecos.records3.record.dao.atts.RecordsAttsDao
@@ -264,7 +261,7 @@ class DbRecordsDao(
         for (recordId in recordsId) {
             dbDataService.findById(recordId)?.let { entity ->
                 dbDataService.delete(entity)
-                val event = DeletionEvent(RecordAttValueCtx(Record(entity), recordsService))
+                val event = DbRecordDeletedEvent(Record(entity))
                 listeners.forEach {
                     it.onDeleted(event)
                 }
@@ -426,16 +423,50 @@ class DbRecordsDao(
                 }
                 newEntity
             }
+            emitEventAfterMutation(recordEntityBeforeMutation, recAfterSave, isNewRecord)
 
-            // emit event
-            val valueBefore = RecordAttValueCtx(Record(recordEntityBeforeMutation), recordsService)
-            val valueAfter = RecordAttValueCtx(Record(recAfterSave), recordsService)
-            val mutationEvent = MutationEvent(valueBefore, valueAfter, isNewRecord)
-
-            listeners.forEach {
-                it.onMutated(mutationEvent)
-            }
             recAfterSave.extId
+        }
+    }
+
+    private fun emitEventAfterMutation(before: DbEntity, after: DbEntity, isNewRecord: Boolean) {
+
+        if (isNewRecord) {
+            val event = DbRecordCreatedEvent(Record(after))
+            listeners.forEach {
+                it.onCreated(event)
+            }
+            return
+        }
+
+        val typeInfo = ecosTypeService.getTypeInfo(after.type) ?: return
+
+        val recBefore = Record(before)
+        val recAfter = Record(after)
+        val attsBefore = mutableMapOf<String, Any?>()
+        val attsAfter = mutableMapOf<String, Any?>()
+
+        val attsDef = typeInfo.model.attributes
+        attsDef.forEach {
+            attsBefore[it.id] = recBefore.getAtt(it.id)
+            attsAfter[it.id] = recAfter.getAtt(it.id)
+        }
+
+        if (attsBefore != attsAfter) {
+            val recChangedEvent = DbRecordChangedEvent(recAfter, attsDef, attsBefore, attsAfter)
+            listeners.forEach {
+                it.onChanged(recChangedEvent)
+            }
+        }
+
+        val statusBefore = recBefore.getAtt(StatusConstants.ATT_STATUS) ?: StatusValue(StatusDef.create {})
+        val statusAfter = recAfter.getAtt(StatusConstants.ATT_STATUS) ?: StatusValue(StatusDef.create {})
+
+        if (statusBefore != statusAfter) {
+            val statusChangedEvent = DbRecordStatusChangedEvent(recAfter, statusBefore, statusAfter)
+            listeners.forEach {
+                it.onStatusChanged(statusChangedEvent)
+            }
         }
     }
 
@@ -450,21 +481,13 @@ class DbRecordsDao(
         val typeRef = TypeUtils.getTypeRef(recTypeId)
         val atts = component.computeAttsToStore(Record(entity), isNewRecord, typeRef)
 
-        if (atts.size() == 0) {
-            return entity
-        }
-        var changed = false
+        var changed = setMutationAtts(entity, atts, columns).isNotEmpty()
 
-        if (atts.has(RecordConstants.ATT_DISP)) {
-            val newName = atts.get(RecordConstants.ATT_DISP).getAs(MLText::class.java) ?: entity.name
-            if (entity.name != newName) {
-                entity.name = newName
-                changed = true
-            }
-            atts.remove(RecordConstants.ATT_DISP)
+        val dispName = component.computeDisplayName(Record(entity), typeRef)
+        if (entity.name != dispName) {
+            entity.name = dispName
+            changed = true
         }
-
-        changed = setMutationAtts(entity, atts, columns).isNotEmpty() || changed
 
         if (!changed) {
             return entity
@@ -500,6 +523,10 @@ class DbRecordsDao(
         atts: ObjectData,
         columns: List<DbColumnDef>
     ): List<DbColumnDef> {
+
+        if (atts.size() == 0) {
+            return emptyList()
+        }
 
         val notEmptyColumns = ArrayList<DbColumnDef>()
         for (dbColumnDef in columns) {
@@ -717,7 +744,7 @@ class DbRecordsDao(
         }
     }
 
-    class StatusValue(private val def: StatusDef) : AttValue {
+    data class StatusValue(private val def: StatusDef) : AttValue {
         override fun getDisplayName(): Any {
             return def.name
         }
