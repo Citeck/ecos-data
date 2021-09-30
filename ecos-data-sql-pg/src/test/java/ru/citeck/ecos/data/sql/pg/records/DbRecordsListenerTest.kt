@@ -87,8 +87,8 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
                 createdEvents.add(records.getAtt(event.record, "?id").getAs(RecordRef::class.java)!!)
             }
             override fun onStatusChanged(event: DbRecordStatusChangedEvent) {
-                val beforeStr = records.getAtt(event.before, "?str").asText()
-                val afterStr = records.getAtt(event.after, "?str").asText()
+                val beforeStr = event.before.id
+                val afterStr = event.after.id
                 statusChangedEvents.add(beforeStr to afterStr)
             }
         }

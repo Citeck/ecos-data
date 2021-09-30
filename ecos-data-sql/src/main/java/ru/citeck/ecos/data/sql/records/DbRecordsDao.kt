@@ -261,9 +261,12 @@ class DbRecordsDao(
         for (recordId in recordsId) {
             dbDataService.findById(recordId)?.let { entity ->
                 dbDataService.delete(entity)
-                val event = DbRecordDeletedEvent(Record(entity))
-                listeners.forEach {
-                    it.onDeleted(event)
+                val typeInfo = ecosTypeService.getTypeInfo(entity.type)
+                if (typeInfo != null) {
+                    val event = DbRecordDeletedEvent(Record(entity), typeInfo)
+                    listeners.forEach {
+                        it.onDeleted(event)
+                    }
                 }
             }
         }
@@ -431,15 +434,15 @@ class DbRecordsDao(
 
     private fun emitEventAfterMutation(before: DbEntity, after: DbEntity, isNewRecord: Boolean) {
 
+        val typeInfo = ecosTypeService.getTypeInfo(after.type) ?: error("Entity with unknown type: " + after.type)
+
         if (isNewRecord) {
-            val event = DbRecordCreatedEvent(Record(after))
+            val event = DbRecordCreatedEvent(Record(after), typeInfo)
             listeners.forEach {
                 it.onCreated(event)
             }
             return
         }
-
-        val typeInfo = ecosTypeService.getTypeInfo(after.type) ?: return
 
         val recBefore = Record(before)
         val recAfter = Record(after)
@@ -453,7 +456,7 @@ class DbRecordsDao(
         }
 
         if (attsBefore != attsAfter) {
-            val recChangedEvent = DbRecordChangedEvent(recAfter, attsDef, attsBefore, attsAfter)
+            val recChangedEvent = DbRecordChangedEvent(recAfter, typeInfo, attsBefore, attsAfter)
             listeners.forEach {
                 it.onChanged(recChangedEvent)
             }
@@ -464,15 +467,22 @@ class DbRecordsDao(
 
         if (statusBefore != statusAfter) {
 
-            val statusBeforeDef = typeInfo.model.statuses.firstOrNull { it.id == statusBefore }
-            val statusAfterDef = typeInfo.model.statuses.firstOrNull { it.id == statusAfter }
+            val statusBeforeDef = getStatusDef(statusBefore, typeInfo)
+            val statusAfterDef = getStatusDef(statusAfter, typeInfo)
 
-            if (statusBeforeDef != null && statusAfterDef != null) {
-                val statusChangedEvent = DbRecordStatusChangedEvent(recAfter, statusBeforeDef, statusAfterDef)
-                listeners.forEach {
-                    it.onStatusChanged(statusChangedEvent)
-                }
+            val statusChangedEvent = DbRecordStatusChangedEvent(recAfter, typeInfo, statusBeforeDef, statusAfterDef)
+            listeners.forEach {
+                it.onStatusChanged(statusChangedEvent)
             }
+        }
+    }
+
+    private fun getStatusDef(id: String, typeInfo: TypeInfo): StatusDef {
+        if (id.isBlank()) {
+            return StatusDef.create {}
+        }
+        return typeInfo.model.statuses.firstOrNull { it.id == id } ?: StatusDef.create {
+            withId(id)
         }
     }
 

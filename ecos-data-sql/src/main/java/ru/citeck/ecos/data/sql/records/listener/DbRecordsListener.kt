@@ -1,7 +1,7 @@
 package ru.citeck.ecos.data.sql.records.listener
 
-import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 
 interface DbRecordsListener {
 
@@ -16,21 +16,24 @@ interface DbRecordsListener {
 
 class DbRecordStatusChangedEvent(
     val record: Any,
+    val type: TypeInfo,
     val before: StatusDef,
     val after: StatusDef
 )
 
 class DbRecordDeletedEvent(
-    val record: Any
+    val record: Any,
+    val type: TypeInfo
 )
 
 class DbRecordCreatedEvent(
-    val record: Any
+    val record: Any,
+    val type: TypeInfo
 )
 
 class DbRecordChangedEvent(
     val record: Any,
-    val attsDef: List<AttributeDef>,
+    val type: TypeInfo,
     val before: Map<String, Any?>,
     val after: Map<String, Any?>
 )
