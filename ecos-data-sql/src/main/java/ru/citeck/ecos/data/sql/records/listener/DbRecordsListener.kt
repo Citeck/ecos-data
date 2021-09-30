@@ -16,24 +16,24 @@ interface DbRecordsListener {
 
 class DbRecordStatusChangedEvent(
     val record: Any,
-    val type: TypeInfo,
+    val typeDef: TypeInfo,
     val before: StatusDef,
     val after: StatusDef
 )
 
 class DbRecordDeletedEvent(
     val record: Any,
-    val type: TypeInfo
+    val typeDef: TypeInfo
 )
 
 class DbRecordCreatedEvent(
     val record: Any,
-    val type: TypeInfo
+    val typeDef: TypeInfo
 )
 
 class DbRecordChangedEvent(
     val record: Any,
-    val type: TypeInfo,
+    val typeDef: TypeInfo,
     val before: Map<String, Any?>,
     val after: Map<String, Any?>
 )
