@@ -52,6 +52,7 @@ import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.collections.ArrayList
 import kotlin.math.min
 
 class DbRecordsDao(
@@ -668,8 +669,8 @@ class DbRecordsDao(
                     AttributeType.AUTHORITY,
                     AttributeType.PERSON,
                     AttributeType.AUTHORITY_GROUP -> {
-                        if (value is String) {
-                            recData[attId] = RecordRef.valueOf(value)
+                        if (value != null) {
+                            recData[attId] = toRecordRef(value)
                         }
                     }
                     AttributeType.JSON -> {
@@ -687,6 +688,22 @@ class DbRecordsDao(
                 }
             }
             this.additionalAtts = recData
+        }
+
+        private fun toRecordRef(value: Any): Any {
+            return when (value) {
+                is Iterable<*> -> {
+                    val result = ArrayList<Any>()
+                    value.forEach {
+                        if (it != null) {
+                            result.add(toRecordRef(it))
+                        }
+                    }
+                    result
+                }
+                is String -> RecordRef.valueOf(value)
+                else -> value
+            }
         }
 
         override fun getId(): Any {
