@@ -459,13 +459,19 @@ class DbRecordsDao(
             }
         }
 
-        val statusBefore = recBefore.getAtt(StatusConstants.ATT_STATUS) ?: StatusValue(StatusDef.create {})
-        val statusAfter = recAfter.getAtt(StatusConstants.ATT_STATUS) ?: StatusValue(StatusDef.create {})
+        val statusBefore = recordsService.getAtt(recBefore, StatusConstants.ATT_STATUS_STR).asText()
+        val statusAfter = recordsService.getAtt(recAfter, StatusConstants.ATT_STATUS_STR).asText()
 
         if (statusBefore != statusAfter) {
-            val statusChangedEvent = DbRecordStatusChangedEvent(recAfter, statusBefore, statusAfter)
-            listeners.forEach {
-                it.onStatusChanged(statusChangedEvent)
+
+            val statusBeforeDef = typeInfo.model.statuses.firstOrNull { it.id == statusBefore }
+            val statusAfterDef = typeInfo.model.statuses.firstOrNull { it.id == statusAfter }
+
+            if (statusBeforeDef != null && statusAfterDef != null) {
+                val statusChangedEvent = DbRecordStatusChangedEvent(recAfter, statusBeforeDef, statusAfterDef)
+                listeners.forEach {
+                    it.onStatusChanged(statusChangedEvent)
+                }
             }
         }
     }

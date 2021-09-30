@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.records.listener
 
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.status.dto.StatusDef
 
 interface DbRecordsListener {
 
@@ -15,8 +16,8 @@ interface DbRecordsListener {
 
 class DbRecordStatusChangedEvent(
     val record: Any,
-    val before: Any,
-    val after: Any
+    val before: StatusDef,
+    val after: StatusDef
 )
 
 class DbRecordDeletedEvent(
