@@ -74,6 +74,7 @@ class DbRecordsDao(
         private const val ATT_STATE = "_state"
 
         private val ATTS_MAPPING = mapOf(
+            "id" to DbEntity.EXT_ID,
             "_created" to DbEntity.CREATED,
             "_creator" to DbEntity.CREATOR,
             "_modified" to DbEntity.MODIFIED,
@@ -352,12 +353,15 @@ class DbRecordsDao(
                 }
             }
 
-            val localId = record.attributes.get(ScalarType.LOCAL_ID.mirrorAtt).asText()
-            if (localId.isNotBlank()) {
-                if (recToMutate.extId != localId) {
-                    recToMutate.extId = localId
-                    if (dbDataService.findById(localId) != null) {
-                        error("Record with ID $localId already exists. You should mutate it directly")
+            var customExtId = record.attributes.get("id").asText()
+            if (customExtId.isBlank()) {
+                customExtId = record.attributes.get(ScalarType.LOCAL_ID.mirrorAtt).asText()
+            }
+            if (customExtId.isNotBlank()) {
+                if (recToMutate.extId != customExtId) {
+                    recToMutate.extId = customExtId
+                    if (dbDataService.findById(customExtId) != null) {
+                        error("Record with ID $customExtId already exists. You should mutate it directly")
                     } else {
                         // copy of existing record
                         recToMutate.id = DbEntity.NEW_REC_ID
@@ -728,6 +732,7 @@ class DbRecordsDao(
 
         override fun getAtt(name: String): Any? {
             return when (name) {
+                "id" -> entity.extId
                 RecordConstants.ATT_MODIFIED, "cm:modified" -> entity.modified
                 RecordConstants.ATT_CREATED, "cm:created" -> entity.created
                 RecordConstants.ATT_MODIFIER -> getAsPersonRef(entity.modifier)

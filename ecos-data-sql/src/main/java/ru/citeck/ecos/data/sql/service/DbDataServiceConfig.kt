@@ -31,7 +31,7 @@ class DbDataServiceConfig(
     class Builder() {
 
         var tableRef: DbTableRef = DbTableRef("", "")
-        var maxItemsToAllowSchemaMigration: Long = 10
+        var maxItemsToAllowSchemaMigration: Long = 1000
 
         var authEnabled: Boolean = false
         var storeTableMeta: Boolean = false
