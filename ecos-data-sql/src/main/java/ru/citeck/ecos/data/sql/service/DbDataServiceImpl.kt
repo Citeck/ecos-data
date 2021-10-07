@@ -68,6 +68,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     private var columns: List<DbColumnDef>? = null
 
+    private val hasDeletedFlag: Boolean
+
     constructor(
         entityType: Class<T>,
         config: DbDataServiceConfig,
@@ -187,6 +189,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 authoritiesTable = authoritiesTableRef
             )
         )
+
+        hasDeletedFlag = entityMapper.getEntityColumns().any { it.columnDef.name == DbEntity.DELETED }
     }
 
     private fun isAuthTableRequiredAndDoesntExists(): Boolean {
@@ -281,10 +285,29 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
                 runMigrationsInTxn(columns, mock = false, diff = true, onlyOwn = false)
 
+                val newEntity = HashMap(entityMapper.convertToMap(entity))
+
+                // entities with 'deleted' flag field doesn't really delete from table.
+                // We set deleted = true for it instead. When new record will be created
+                // with same id we should remove old record with deleted flag.
+                if (hasDeletedFlag && newEntity[DbEntity.ID] == DbEntity.NEW_REC_ID) {
+                    val newEntity = HashMap(entityMapper.convertToMap(entity))
+                    val extId = newEntity[DbEntity.EXT_ID] as? String ?: ""
+                    if (extId.isNotBlank()) {
+                        val existingEntity = entityRepo.findById(extId, true)
+                        if (existingEntity != null) {
+                            val entityMap = entityMapper.convertToMap(existingEntity)
+                            // check that it's not a txn table and entity in was deleted before
+                            if (!entityMap.containsKey(COLUMN_EXT_TXN_ID) && entityMap[DbEntity.DELETED] == true) {
+                                entityRepo.forceDelete(existingEntity)
+                            }
+                        }
+                    }
+                }
+
                 if (txnDataService == null || txnId == null) {
                     entityRepo.save(entity)
                 } else {
-                    val newEntity = HashMap(entityMapper.convertToMap(entity))
                     val extId = newEntity[DbEntity.EXT_ID] as String?
                     if (extId.isNullOrBlank()) {
                         // create new record

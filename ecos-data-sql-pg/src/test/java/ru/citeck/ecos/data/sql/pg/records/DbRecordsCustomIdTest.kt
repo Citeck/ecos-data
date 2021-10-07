@@ -15,11 +15,13 @@ class DbRecordsCustomIdTest : DbRecordsTestBase() {
 
         val attName = "textAtt"
 
-        registerAtts(listOf(
-            AttributeDef.create {
-                withId(attName)
-            }
-        ))
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId(attName)
+                }
+            )
+        )
 
         val customId1 = "custom-id-1"
         val attValue = "att-value"
@@ -49,9 +51,12 @@ class DbRecordsCustomIdTest : DbRecordsTestBase() {
 
         val testQueryWithId = { recId: String ->
 
-            val queryResult2 = records.query(baseQuery.copy {
-                withQuery(Predicates.eq("id", recId))
-            }, TestDto::class.java)
+            val queryResult2 = records.query(
+                baseQuery.copy {
+                    withQuery(Predicates.eq("id", recId))
+                },
+                TestDto::class.java
+            )
 
             assertThat(queryResult2.getRecords()).hasSize(1)
             assertThat(queryResult2.getRecords()[0].id).isEqualTo(recId)
@@ -60,19 +65,24 @@ class DbRecordsCustomIdTest : DbRecordsTestBase() {
         testQueryWithId(customId1)
         testQueryWithId(customId2)
 
-        val testQueryWithSort = { asc: Boolean -> {
+        val testQueryWithSort = { asc: Boolean ->
+            {
 
-            val queryResult2 = records.query(baseQuery.copy {
-                withSortBy(SortBy("id", asc))
-            }, TestDto::class.java)
+                val queryResult2 = records.query(
+                    baseQuery.copy {
+                        withSortBy(SortBy("id", asc))
+                    },
+                    TestDto::class.java
+                )
 
-            assertThat(queryResult2.getRecords()).hasSize(2)
-            if (asc) {
-                assertThat(queryResult2.getRecords().map { it.id} ).containsExactly(customId1, customId2)
-            } else {
-                assertThat(queryResult2.getRecords().map { it.id} ).containsExactly(customId2, customId1)
+                assertThat(queryResult2.getRecords()).hasSize(2)
+                if (asc) {
+                    assertThat(queryResult2.getRecords().map { it.id }).containsExactly(customId1, customId2)
+                } else {
+                    assertThat(queryResult2.getRecords().map { it.id }).containsExactly(customId2, customId1)
+                }
             }
-        }}
+        }
 
         testQueryWithSort(true)
         testQueryWithSort(false)
