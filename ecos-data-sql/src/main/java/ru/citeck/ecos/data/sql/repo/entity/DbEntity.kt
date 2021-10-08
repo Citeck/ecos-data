@@ -11,7 +11,8 @@ import java.time.Instant
     Index(columns = [DbEntity.EXT_ID], unique = true),
     Index(columns = [DbEntity.DELETED]),
     Index(columns = [DbEntity.MODIFIED]),
-    Index(columns = [DbEntity.CREATED])
+    Index(columns = [DbEntity.CREATED]),
+    Index(columns = [DbEntity.NAME])
 )
 class DbEntity {
 

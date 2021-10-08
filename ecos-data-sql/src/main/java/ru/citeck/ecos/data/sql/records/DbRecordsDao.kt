@@ -73,14 +73,19 @@ class DbRecordsDao(
 
         private const val ATT_STATE = "_state"
 
+        private const val ATT_NAME = "_name"
+        private const val ATT_CUSTOM_NAME = "name"
+
         private val ATTS_MAPPING = mapOf(
             "id" to DbEntity.EXT_ID,
-            "_created" to DbEntity.CREATED,
-            "_creator" to DbEntity.CREATOR,
-            "_modified" to DbEntity.MODIFIED,
-            "_modifier" to DbEntity.MODIFIER,
-            "_localId" to DbEntity.EXT_ID,
-            "_status" to DbEntity.STATUS
+            ScalarType.DISP.mirrorAtt to DbEntity.NAME,
+            ATT_NAME to DbEntity.NAME,
+            RecordConstants.ATT_CREATED to DbEntity.CREATED,
+            RecordConstants.ATT_CREATOR to DbEntity.CREATOR,
+            RecordConstants.ATT_MODIFIED to DbEntity.MODIFIED,
+            RecordConstants.ATT_MODIFIER to DbEntity.MODIFIER,
+            ScalarType.LOCAL_ID.mirrorAtt to DbEntity.EXT_ID,
+            StatusConstants.ATT_STATUS to DbEntity.STATUS
         )
 
         private val OPTIONAL_COLUMNS = listOf(
@@ -189,6 +194,12 @@ class DbRecordsDao(
         if (recsQuery.language != PredicateService.LANGUAGE_PREDICATE) {
             return null
         }
+        val attributesById = if (RecordRef.isNotEmpty(config.typeRef)) {
+            val typeInfo = ecosTypeService.getTypeInfo(config.typeRef.id)
+            typeInfo?.model?.attributes?.associateBy { it.id } ?: emptyMap()
+        } else {
+            emptyMap()
+        }
 
         val predicate = PredicateUtils.mapAttributePredicates(recsQuery.getQuery(Predicate::class.java)) {
             val attribute = it.getAttribute()
@@ -198,12 +209,29 @@ class DbRecordsDao(
                         val typeLocalId = RecordRef.valueOf(it.getValue().asText()).id
                         ValuePredicate(DbEntity.TYPE, it.getType(), typeLocalId)
                     }
-                    else ->
-                        if (ATTS_MAPPING.containsKey(attribute)) {
+                    else -> {
+                        var newPred = if (ATTS_MAPPING.containsKey(attribute)) {
                             ValuePredicate(ATTS_MAPPING[attribute], it.getType(), it.getValue())
                         } else {
                             it
                         }
+                        if (newPred.getType() == ValuePredicate.Type.EQ) {
+                            if (newPred.getAttribute() == DbEntity.NAME ||
+                                attributesById[newPred.getAttribute()]?.type == AttributeType.MLTEXT
+                            ) {
+
+                                // MLText fields stored as json text like '{"en":"value"}'
+                                // and for equals predicate we should use '"value"' instead of 'value' to search
+                                // and replace "EQ" to "CONTAINS"
+                                newPred = ValuePredicate(
+                                    newPred.getAttribute(),
+                                    ValuePredicate.Type.CONTAINS,
+                                    DataValue.createStr(newPred.getValue().toString())
+                                )
+                            }
+                        }
+                        newPred
+                    }
                 }
             } else if (it is EmptyPredicate) {
                 if (ATTS_MAPPING.containsKey(attribute)) {
@@ -379,17 +407,29 @@ class DbRecordsDao(
                 }
             }
 
+            val recAttributes = record.attributes.deepCopy()
+            if (record.attributes.has(ATT_NAME) || record.attributes.has(ScalarType.DISP.mirrorAtt)) {
+                val newName = if (record.attributes.has(ATT_NAME)) {
+                    record.attributes.get(ATT_NAME)
+                } else {
+                    record.attributes.get(ScalarType.DISP.mirrorAtt)
+                }
+                recAttributes.set(ATT_CUSTOM_NAME, newName)
+                recAttributes.remove(ATT_NAME)
+                recAttributes.remove(ScalarType.DISP.mirrorAtt)
+            }
+
             val recordEntityBeforeMutation = recToMutate.copy()
 
             val fullColumns = ArrayList(typesColumns)
-            setMutationAtts(recToMutate, record.attributes, typesColumns)
+            setMutationAtts(recToMutate, recAttributes, typesColumns)
             val optionalAtts = OPTIONAL_COLUMNS.filter { !typesColumnNames.contains(it.name) }
             if (optionalAtts.isNotEmpty()) {
-                fullColumns.addAll(setMutationAtts(recToMutate, record.attributes, optionalAtts))
+                fullColumns.addAll(setMutationAtts(recToMutate, recAttributes, optionalAtts))
             }
 
-            if (record.attributes.has(ATT_STATE)) {
-                val state = record.attributes.get(ATT_STATE).asText()
+            if (recAttributes.has(ATT_STATE)) {
+                val state = recAttributes.get(ATT_STATE).asText()
                 recToMutate.attributes[COLUMN_IS_DRAFT.name] = state == "draft"
                 fullColumns.add(COLUMN_IS_DRAFT)
             }
@@ -397,8 +437,8 @@ class DbRecordsDao(
             recToMutate.type = recordTypeId
             val typeDef = typesInfo[recordIdx]
 
-            if (record.attributes.has(StatusConstants.ATT_STATUS)) {
-                val newStatus = record.attributes.get(StatusConstants.ATT_STATUS).asText()
+            if (recAttributes.has(StatusConstants.ATT_STATUS)) {
+                val newStatus = recAttributes.get(StatusConstants.ATT_STATUS).asText()
                 if (newStatus.isNotBlank()) {
                     if (typeDef.model.statuses.any { it.id == newStatus }) {
                         recToMutate.status = newStatus
@@ -733,6 +773,7 @@ class DbRecordsDao(
         override fun getAtt(name: String): Any? {
             return when (name) {
                 "id" -> entity.extId
+                ATT_NAME -> displayName
                 RecordConstants.ATT_MODIFIED, "cm:modified" -> entity.modified
                 RecordConstants.ATT_CREATED, "cm:created" -> entity.created
                 RecordConstants.ATT_MODIFIER -> getAsPersonRef(entity.modifier)

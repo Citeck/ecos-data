@@ -12,7 +12,7 @@
 
     <properties>
 
-        <revision>1.10.6</revision>
+        <revision>1.10.7</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
@@ -31,7 +31,7 @@
         <kotlin.logging.version>1.12.5</kotlin.logging.version>
 
         <ecos.commons.version>2.5.4</ecos.commons.version>
-        <ecos.records.version>3.38.0</ecos.records.version>
+        <ecos.records.version>3.38.8</ecos.records.version>
         <ecos.model-lib.version>2.9.2</ecos.model-lib.version>
         <ecos.context-lib.version>1.1.4</ecos.context-lib.version>
 
