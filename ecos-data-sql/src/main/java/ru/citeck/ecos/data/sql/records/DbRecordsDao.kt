@@ -438,6 +438,10 @@ class DbRecordsDao(
                 }
             }
 
+            if (recToMutate.extId.isEmpty()) {
+                recToMutate.extId = UUID.randomUUID().toString()
+            }
+
             val recAttributes = record.attributes.deepCopy()
             if (record.attributes.has(ATT_NAME) || record.attributes.has(ScalarType.DISP.mirrorAtt)) {
                 val newName = if (record.attributes.has(ATT_NAME)) {
