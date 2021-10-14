@@ -60,6 +60,7 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.collections.ArrayList
 import kotlin.math.min
 
 class DbRecordsDao(
@@ -114,6 +115,9 @@ class DbRecordsDao(
                 withType(DbColumnType.JSON)
             }
         )
+
+        private const val ATT_ADD_PREFIX = "att_add_"
+        private const val ATT_REMOVE_PREFIX = "att_rem_"
 
         private val COLUMN_IS_DRAFT = DbColumnDef.create {
             withName("_isDraft")
@@ -476,6 +480,14 @@ class DbRecordsDao(
                     if (convertedValue !== assocValue) {
                         recAttributes.set(it.attribute.id, convertedValue)
                     }
+                }
+            }
+
+            val operations = extractAttValueOperations(recAttributes)
+            operations.forEach {
+                if (!recAttributes.has(it.getAttName())) {
+                    val value = it.invoke(recToMutate.attributes[it.getAttName()])
+                    recAttributes.set(it.getAttName(), value)
                 }
             }
 
@@ -880,6 +892,104 @@ class DbRecordsDao(
         return RecordRef.EMPTY
     }
 
+    private fun extractAttValueOperations(attributes: ObjectData): List<AttValueOperation> {
+        val operations = ArrayList<AttValueOperation>()
+        val operationsNames = hashSetOf<String>()
+        attributes.forEach { name, value ->
+            if (name.startsWith(ATT_ADD_PREFIX)) {
+                operations.add(
+                    AttValueAddOrRemoveOperation(
+                        name.replaceFirst(ATT_ADD_PREFIX, ""),
+                        add = true,
+                        exclusive = true,
+                        value = value
+                    )
+                )
+                operationsNames.add(name)
+            } else if (name.startsWith(ATT_REMOVE_PREFIX)) {
+                operations.add(
+                    AttValueAddOrRemoveOperation(
+                        name.replaceFirst(ATT_REMOVE_PREFIX, ""),
+                        add = false,
+                        exclusive = true,
+                        value = value
+                    )
+                )
+                operationsNames.add(name)
+            }
+        }
+        if (operationsNames.isNotEmpty()) {
+            operationsNames.forEach { attributes.remove(it) }
+        }
+        return operations
+    }
+
+    private interface AttValueOperation {
+        fun invoke(value: Any?): Any?
+        fun getAttName(): String
+    }
+
+    private class AttValueAddOrRemoveOperation(
+        private val att: String,
+        private val add: Boolean,
+        private val exclusive: Boolean,
+        value: DataValue,
+    ) : AttValueOperation {
+
+        private val operationValues: List<Any?> = if (value.isNull()) {
+            emptyList()
+        } else if (value.isArray()) {
+            val opValues = ArrayList<Any?>()
+            value.forEach { opValues.add(it.asJavaObj()) }
+            opValues
+        } else {
+            listOf(value.asJavaObj())
+        }
+
+        override fun invoke(value: Any?): Any? {
+            if (operationValues.isEmpty()) {
+                return value
+            }
+            if (value == null) {
+                return if (add) {
+                    this.operationValues
+                } else {
+                    null
+                }
+            }
+            if (value is Collection<*>) {
+                val newValue = ArrayList(value)
+                if (add) {
+                    if (exclusive) {
+                        newValue.addAll(operationValues.filter { !newValue.contains(it) })
+                    } else {
+                        newValue.addAll(operationValues)
+                    }
+                } else {
+                    newValue.removeAll(operationValues.map { it })
+                }
+                return newValue
+            }
+            if (!add) {
+                if (value is String && operationValues.any { it == value }) {
+                    return null
+                }
+            } else {
+                val newValue = ArrayList<Any?>()
+                newValue.add(value)
+                if (exclusive) {
+                    newValue.addAll(operationValues.filter { it != value })
+                } else {
+                    newValue.addAll(operationValues)
+                }
+                return newValue
+            }
+            return value
+        }
+
+        override fun getAttName() = att
+    }
+
     inner class EmptyRecord : AttValue {
 
         override fun getEdge(name: String?): AttEdge? {
@@ -915,7 +1025,8 @@ class DbRecordsDao(
                         DbColumnType.INT -> {
                             attTypes[it.name] = AttributeType.NUMBER
                         }
-                        else -> {}
+                        else -> {
+                        }
                     }
                 }
             }
