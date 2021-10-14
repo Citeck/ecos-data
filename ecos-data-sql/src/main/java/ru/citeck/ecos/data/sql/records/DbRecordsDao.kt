@@ -394,6 +394,13 @@ class DbRecordsDao(
                 return@mapIndexed record.id
             }
 
+            val recToMutate: DbEntity = if (record.id.isEmpty()) {
+                DbEntity()
+            } else {
+                dbDataService.findByExtId(record.id)
+                    ?: error("Record doesn't found with id: '${record.id}'")
+            }
+
             if (record.id.isNotBlank()) {
                 val recordPerms = getRecordPerms(record.id)
                 if (!recordPerms.isCurrentUserHasWritePerms()) {
@@ -402,19 +409,6 @@ class DbRecordsDao(
             }
 
             val recordTypeId = typesId[recordIdx]
-
-            val recToMutate: DbEntity = if (record.id.isEmpty()) {
-                DbEntity()
-            } else {
-                val existingEntity = dbDataService.findByExtId(record.id)
-                if (existingEntity != null) {
-                    existingEntity
-                } else {
-                    val newEntity = DbEntity()
-                    newEntity.extId = record.id
-                    newEntity
-                }
-            }
 
             var customExtId = record.attributes.get("id").asText()
             if (customExtId.isBlank()) {
