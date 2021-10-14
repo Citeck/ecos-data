@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.type
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
 import java.lang.reflect.Array
+import java.net.URI
 import java.sql.Date
 import java.sql.Timestamp
 import java.time.Instant
@@ -76,7 +77,10 @@ class DbTypesConverter {
                 ?: error("Can't convert ${value::class} to $targetClass")
             conv.invoke(value)
         }
-        return result as T?
+        @Suppress("UNCHECKED_CAST")
+        val castedResult = result as T?
+
+        return castedResult
     }
 
     private fun getComponentType(clazz: KClass<*>): KClass<*> {
@@ -94,6 +98,8 @@ class DbTypesConverter {
         register(Timestamp::class, Instant::class) { it.toInstant() }
         register(Instant::class, OffsetDateTime::class) { OffsetDateTime.ofInstant(it, ZoneOffset.UTC) }
         register(OffsetDateTime::class, Instant::class) { it.toInstant() }
+        register(URI::class, String::class) { it.toString() }
+        register(String::class, URI::class) { URI(it) }
         register(MLText::class, String::class) { Json.mapper.toString(it) ?: "" }
         register(String::class, MLText::class) { Json.mapper.read(it, MLText::class.java) ?: MLText.EMPTY }
     }

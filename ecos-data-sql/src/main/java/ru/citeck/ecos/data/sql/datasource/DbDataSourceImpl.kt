@@ -41,12 +41,19 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
         }
     }
 
-    override fun update(query: String, params: List<Any?>): Int {
+    override fun update(query: String, params: List<Any?>): Long {
         return withConnection { connection ->
             log.debug { "Update: $query" }
             connection.prepareStatement(query).use { statement ->
                 setParams(connection, statement, params)
-                statement.executeUpdate()
+                if (query.contains("RETURNING id")) {
+                    statement.executeQuery().use { rs ->
+                        rs.next()
+                        rs.getLong(1)
+                    }
+                } else {
+                    statement.executeUpdate().toLong()
+                }
             }
         }
     }

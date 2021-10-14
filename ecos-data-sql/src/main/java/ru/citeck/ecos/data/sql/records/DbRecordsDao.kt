@@ -5,8 +5,12 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.commons.utils.DataUriUtil
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthRole
+import ru.citeck.ecos.data.sql.content.EcosContentMeta
+import ru.citeck.ecos.data.sql.content.EcosContentService
+import ru.citeck.ecos.data.sql.content.data.storage.local.EcosContentLocalStorage
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
@@ -20,6 +24,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbCommitEntityDto
 import ru.citeck.ecos.data.sql.service.DbDataService
+import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
@@ -50,9 +55,11 @@ import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
+import java.io.InputStream
+import java.net.URLDecoder
+import java.net.URLEncoder
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.collections.ArrayList
 import kotlin.math.min
 
 class DbRecordsDao(
@@ -61,7 +68,8 @@ class DbRecordsDao(
     private val ecosTypesRepo: TypesRepo,
     private val dbDataService: DbDataService<DbEntity>,
     private val permsComponent: DbPermsComponent,
-    private val computedAttsComponent: DbComputedAttsComponent?
+    private val computedAttsComponent: DbComputedAttsComponent?,
+    private val contentService: EcosContentService?
 ) : AbstractRecordsDao(),
     RecordsAttsDao,
     RecordsQueryDao,
@@ -76,6 +84,8 @@ class DbRecordsDao(
         private const val ATT_NAME = "_name"
         private const val ATT_CUSTOM_NAME = "name"
 
+        private const val CONTENT_DATA = "content-data"
+
         private val ATTS_MAPPING = mapOf(
             "id" to DbEntity.EXT_ID,
             ScalarType.DISP.mirrorAtt to DbEntity.NAME,
@@ -85,7 +95,8 @@ class DbRecordsDao(
             RecordConstants.ATT_MODIFIED to DbEntity.MODIFIED,
             RecordConstants.ATT_MODIFIER to DbEntity.MODIFIER,
             ScalarType.LOCAL_ID.mirrorAtt to DbEntity.EXT_ID,
-            StatusConstants.ATT_STATUS to DbEntity.STATUS
+            StatusConstants.ATT_STATUS to DbEntity.STATUS,
+            RecordConstants.ATT_CONTENT to "content"
         )
 
         private val OPTIONAL_COLUMNS = listOf(
@@ -116,11 +127,30 @@ class DbRecordsDao(
 
     private val listeners: MutableList<DbRecordsListener> = CopyOnWriteArrayList()
 
+    fun <T> readContent(recordId: String, attribute: String, action: (EcosContentMeta, InputStream) -> T): T {
+        if (contentService == null) {
+            error("RecordsDao doesn't support content attributes")
+        }
+        val entity = dbDataService.findByExtId(recordId) ?: error("Entity doesn't found with id '$recordId'")
+
+        val attValue = entity.attributes[attribute]
+        if (attValue !is Long) {
+            error("Attribute doesn't have content id. Record: '$recordId' Attribute: $attValue")
+        }
+        return contentService.readContent(attValue, action)
+    }
+
     fun runMigrations(typeRef: RecordRef, mock: Boolean = true, diff: Boolean = true): List<String> {
         val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
-        val columns = ecosTypeService.getColumnsForTypes(listOf(typeInfo))
+        val columns = ecosTypeService.getColumnsForTypes(listOf(typeInfo)).map { it.column }
         dbDataService.resetColumnsCache()
-        return dbDataService.runMigrations(columns, mock, diff, false)
+        var migrations = dbDataService.runMigrations(columns, mock, diff, false)
+        if (contentService is DbMigrationsExecutor) {
+            val newMigrations = ArrayList(migrations)
+            newMigrations.addAll(contentService.runMigrations(mock, diff))
+            migrations = newMigrations
+        }
+        return migrations
     }
 
     fun updatePermissions(records: List<String>) {
@@ -182,7 +212,7 @@ class DbRecordsDao(
             if (id.isEmpty()) {
                 EmptyRecord()
             } else {
-                dbDataService.findById(id)?.let {
+                dbDataService.findByExtId(id)?.let {
                     Record(it)
                 } ?: EmptyAttValue.INSTANCE
             }
@@ -289,7 +319,7 @@ class DbRecordsDao(
     private fun deleteInTxn(recordsId: List<String>): List<DelStatus> {
 
         for (recordId in recordsId) {
-            dbDataService.findById(recordId)?.let { entity ->
+            dbDataService.findByExtId(recordId)?.let { entity ->
                 dbDataService.delete(entity)
                 val typeInfo = ecosTypeService.getTypeInfo(entity.type)
                 if (typeInfo != null) {
@@ -312,7 +342,7 @@ class DbRecordsDao(
             return typeRefFromAtts
         }
 
-        val typeFromRecord = dbDataService.findById(record.id)?.type
+        val typeFromRecord = dbDataService.findByExtId(record.id)?.type
         if (!typeFromRecord.isNullOrBlank()) {
             return typeFromRecord
         }
@@ -346,7 +376,8 @@ class DbRecordsDao(
                 ?: error("Type is not found: '$typeId'. Record ID: '${records[idx]}'")
         }
 
-        val typesColumns = ecosTypeService.getColumnsForTypes(typesInfo)
+        val typesAttColumns = ecosTypeService.getColumnsForTypes(typesInfo)
+        val typesColumns = typesAttColumns.map { it.column }
         val typesColumnNames = typesColumns.map { it.name }.toSet()
 
         return records.mapIndexed { recordIdx, record ->
@@ -371,7 +402,7 @@ class DbRecordsDao(
             val recToMutate: DbEntity = if (record.id.isEmpty()) {
                 DbEntity()
             } else {
-                val existingEntity = dbDataService.findById(record.id)
+                val existingEntity = dbDataService.findByExtId(record.id)
                 if (existingEntity != null) {
                     existingEntity
                 } else {
@@ -388,7 +419,7 @@ class DbRecordsDao(
             if (customExtId.isNotBlank()) {
                 if (recToMutate.extId != customExtId) {
                     recToMutate.extId = customExtId
-                    if (dbDataService.findById(customExtId) != null) {
+                    if (dbDataService.findByExtId(customExtId) != null) {
                         error("Record with ID $customExtId already exists. You should mutate it directly")
                     } else {
                         // copy of existing record
@@ -417,6 +448,31 @@ class DbRecordsDao(
                 recAttributes.set(ATT_CUSTOM_NAME, newName)
                 recAttributes.remove(ATT_NAME)
                 recAttributes.remove(ScalarType.DISP.mirrorAtt)
+            }
+
+            typesAttColumns.forEach {
+                if (it.attribute.type == AttributeType.CONTENT) {
+                    val contentData = recAttributes.get(it.attribute.id)
+                    recAttributes.set(
+                        it.column.name,
+                        uploadContent(
+                            recToMutate,
+                            it.attribute.id,
+                            contentData,
+                            it.column.multiple
+                        )
+                    )
+                } else if (it.attribute.type == AttributeType.ASSOC) {
+                    val assocValue = recAttributes.get(it.attribute.id)
+                    val convertedValue = preProcessAssocBeforeMutate(
+                        recToMutate.extId,
+                        it.attribute.id,
+                        assocValue
+                    )
+                    if (convertedValue !== assocValue) {
+                        recAttributes.set(it.attribute.id, convertedValue)
+                    }
+                }
             }
 
             val recordEntityBeforeMutation = recToMutate.copy()
@@ -475,6 +531,129 @@ class DbRecordsDao(
 
             recAfterSave.extId
         }
+    }
+
+    private fun getRefForContentData(value: DataValue): RecordRef {
+
+        val url = value.get("url").asText()
+        if (url.isBlank()) {
+            return RecordRef.EMPTY
+        }
+        if (url.startsWith("/share/page/card-details")) {
+            val nodeRef = value.get("data").get("nodeRef").asText()
+            if (nodeRef.isNotBlank()) {
+                return RecordRef.create("alfresco", "", nodeRef)
+            }
+        } else if (url.startsWith("/gateway")) {
+            return getRecordRefFromContentUrl(url)
+        }
+        return RecordRef.EMPTY
+    }
+
+    private fun preProcessAssocBeforeMutate(
+        recordId: String,
+        attId: String,
+        value: DataValue
+    ): DataValue {
+        if (value.isNull()) {
+            return value
+        }
+        if (value.isArray()) {
+            if (value.size() == 0) {
+                return value
+            }
+            val result = DataValue.createArr()
+            value.forEach { result.add(preProcessAssocBeforeMutate(recordId, attId, it)) }
+            return result
+        }
+        if (value.isObject() && value.has("fileType")) {
+
+            val existingRef = getRefForContentData(value)
+            if (RecordRef.isNotEmpty(existingRef)) {
+                return DataValue.createStr(existingRef.toString())
+            }
+
+            val type = value.get("fileType")
+            if (type.isNull() || type.asText().isBlank()) {
+                return value
+            }
+            val typeId = type.asText()
+
+            val typeInfo = ecosTypeService.getTypeInfo(typeId) ?: error("Type doesn't found for id '$typeId'")
+
+            val childAttributes = ObjectData.create()
+            childAttributes.set("_type", TypeUtils.getTypeRef(typeId))
+            childAttributes.set("_content", listOf(value))
+
+            val appName = serviceFactory.properties.appName
+            val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
+            val sourceId = sourceIdMapping.getOrDefault(getId(), getId())
+
+            childAttributes.set("_parent", RecordRef.create(appName, sourceId, recordId))
+
+            val name = value.get("originalName")
+            if (name.isNotNull()) {
+                // todo: should be _name
+                childAttributes.set("_disp", name)
+            }
+
+            val childRef = recordsService.create(typeInfo.sourceId, childAttributes)
+            return DataValue.createStr(childRef.toString())
+        }
+        return value
+    }
+
+    private fun uploadContent(
+        record: DbEntity,
+        attribute: String,
+        contentData: DataValue,
+        multiple: Boolean
+    ): Any? {
+
+        val contentService = contentService ?: return null
+
+        if (contentData.isArray()) {
+            if (contentData.size() == 0) {
+                return null
+            }
+            return if (multiple) {
+                val newArray = DataValue.createArr()
+                contentData.forEach {
+                    val contentId = uploadContent(record, attribute, it, false)
+                    if (contentId != null) {
+                        newArray.add(contentId)
+                    }
+                }
+                newArray
+            } else {
+                uploadContent(record, attribute, contentData.get(0), false)
+            }
+        }
+        if (!contentData.isObject()) {
+            return null
+        }
+        val urlData = contentData.get("url")
+        if (!urlData.isTextual()) {
+            return null
+        }
+        val recordContentUrl = createContentUrl(record.extId, attribute)
+
+        if (urlData.asText() == recordContentUrl) {
+            return record.attributes[attribute]
+        }
+
+        val data = DataUriUtil.parseData(urlData.asText())
+        val dataBytes = data.data
+        if (dataBytes == null || dataBytes.isEmpty()) {
+            return null
+        }
+
+        val contentMeta = EcosContentMeta.create {
+            withMimeType(data.mimeType)
+            withName(contentData.get("originalName").asText())
+        }
+
+        return contentService.writeContent(EcosContentLocalStorage.TYPE, contentMeta, dataBytes).id
     }
 
     private fun emitEventAfterMutation(before: DbEntity, after: DbEntity, isNewRecord: Boolean) {
@@ -668,6 +847,35 @@ class DbRecordsDao(
         this.listeners.remove(listener)
     }
 
+    private fun createContentUrl(recordId: String, attribute: String): String {
+
+        val appName = serviceFactory.properties.appName
+
+        val recordsDaoIdEnc = URLEncoder.encode(id, Charsets.UTF_8.name())
+        val recordIdEnc = URLEncoder.encode(recordId, Charsets.UTF_8.name())
+        val attributeEnc = URLEncoder.encode(attribute, Charsets.UTF_8.name())
+
+        return "/gateway/$appName/api/record-content/$recordsDaoIdEnc/$recordIdEnc/$attributeEnc"
+    }
+
+    private fun getRecordRefFromContentUrl(url: String): RecordRef {
+        if (url.isBlank()) {
+            return RecordRef.EMPTY
+        }
+        val parts = url.split("/")
+        if (parts.size != 7) {
+            error("Unexpected URL parts size: ${parts.size}. Url: " + url)
+        }
+        val appName = parts[2]
+        val recordsDaoId = URLDecoder.decode(parts[5], Charsets.UTF_8.name())
+        val recId = URLDecoder.decode(parts[6], Charsets.UTF_8.name())
+
+        if (recId.isNotBlank()) {
+            return RecordRef.create(appName, recordsDaoId, recId)
+        }
+        return RecordRef.EMPTY
+    }
+
     inner class EmptyRecord : AttValue {
 
         override fun getEdge(name: String?): AttEdge? {
@@ -703,6 +911,7 @@ class DbRecordsDao(
                         DbColumnType.INT -> {
                             attTypes[it.name] = AttributeType.NUMBER
                         }
+                        else -> {}
                     }
                 }
             }
@@ -727,11 +936,28 @@ class DbRecordsDao(
                             recData[attId] = Json.mapper.read(value, MLText::class.java)
                         }
                     }
+                    AttributeType.CONTENT -> {
+                        recData[attId] = convertContentAtt(value, attId)
+                    }
                     else -> {
                     }
                 }
             }
             this.additionalAtts = recData
+        }
+
+        private fun convertContentAtt(value: Any?, attId: String): Any? {
+            if (value is List<*>) {
+                return value.mapNotNull { convertContentAtt(it, attId) }
+            }
+            if (value !is Long || value < 0) {
+                return null
+            }
+            return if (contentService != null) {
+                ContentValue(contentService, entity.extId, entity.name, value, attId)
+            } else {
+                null
+            }
         }
 
         private fun toRecordRef(value: Any): Any {
@@ -767,7 +993,15 @@ class DbRecordsDao(
         }
 
         override fun has(name: String): Boolean {
-            return additionalAtts.contains(name)
+            return additionalAtts.contains(ATTS_MAPPING.getOrDefault(name, name))
+        }
+
+        override fun getAs(type: String): Any? {
+            if (type == CONTENT_DATA) {
+                val content = getAtt(RecordConstants.ATT_CONTENT) as? ContentValue ?: return null
+                return content.getAs(CONTENT_DATA)
+            }
+            return super.getAs(type)
         }
 
         override fun getAtt(name: String): Any? {
@@ -823,10 +1057,58 @@ class DbRecordsDao(
         }
     }
 
+    inner class ContentValue(
+        private val contentService: EcosContentService,
+        private val recId: String,
+        private val name: MLText,
+        private val contentId: Long,
+        private val attribute: String
+    ) : AttValue {
+
+        private val meta: EcosContentMeta by lazy {
+            contentService.getMeta(contentId) ?: error("Content doesn't found by id '$id'")
+        }
+
+        override fun getAtt(name: String): Any? {
+            return when (name) {
+                "name" -> meta.name
+                "sha256" -> meta.sha256
+                "size" -> meta.size
+                "mimeType" -> meta.mimeType
+                "encoding" -> meta.encoding
+                "created" -> meta.created
+                else -> null
+            }
+        }
+
+        override fun getAs(type: String): Any? {
+            if (type == CONTENT_DATA) {
+                val name = if (MLText.isEmpty(name)) {
+                    meta.name
+                } else {
+                    MLText.getClosestValue(name, RequestContext.getLocale())
+                }
+                return ContentData(
+                    createContentUrl(recId, attribute),
+                    name,
+                    meta.size
+                )
+            }
+            return null
+        }
+    }
+
+    data class ContentData(
+        val url: String,
+        val name: String,
+        val size: Long
+    )
+
     data class StatusValue(private val def: StatusDef) : AttValue {
         override fun getDisplayName(): Any {
             return def.name
         }
+
         override fun asText(): String {
             return def.id
         }

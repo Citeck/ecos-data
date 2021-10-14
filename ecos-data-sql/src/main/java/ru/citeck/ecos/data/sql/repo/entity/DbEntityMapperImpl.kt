@@ -11,6 +11,7 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import java.lang.reflect.Array
+import java.net.URI
 import java.sql.Date
 import java.sql.Timestamp
 import java.time.Instant
@@ -137,6 +138,8 @@ class DbEntityMapperImpl<T : Any>(
                     prop.propertyType.kotlin == Int::class -> DbColumnType.INT
                     prop.propertyType.kotlin == Boolean::class -> DbColumnType.BOOLEAN
                     prop.propertyType.kotlin == Instant::class -> DbColumnType.DATETIME
+                    prop.propertyType.kotlin == ByteArray::class -> DbColumnType.BINARY
+                    prop.propertyType.kotlin == URI::class -> DbColumnType.TEXT
                     else -> error("Unknown type: ${prop.propertyType}")
                 }
 

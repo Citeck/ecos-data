@@ -8,9 +8,13 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 
 interface DbEntityRepo<T : Any> {
 
-    fun findById(id: String): T?
+    fun findById(id: Long): T?
 
-    fun findById(id: String, withDeleted: Boolean): T?
+    fun findById(id: Long, withDeleted: Boolean): T?
+
+    fun findByExtId(id: String): T?
+
+    fun findByExtId(id: String, withDeleted: Boolean): T?
 
     fun findAll(): List<T>
 

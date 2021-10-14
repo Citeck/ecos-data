@@ -21,16 +21,29 @@ class DbEcosTypeService(private val typesRepo: TypesRepo) {
         return typesRepo.getTypeInfo(TypeUtils.getTypeRef(typeId))
     }
 
-    fun getColumnsForTypes(typesInfo: List<TypeInfo>): List<DbColumnDef> {
+    fun getColumnsForTypes(typesInfo: List<TypeInfo>): List<EcosAttColumnDef> {
 
         val processedTypes = hashSetOf<String>()
-        val columnsById = LinkedHashMap<String, DbColumnDef>()
+        val columnsById = LinkedHashMap<String, EcosAttColumnDef>()
 
         typesInfo.forEach { typeInfo ->
 
             if (processedTypes.add(typeInfo.id)) {
-                val columns = typeInfo.model.attributes.mapNotNull { mapAttToColumn(it) }
-                columns.forEach { columnsById[it.name] = it }
+                val columns = typeInfo.model.attributes.mapNotNull {
+                    mapAttToColumn(it)?.let { columnDef ->
+                        EcosAttColumnDef(columnDef, it)
+                    }
+                }
+                columns.forEach {
+                    val currentColumn = columnsById[it.column.name]
+                    if (currentColumn != null && it.column.type != currentColumn.column.type) {
+                        error(
+                            "Columns type doesn't match. " +
+                                "Current column: $currentColumn New column: $it"
+                        )
+                    }
+                    columnsById[it.column.name] = it
+                }
             }
         }
 
@@ -59,11 +72,12 @@ class DbEcosTypeService(private val typesRepo: TypesRepo) {
             AttributeType.BOOLEAN -> DbColumnType.BOOLEAN
             AttributeType.DATE -> DbColumnType.DATE
             AttributeType.DATETIME -> DbColumnType.DATETIME
-            AttributeType.CONTENT -> DbColumnType.TEXT
+            AttributeType.CONTENT -> DbColumnType.LONG
             AttributeType.JSON -> DbColumnType.JSON
             AttributeType.BINARY -> DbColumnType.BINARY
         }
+        val multiple = attribute.type != AttributeType.CONTENT && attribute.multiple
 
-        return DbColumnDef(attribute.id, columnType, attribute.multiple, emptyList())
+        return DbColumnDef(attribute.id, columnType, multiple, emptyList())
     }
 }

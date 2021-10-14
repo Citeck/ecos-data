@@ -63,11 +63,21 @@ class DbEntityRepoPg<T : Any>(
         schemaCacheUpdateRequired = true
     }
 
-    override fun findById(id: String): T? {
+    override fun findById(id: Long): T? {
         return findById(id, false)
     }
 
-    override fun findById(id: String, withDeleted: Boolean): T? {
+    override fun findById(id: Long, withDeleted: Boolean): T? {
+        return findOneByColumnAsMap(DbEntity.ID, id, columns, withDeleted)?.let {
+            mapper.convertToEntity(it)
+        }
+    }
+
+    override fun findByExtId(id: String): T? {
+        return findByExtId(id, false)
+    }
+
+    override fun findByExtId(id: String, withDeleted: Boolean): T? {
         return findOneByColumnAsMap(DbEntity.EXT_ID, id, columns, withDeleted)?.let {
             mapper.convertToEntity(it)
         }
@@ -275,16 +285,18 @@ class DbEntityRepoPg<T : Any>(
     }
 
     private fun saveAndGet(entity: Map<String, Any?>): Map<String, Any?> {
-        val extId = saveImpl(entity)
-        return AuthContext.runAsSystem { findByExtIdAsMap(extId, columns, true) }
-            ?: error("Entity with extId $extId was inserted but can't be found.")
+        val id = saveImpl(entity)
+        return AuthContext.runAsSystem {
+            findOneByColumnAsMap(DbEntity.ID, id, columns, true)
+                ?: error("Entity with id $id was inserted or updated but can't be found.")
+        }
     }
 
     private fun isAuthEnabled(): Boolean {
         return config.authEnabled && !AuthContext.isRunAsSystem()
     }
 
-    private fun saveImpl(entity: Map<String, Any?>): String {
+    private fun saveImpl(entity: Map<String, Any?>): Long {
 
         if (isAuthEnabled() && AuthContext.getCurrentUser().isEmpty()) {
             error("Current user is empty. Table: $tableRef")
@@ -300,7 +312,7 @@ class DbEntityRepoPg<T : Any>(
         val deleted = entityMap[DbEntity.DELETED] as? Boolean ?: false
 
         if (deleted && extId.isBlank()) {
-            return ""
+            return -1
         } else if (extId.isBlank() && !deleted) {
             extId = UUID.randomUUID().toString()
             entityMap[DbEntity.EXT_ID] = extId
@@ -311,16 +323,17 @@ class DbEntityRepoPg<T : Any>(
         attsToSave[DbEntity.MODIFIED] = nowInstant
         attsToSave[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
 
-        if (id == DbEntity.NEW_REC_ID) {
+        val resultId = if (id == DbEntity.NEW_REC_ID) {
             insertImpl(attsToSave, nowInstant)
         } else {
             updateImpl(id, attsToSave)
+            id
         }
 
-        return extId
+        return resultId
     }
 
-    private fun insertImpl(entity: Map<String, Any?>, nowInstant: Instant) {
+    private fun insertImpl(entity: Map<String, Any?>, nowInstant: Instant): Long {
 
         val attsToInsert = LinkedHashMap(entity)
         if (!hasDeletedFlag) {
@@ -334,9 +347,9 @@ class DbEntityRepoPg<T : Any>(
         val columnNames = valuesForDb.joinToString(",") { "\"${it.name}\"" }
         val columnPlaceholders = valuesForDb.joinToString(",") { it.placeholder }
 
-        val query = "INSERT INTO ${tableRef.fullName} ($columnNames) VALUES ($columnPlaceholders)"
+        val query = "INSERT INTO ${tableRef.fullName} ($columnNames) VALUES ($columnPlaceholders) RETURNING id;"
 
-        dataSource.update(query, valuesForDb.map { it.value })
+        return dataSource.update(query, valuesForDb.map { it.value })
     }
 
     private fun updateImpl(id: Long, attributes: Map<String, Any?>) {
@@ -359,7 +372,7 @@ class DbEntityRepoPg<T : Any>(
             "WHERE \"${DbEntity.ID}\"='$id' " +
             "AND \"${DbEntity.UPD_VERSION}\"=$version"
 
-        if (dataSource.update(query, valuesForDb.map { it.value }) != 1) {
+        if (dataSource.update(query, valuesForDb.map { it.value }) != 1L) {
             error("Concurrent modification of record with id: $id")
         }
     }

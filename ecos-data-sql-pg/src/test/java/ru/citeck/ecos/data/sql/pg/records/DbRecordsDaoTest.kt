@@ -99,6 +99,8 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         records.create(RECS_DAO_ID, mapOf("textAtt" to "value", "_type" to testTypeId))
 
+        recordsDao.runMigrations(typeRef, mock = false, diff = true)
+
         registerType(
             TypeInfo.create {
                 withId(testTypeId)

@@ -12,7 +12,7 @@
 
     <properties>
 
-        <revision>1.10.7</revision>
+        <revision>1.11.0</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
@@ -32,7 +32,7 @@
 
         <ecos.commons.version>2.5.4</ecos.commons.version>
         <ecos.records.version>3.38.8</ecos.records.version>
-        <ecos.model-lib.version>2.9.2</ecos.model-lib.version>
+        <ecos.model-lib.version>2.9.3</ecos.model-lib.version>
         <ecos.context-lib.version>1.1.4</ecos.context-lib.version>
 
         <postgresql.driver.version>42.2.14</postgresql.driver.version>

@@ -197,7 +197,15 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return authorityDataService != null && !AuthContext.isRunAsSystem() && !authorityDataService.isTableExists()
     }
 
-    override fun findById(id: String): T? {
+    override fun findById(id: Long): T? {
+        return findByAnyId(id)
+    }
+
+    override fun findByExtId(id: String): T? {
+        return findByAnyId(id)
+    }
+
+    private fun findByAnyId(id: Any): T? {
         initColumns()
         if (isAuthTableRequiredAndDoesntExists()) {
             return null
@@ -205,7 +213,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return dataSource.withTransaction(true) {
             val txnId = ExtTxnContext.getExtTxnId()
             if (txnDataService == null || txnId == null) {
-                entityRepo.findById(id)
+                findByAnyIdInEntityRepo(id)
             } else {
                 val txnRes = findTxnEntityById(txnId, id)
                 if (txnRes != null) {
@@ -216,9 +224,17 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                         txnRes
                     }
                 } else {
-                    entityRepo.findById(id)
+                    findByAnyIdInEntityRepo(id)
                 }
             }
+        }
+    }
+
+    private fun findByAnyIdInEntityRepo(id: Any): T? {
+        return when (id) {
+            is String -> entityRepo.findByExtId(id)
+            is Long -> entityRepo.findById(id)
+            else -> error("Incorrect id type: ${id::class}")
         }
     }
 
@@ -276,6 +292,10 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
     }
 
+    override fun save(entity: T): T {
+        return save(entity, emptyList())
+    }
+
     override fun save(entity: T, columns: List<DbColumnDef>): T {
 
         val txnId = ExtTxnContext.getExtTxnId()
@@ -291,10 +311,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 // We set deleted = true for it instead. When new record will be created
                 // with same id we should remove old record with deleted flag.
                 if (hasDeletedFlag && newEntity[DbEntity.ID] == DbEntity.NEW_REC_ID) {
-                    val newEntity = HashMap(entityMapper.convertToMap(entity))
                     val extId = newEntity[DbEntity.EXT_ID] as? String ?: ""
                     if (extId.isNotBlank()) {
-                        val existingEntity = entityRepo.findById(extId, true)
+                        val existingEntity = entityRepo.findByExtId(extId, true)
                         if (existingEntity != null) {
                             val entityMap = entityMapper.convertToMap(existingEntity)
                             // check that it's not a txn table and entity in was deleted before
@@ -445,7 +464,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                     entityMap.remove(DbEntity.ID)
                     entityMap.remove(COLUMN_EXT_TXN_ID)
 
-                    val entityFromRepo = entityRepo.findById(entityMap[DbEntity.EXT_ID] as String)
+                    val entityFromRepo = entityRepo.findByExtId(entityMap[DbEntity.EXT_ID] as String)
                     if (entityFromRepo != null) {
                         val entityMapFromRepo = entityMapper.convertToMap(entityFromRepo)
                         entityMap[DbEntity.ID] = entityMapFromRepo[DbEntity.ID]
@@ -460,13 +479,18 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
     }
 
-    private fun findTxnEntityById(txnId: UUID, id: String): T? {
+    private fun findTxnEntityById(txnId: UUID, id: Any): T? {
         if (txnDataService == null) {
             return null
         }
+        val fieldName = when (id) {
+            is String -> DbEntity.EXT_ID
+            is Long -> DbEntity.ID
+            else -> error("Incorrect id value type: ${id::class}")
+        }
         val txnData = txnDataService.findAll(
             Predicates.and(
-                Predicates.eq(DbEntity.EXT_ID, id),
+                Predicates.eq(fieldName, id),
                 Predicates.eq(COLUMN_EXT_TXN_ID, txnId)
             ),
             true
@@ -474,7 +498,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         if (txnData.size > 1) {
             error(
                 "Found more than one transaction entity. " +
-                    "Something went wrong. TxnId: '$txnId' EntityId: '$id'"
+                    "Something went wrong. TxnId: '$txnId' IdField: '$fieldName' IdValue: '$id'"
             )
         }
         return if (txnData.size == 1) {
@@ -486,7 +510,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     override fun getTableMeta(): DbTableMetaDto {
         val id = tableRef.table
-        val metaEntity = tableMetaService?.findById(id) ?: return DbTableMetaDto.create().withId(id).build()
+        val metaEntity = tableMetaService?.findByExtId(id) ?: return DbTableMetaDto.create().withId(id).build()
         return DbTableMetaDto.create()
             .withId(id)
             .withChangelog(DataValue.create(metaEntity.changelog).asList(DbTableChangeSet::class.java))
@@ -506,6 +530,14 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         authorityDataService?.resetColumnsCache()
         permsDataService?.resetColumnsCache()
         tableMetaService?.resetColumnsCache()
+    }
+
+    override fun runMigrations(
+        mock: Boolean,
+        diff: Boolean,
+        onlyOwn: Boolean
+    ): List<String> {
+        return runMigrations(emptyList(), mock, diff, onlyOwn)
     }
 
     override fun runMigrations(
@@ -543,10 +575,10 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             dataSource.watchSchemaCommands {
                 changedColumns.addAll(ensureColumnsExistImpl(expectedWithEntityColumns, mock, diff))
                 if (!onlyOwn) {
-                    tableMetaService?.runMigrations(emptyList(), mock, diff, true)
+                    tableMetaService?.runMigrations(mock, diff, true)
                     txnDataService?.runMigrations(getTxnColumns(expectedColumns), mock, diff, true)
-                    authorityDataService?.runMigrations(emptyList(), mock, diff, true)
-                    permsDataService?.runMigrations(emptyList(), mock, diff, true)
+                    authorityDataService?.runMigrations(mock, diff, true)
+                    permsDataService?.runMigrations(mock, diff, true)
                 }
             }
         }
@@ -565,7 +597,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
         if (commands.isNotEmpty() && tableMetaService != null) {
 
-            val currentMeta = tableMetaService.findById(tableRef.table)
+            val currentMeta = tableMetaService.findByExtId(tableRef.table)
 
             val tableMetaNotNull = if (currentMeta == null) {
                 val newMeta = DbTableMetaEntity()

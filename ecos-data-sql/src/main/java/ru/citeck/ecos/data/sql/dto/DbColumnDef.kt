@@ -15,10 +15,12 @@ data class DbColumnDef(
         @JvmField
         val EMPTY = create {}
 
+        @JvmStatic
         fun create(): Builder {
             return Builder()
         }
 
+        @JvmStatic
         fun create(builder: Builder.() -> Unit): DbColumnDef {
             val builderObj = Builder()
             builder.invoke(builderObj)

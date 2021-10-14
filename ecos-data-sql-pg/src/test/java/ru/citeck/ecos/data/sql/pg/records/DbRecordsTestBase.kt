@@ -5,6 +5,11 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.data.sql.content.EcosContentServiceImpl
+import ru.citeck.ecos.data.sql.content.data.EcosContentDataServiceImpl
+import ru.citeck.ecos.data.sql.content.data.storage.local.DbContentDataEntity
+import ru.citeck.ecos.data.sql.content.data.storage.local.EcosContentLocalStorage
+import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
@@ -159,6 +164,33 @@ abstract class DbRecordsTestBase {
             }
         }
 
+        val contentDataService = EcosContentDataServiceImpl()
+        contentDataService.register(
+            EcosContentLocalStorage(
+                DbDataServiceImpl(
+                    DbContentDataEntity::class.java,
+                    DbDataServiceConfig.create {
+                        withTableRef(tableRef.withTable("ecos_content_data"))
+                        withStoreTableMeta(true)
+                    },
+                    dbDataSource,
+                    pgDataServiceFactory
+                )
+            )
+        )
+        val contentService = EcosContentServiceImpl(
+            DbDataServiceImpl(
+                DbContentEntity::class.java,
+                DbDataServiceConfig.create {
+                    withTableRef(tableRef.withTable("ecos_content"))
+                    withStoreTableMeta(true)
+                },
+                dbDataSource,
+                pgDataServiceFactory
+            ),
+            contentDataService
+        )
+
         recordsDao = DbRecordsDao(
             RECS_DAO_ID,
             DbRecordsDaoConfig(
@@ -177,7 +209,8 @@ abstract class DbRecordsTestBase {
                 override fun computeDisplayName(value: Any, typeRef: RecordRef): MLText {
                     return modelServiceFactory.computedAttsService.computeDisplayName(value, typeRef)
                 }
-            }
+            },
+            contentService
         )
         dbSchemaDao = pgDataServiceFactory.createSchemaDao(tableRef, dbDataSource)
         records.register(recordsDao)

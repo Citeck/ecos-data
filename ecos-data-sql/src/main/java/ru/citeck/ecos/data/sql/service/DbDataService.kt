@@ -10,7 +10,9 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 
 interface DbDataService<T : Any> {
 
-    fun findById(id: String): T?
+    fun findById(id: Long): T?
+
+    fun findByExtId(id: String): T?
 
     fun findAll(): List<T>
 
@@ -23,6 +25,8 @@ interface DbDataService<T : Any> {
     fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage): DbFindRes<T>
 
     fun getCount(predicate: Predicate): Long
+
+    fun save(entity: T): T
 
     fun save(entity: T, columns: List<DbColumnDef>): T
 
@@ -43,6 +47,12 @@ interface DbDataService<T : Any> {
     fun getTableMeta(): DbTableMetaDto
 
     fun resetColumnsCache()
+
+    fun runMigrations(
+        mock: Boolean,
+        diff: Boolean,
+        onlyOwn: Boolean
+    ): List<String>
 
     fun runMigrations(
         expectedColumns: List<DbColumnDef>,
