@@ -24,6 +24,6 @@ class DbRecordsCreateTest : DbRecordsTestBase() {
             data.set("_type", REC_TEST_TYPE_REF)
             records.mutate(ref, data)
         }
-        assertThat(exception.message).contains("Record doesn't found")
+        assertThat(exception.message).contains("doesn't found")
     }
 }

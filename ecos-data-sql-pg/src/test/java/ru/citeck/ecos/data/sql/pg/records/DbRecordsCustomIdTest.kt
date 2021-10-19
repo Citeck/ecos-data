@@ -102,11 +102,11 @@ class DbRecordsCustomIdTest : DbRecordsTestBase() {
         assertThat(atts2.textAtt).isEqualTo("new value after mutation")
 
         assertThrows<Exception> {
-            createRecord(
-                "id" to customId1,
-                attName to attValue
-            )
+            updateRecord(RecordRef.create(recordsDao.getId(), "unknown-id"), attName to attValue)
         }
+
+        updateRecord(RecordRef.create(recordsDao.getId(), ""), "id" to customId1, attName to "newValue1")
+        assertThat(records.getAtt(newRecId, attName).asText()).isEqualTo("newValue1")
     }
 
     class TestDto(

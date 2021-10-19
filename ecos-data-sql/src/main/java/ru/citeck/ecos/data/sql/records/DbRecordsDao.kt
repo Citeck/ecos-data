@@ -186,8 +186,10 @@ class DbRecordsDao(
 
     override fun commit(txnId: UUID, recordsId: List<String>) {
         log.debug { "${this.hashCode()} commit " + txnId + " records: " + recordsId }
-        ExtTxnContext.withExtTxn(txnId, false) {
-            dbDataService.commit(recordsId.map { getEntityToCommit(it) })
+        AuthContext.runAsSystem {
+            ExtTxnContext.withExtTxn(txnId, false) {
+                dbDataService.commit(recordsId.map { getEntityToCommit(it) })
+            }
         }
     }
 
@@ -346,9 +348,12 @@ class DbRecordsDao(
             return typeRefFromAtts
         }
 
-        val typeFromRecord = dbDataService.findByExtId(record.id)?.type
-        if (!typeFromRecord.isNullOrBlank()) {
-            return typeFromRecord
+        val extId = record.id.ifBlank { record.attributes.get("id").asText() }
+        if (extId.isNotBlank()) {
+            val typeFromRecord = dbDataService.findByExtId(extId)?.type
+            if (!typeFromRecord.isNullOrBlank()) {
+                return typeFromRecord
+            }
         }
 
         if (RecordRef.isNotEmpty(config.typeRef)) {
@@ -394,15 +399,24 @@ class DbRecordsDao(
                 return@mapIndexed record.id
             }
 
-            val recToMutate: DbEntity = if (record.id.isEmpty()) {
+            val extId = record.id.ifEmpty { record.attributes.get("id").asText() }
+
+            val recToMutate: DbEntity = if (extId.isEmpty()) {
                 DbEntity()
             } else {
-                dbDataService.findByExtId(record.id)
-                    ?: error("Record doesn't found with id: '${record.id}'")
+                var entity = dbDataService.findByExtId(extId)
+                if (entity == null) {
+                    if (record.id.isNotEmpty()) {
+                        error("Record with id: '$extId' doesn't found")
+                    } else {
+                        entity = DbEntity()
+                    }
+                }
+                entity
             }
 
-            if (record.id.isNotBlank()) {
-                val recordPerms = getRecordPerms(record.id)
+            if (recToMutate.id != DbEntity.NEW_REC_ID) {
+                val recordPerms = getRecordPerms(recToMutate.extId)
                 if (!recordPerms.isCurrentUserHasWritePerms()) {
                     error("Permissions Denied. You can't change record '${record.id}'")
                 }
@@ -416,13 +430,13 @@ class DbRecordsDao(
             }
             if (customExtId.isNotBlank()) {
                 if (recToMutate.extId != customExtId) {
-                    recToMutate.extId = customExtId
                     if (dbDataService.findByExtId(customExtId) != null) {
                         error("Record with ID $customExtId already exists. You should mutate it directly")
                     } else {
                         // copy of existing record
                         recToMutate.id = DbEntity.NEW_REC_ID
                     }
+                    recToMutate.extId = customExtId
                 }
             }
 
