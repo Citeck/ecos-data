@@ -395,9 +395,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     override fun commit(entities: List<DbCommitEntityDto>) {
         dataSource.withTransaction(false) {
-            completeExtTxn(entities.map { it.id }, true)
-            if (config.authEnabled) {
-                AuthContext.runAsSystem {
+            AuthContext.runAsSystem {
+                completeExtTxn(entities.map { it.id }, true)
+                if (config.authEnabled) {
                     val allAuthorities = mutableSetOf<String>()
                     entities.forEach {
                         allAuthorities.addAll(it.readAllowed)
