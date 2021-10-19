@@ -91,6 +91,8 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
                 val afterStr = event.after.id
                 statusChangedEvents.add(beforeStr to afterStr)
             }
+            override fun onDraftStatusChanged(event: DbRecordDraftStatusChangedEvent) {
+            }
         }
         recordsDao.addListener(listener)
 

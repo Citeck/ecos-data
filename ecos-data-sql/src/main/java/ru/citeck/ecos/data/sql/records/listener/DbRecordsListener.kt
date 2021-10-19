@@ -11,8 +11,17 @@ interface DbRecordsListener {
 
     fun onDeleted(event: DbRecordDeletedEvent)
 
+    fun onDraftStatusChanged(event: DbRecordDraftStatusChangedEvent)
+
     fun onStatusChanged(event: DbRecordStatusChangedEvent)
 }
+
+class DbRecordDraftStatusChangedEvent(
+    val record: Any,
+    val typeDef: TypeInfo,
+    val before: Boolean,
+    val after: Boolean
+)
 
 class DbRecordStatusChangedEvent(
     val record: Any,

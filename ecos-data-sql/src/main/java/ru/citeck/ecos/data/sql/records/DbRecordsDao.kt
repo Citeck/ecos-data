@@ -723,6 +723,17 @@ class DbRecordsDao(
                 it.onStatusChanged(statusChangedEvent)
             }
         }
+
+        if (!isNewRecord) {
+            val isDraftBefore = before.attributes[COLUMN_IS_DRAFT.name] as? Boolean
+            val isDraftAfter = after.attributes[COLUMN_IS_DRAFT.name] as? Boolean
+            if (isDraftBefore != null && isDraftAfter != null && isDraftBefore != isDraftAfter) {
+                val event = DbRecordDraftStatusChangedEvent(recAfter, typeInfo, isDraftBefore, isDraftAfter)
+                listeners.forEach {
+                    it.onDraftStatusChanged(event)
+                }
+            }
+        }
     }
 
     private fun getStatusDef(id: String, typeInfo: TypeInfo): StatusDef {
