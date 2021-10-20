@@ -22,6 +22,8 @@ import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.records.perms.DefaultDbPermsComponent
+import ru.citeck.ecos.data.sql.records.refs.DbRecordRefEntity
+import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
@@ -191,6 +193,17 @@ abstract class DbRecordsTestBase {
             contentDataService
         )
 
+        val dbRecordRefService = DbRecordRefService(
+            DbDataServiceImpl(
+                DbRecordRefEntity::class.java,
+                DbDataServiceConfig.create {
+                    withTableRef(tableRef.withTable("ecos_record_ref"))
+                },
+                dbDataSource,
+                pgDataServiceFactory
+            )
+        )
+
         recordsDao = DbRecordsDao(
             RECS_DAO_ID,
             DbRecordsDaoConfig(
@@ -201,6 +214,7 @@ abstract class DbRecordsTestBase {
             ),
             ecosTypeRepo,
             dataService,
+            dbRecordRefService,
             permsComponent,
             object : DbComputedAttsComponent {
                 override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: RecordRef): ObjectData {

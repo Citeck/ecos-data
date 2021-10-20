@@ -19,6 +19,7 @@ import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
+import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
@@ -60,6 +61,7 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.function.Function
 import kotlin.collections.ArrayList
 import kotlin.math.min
 
@@ -68,6 +70,7 @@ class DbRecordsDao(
     private val config: DbRecordsDaoConfig,
     private val ecosTypesRepo: TypesRepo,
     private val dbDataService: DbDataService<DbEntity>,
+    private val dbRecordRefService: DbRecordRefService,
     private val permsComponent: DbPermsComponent,
     private val computedAttsComponent: DbComputedAttsComponent?,
     private val contentService: EcosContentService?
@@ -118,6 +121,11 @@ class DbRecordsDao(
 
         private const val ATT_ADD_PREFIX = "att_add_"
         private const val ATT_REMOVE_PREFIX = "att_rem_"
+
+        private val OPERATION_PREFIXES = listOf(
+            ATT_ADD_PREFIX,
+            ATT_REMOVE_PREFIX
+        )
 
         private val COLUMN_IS_DRAFT = DbColumnDef.create {
             withName("_isDraft")
@@ -230,8 +238,20 @@ class DbRecordsDao(
         if (recsQuery.language != PredicateService.LANGUAGE_PREDICATE) {
             return null
         }
-        val attributesById = if (RecordRef.isNotEmpty(config.typeRef)) {
-            val typeInfo = ecosTypeService.getTypeInfo(config.typeRef.id)
+        val originalPredicate = recsQuery.getQuery(Predicate::class.java)
+
+        val queryTypePred = PredicateUtils.filterValuePredicates(originalPredicate, Function {
+            it.getAttribute() == "_type" && it.getValue().asText().isNotBlank()
+        }).orElse(null)
+
+        val ecosTypeRef = if (queryTypePred is ValuePredicate) {
+            RecordRef.valueOf(queryTypePred.getValue().asText())
+        } else {
+            config.typeRef
+        }
+
+        val attributesById = if (RecordRef.isNotEmpty(ecosTypeRef)) {
+            val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.id)
             typeInfo?.model?.attributes?.associateBy { it.id } ?: emptyMap()
         } else {
             emptyMap()
@@ -251,11 +271,9 @@ class DbRecordsDao(
                         } else {
                             it
                         }
+                        val attDef = attributesById[newPred.getAttribute()]
                         if (newPred.getType() == ValuePredicate.Type.EQ) {
-                            if (newPred.getAttribute() == DbEntity.NAME ||
-                                attributesById[newPred.getAttribute()]?.type == AttributeType.MLTEXT
-                            ) {
-
+                            if (newPred.getAttribute() == DbEntity.NAME || attDef?.type == AttributeType.MLTEXT) {
                                 // MLText fields stored as json text like '{"en":"value"}'
                                 // and for equals predicate we should use '"value"' instead of 'value' to search
                                 // and replace "EQ" to "CONTAINS"
@@ -263,6 +281,21 @@ class DbRecordsDao(
                                     newPred.getAttribute(),
                                     ValuePredicate.Type.CONTAINS,
                                     DataValue.createStr(newPred.getValue().toString())
+                                )
+                            }
+                        }
+                        if (attDef?.type == AttributeType.ASSOC && newPred.getValue().isTextual()) {
+                            val txtValue = newPred.getValue().asText()
+                            if (txtValue.isNotBlank()) {
+                                val refs = dbRecordRefService.getIdByRecordRefs(
+                                    listOf(
+                                        RecordRef.valueOf(txtValue)
+                                    )
+                                )
+                                newPred = ValuePredicate(
+                                    newPred.getAttribute(),
+                                    newPred.getType(),
+                                    refs.firstOrNull() ?: -1L
                                 )
                             }
                         }
@@ -491,6 +524,47 @@ class DbRecordsDao(
                 }
             }
 
+            val assocAttsDef = typesAttColumns.filter { it.attribute.type == AttributeType.ASSOC }
+
+            if (assocAttsDef.isNotEmpty()) {
+                val assocRefs = mutableSetOf<RecordRef>()
+                assocAttsDef.forEach {
+                    if (recAttributes.has(it.attribute.id)) {
+                        extractRecordRefs(recAttributes.get(it.attribute.id), assocRefs)
+                    } else {
+                        OPERATION_PREFIXES.forEach { prefix ->
+                            extractRecordRefs(recAttributes.get(prefix + it.attribute.id), assocRefs)
+                        }
+                    }
+                }
+                val idByRef = mutableMapOf<RecordRef, Long>()
+                if (assocRefs.isNotEmpty()) {
+                    val refsList = assocRefs.toList()
+                    val refsId = dbRecordRefService.getOrCreateIdByRecordRefs(refsList)
+                    for ((idx, ref) in refsList.withIndex()) {
+                        idByRef[ref] = refsId[idx]
+                    }
+                }
+                assocAttsDef.forEach {
+                    if (recAttributes.has(it.attribute.id)) {
+                        recAttributes.set(
+                            it.attribute.id,
+                            replaceRecordRefsToId(recAttributes.get(it.attribute.id), idByRef)
+                        )
+                    } else {
+                        OPERATION_PREFIXES.forEach { prefix ->
+                            val attWithPrefix = prefix + it.attribute.id
+                            if (recAttributes.has(attWithPrefix)) {
+                                recAttributes.set(
+                                    attWithPrefix,
+                                    replaceRecordRefsToId(recAttributes.get(attWithPrefix), idByRef)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             val operations = extractAttValueOperations(recAttributes)
             operations.forEach {
                 if (!recAttributes.has(it.getAttName())) {
@@ -532,6 +606,14 @@ class DbRecordsDao(
             }
 
             val isNewRecord = recToMutate.id == DbEntity.NEW_REC_ID
+            if (isNewRecord) {
+                val currentRef = RecordRef.create(
+                    serviceFactory.properties.appName,
+                    getId(),
+                    recToMutate.extId
+                )
+                recToMutate.refId = dbRecordRefService.getOrCreateIdByRecordRefs(listOf(currentRef))[0]
+            }
             var recAfterSave = dbDataService.save(recToMutate, fullColumns)
 
             recAfterSave = AuthContext.runAsSystem {
@@ -625,6 +707,39 @@ class DbRecordsDao(
             return DataValue.createStr(childRef.toString())
         }
         return value
+    }
+
+    private fun extractRecordRefs(value: DataValue, target: MutableSet<RecordRef>) {
+        if (value.isNull()) {
+            return
+        }
+        if (value.isArray()) {
+            for (element in value) {
+                extractRecordRefs(element, target)
+            }
+        } else if (value.isTextual()) {
+            val ref = RecordRef.valueOf(value.asText())
+            if (RecordRef.isNotEmpty(ref)) {
+                target.add(ref)
+            }
+        }
+    }
+
+    private fun replaceRecordRefsToId(value: DataValue, mapping: Map<RecordRef, Long>): DataValue {
+        if (value.isArray()) {
+            val result = DataValue.createArr()
+            for (element in value) {
+                val elemRes = replaceRecordRefsToId(element, mapping)
+                if (elemRes.isNotNull()) {
+                    result.add(elemRes)
+                }
+            }
+            return result
+        } else if (value.isTextual()) {
+            val ref = RecordRef.valueOf(value.asText())
+            return DataValue.create(mapping[ref])
+        }
+        return DataValue.NULL
     }
 
     private fun uploadContent(
@@ -990,7 +1105,7 @@ class DbRecordsDao(
                 return newValue
             }
             if (!add) {
-                if (value is String && operationValues.any { it == value }) {
+                if ((value is String || value is Long) && operationValues.any { it == value }) {
                     return null
                 }
             } else {
@@ -1024,6 +1139,7 @@ class DbRecordsDao(
     ) : AttValue {
 
         private val additionalAtts: Map<String, Any?>
+        private val assocMapping: Map<Long, RecordRef>
 
         init {
             val recData = LinkedHashMap(entity.attributes)
@@ -1049,6 +1165,29 @@ class DbRecordsDao(
                     }
                 }
             }
+
+            // assoc mapping
+            val assocIdValues = mutableSetOf<Long>()
+            attTypes.filter { it.value == AttributeType.ASSOC }.keys.forEach { attId ->
+                val value = recData[attId]
+                if (value is Iterable<*>) {
+                    for (elem in value) {
+                        if (elem is Long) {
+                            assocIdValues.add(elem)
+                        }
+                    }
+                } else if (value is Long) {
+                    assocIdValues.add(value)
+                }
+            }
+            assocMapping = if (assocIdValues.isNotEmpty()) {
+                val assocIdValuesList = assocIdValues.toList()
+                val assocRefValues = dbRecordRefService.getRecordRefsByIds(assocIdValuesList)
+                assocIdValuesList.mapIndexed { idx, id -> id to assocRefValues[idx] }.toMap()
+            } else {
+                emptyMap()
+            }
+
             attTypes.forEach { (attId, attType) ->
                 val value = recData[attId]
                 when (attType) {
@@ -1105,8 +1244,8 @@ class DbRecordsDao(
                     }
                     result
                 }
-                is String -> RecordRef.valueOf(value)
-                else -> value
+                is Long -> assocMapping[value] ?: error("Assoc doesn't found for id $value")
+                else -> error("Unexpected assoc value type: ${value::class}")
             }
         }
 

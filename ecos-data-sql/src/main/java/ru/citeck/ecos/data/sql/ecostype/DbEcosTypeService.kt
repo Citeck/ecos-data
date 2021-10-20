@@ -62,10 +62,10 @@ class DbEcosTypeService(private val typesRepo: TypesRepo) {
         }
 
         val columnType = when (attribute.type) {
-            AttributeType.ASSOC -> DbColumnType.TEXT
-            AttributeType.PERSON -> DbColumnType.TEXT
-            AttributeType.AUTHORITY_GROUP -> DbColumnType.TEXT
-            AttributeType.AUTHORITY -> DbColumnType.TEXT
+            AttributeType.ASSOC -> DbColumnType.LONG
+            AttributeType.PERSON -> DbColumnType.LONG
+            AttributeType.AUTHORITY_GROUP -> DbColumnType.LONG
+            AttributeType.AUTHORITY -> DbColumnType.LONG
             AttributeType.TEXT -> DbColumnType.TEXT
             AttributeType.MLTEXT -> DbColumnType.TEXT
             AttributeType.NUMBER -> DbColumnType.DOUBLE

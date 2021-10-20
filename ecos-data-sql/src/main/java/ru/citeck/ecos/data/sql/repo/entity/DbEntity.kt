@@ -30,10 +30,14 @@ class DbEntity {
         const val TYPE = "__type"
         const val STATUS = "__status"
         const val NAME = "__name"
+        const val REF_ID = "__ref_id"
     }
 
     @Constraints(PRIMARY_KEY)
     var id: Long = NEW_REC_ID
+
+    @Constraints(NOT_NULL)
+    var refId: Long = NEW_REC_ID
 
     @Constraints(NOT_NULL)
     var extId: String = ""
@@ -67,6 +71,7 @@ class DbEntity {
         val newEntity = DbEntity()
         newEntity.id = id
         newEntity.extId = extId
+        newEntity.refId = refId
         newEntity.updVersion = updVersion
         newEntity.modified = modified
         newEntity.modifier = modifier

@@ -197,6 +197,15 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return authorityDataService != null && !AuthContext.isRunAsSystem() && !authorityDataService.isTableExists()
     }
 
+    override fun findById(id: Set<Long>): List<T> {
+        if (txnDataService == null) {
+            return dataSource.withTransaction(true) {
+                entityRepo.findById(id)
+            }
+        }
+        return id.mapNotNull { findById(it) }
+    }
+
     override fun findById(id: Long): T? {
         return findByAnyId(id)
     }

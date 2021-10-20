@@ -63,6 +63,12 @@ class DbEntityRepoPg<T : Any>(
         schemaCacheUpdateRequired = true
     }
 
+    override fun findById(ids: Set<Long>): List<T> {
+        return findByColumnAsMap(DbEntity.ID, ids, columns, false, ids.size).map {
+            mapper.convertToEntity(it)
+        }
+    }
+
     override fun findById(id: Long): T? {
         return findById(id, false)
     }
@@ -98,33 +104,51 @@ class DbEntityRepoPg<T : Any>(
         columns: List<DbColumnDef>,
         withDeleted: Boolean
     ): Map<String, Any?>? {
+        return findByColumnAsMap(column, setOf(value), columns, withDeleted, 1).firstOrNull()
+    }
 
-        if (columns.isEmpty()) {
-            return null
+    private fun findByColumnAsMap(
+        column: String,
+        values: Set<Any>,
+        columns: List<DbColumnDef>,
+        withDeleted: Boolean,
+        limit: Int
+    ): List<Map<String, Any?>> {
+
+        if (columns.isEmpty() || values.isEmpty()) {
+            return emptyList()
         }
 
         updateSchemaCacheIfRequired()
 
         val condition = StringBuilder()
         appendRecordColumnName(condition, column)
-        condition.append("=?")
+        if (values.size == 1) {
+            condition.append("=?")
+        } else {
+            condition.append(" IN (")
+            repeat(values.size) { condition.append("?,") }
+            condition.setLength(condition.length - 1)
+            condition.append(")")
+        }
 
         val query = createSelectQuery(
             columns,
             withAuth = isAuthEnabled(),
             withDeleted,
-            condition.toString()
+            condition.toString(),
+            page = DbFindPage(0, limit)
         )
         if (hasAlwaysFalseCondition(query)) {
-            return null
+            return emptyList()
         }
 
-        return dataSource.query(query, listOf(value)) { resultSet ->
-            if (resultSet.next()) {
-                convertRowToMap(resultSet, columns)
-            } else {
-                null
+        return dataSource.query(query, values.toList()) { resultSet ->
+            val result = mutableListOf<Map<String, Any?>>()
+            while (resultSet.next()) {
+                result.add(convertRowToMap(resultSet, columns))
             }
+            result
         }
     }
 

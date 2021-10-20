@@ -12,6 +12,8 @@ interface DbDataService<T : Any> {
 
     fun findById(id: Long): T?
 
+    fun findById(id: Set<Long>): List<T>
+
     fun findByExtId(id: String): T?
 
     fun findAll(): List<T>
