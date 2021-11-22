@@ -1,11 +1,13 @@
 package ru.citeck.ecos.data.sql.service
 
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.service.migration.DbMigration
 import ru.citeck.ecos.records2.predicate.model.Predicate
 
 interface DbDataService<T : Any> {
@@ -62,4 +64,12 @@ interface DbDataService<T : Any> {
         diff: Boolean,
         onlyOwn: Boolean
     ): List<String>
+
+    fun runMigrationByType(
+        type: String,
+        mock: Boolean,
+        config: ObjectData
+    )
+
+    fun registerMigration(migration: DbMigration<T, *>)
 }

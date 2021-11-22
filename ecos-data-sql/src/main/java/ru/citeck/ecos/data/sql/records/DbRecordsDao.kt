@@ -17,6 +17,7 @@ import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.listener.*
+import ru.citeck.ecos.data.sql.records.migration.AssocsDbMigration
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
@@ -139,6 +140,10 @@ class DbRecordsDao(
 
     private val listeners: MutableList<DbRecordsListener> = CopyOnWriteArrayList()
 
+    init {
+        dbDataService.registerMigration(AssocsDbMigration(dbRecordRefService))
+    }
+
     fun <T> readContent(recordId: String, attribute: String, action: (EcosContentMeta, InputStream) -> T): T {
         if (contentService == null) {
             error("RecordsDao doesn't support content attributes")
@@ -150,6 +155,20 @@ class DbRecordsDao(
             error("Attribute doesn't have content id. Record: '$recordId' Attribute: $attValue")
         }
         return contentService.readContent(attValue, action)
+    }
+
+    fun runMigrationByType(
+        type: String,
+        typeRef: RecordRef,
+        mock: Boolean,
+        config: ObjectData
+    ) {
+
+        val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
+        val newConfig = config.deepCopy()
+        newConfig.set("typeInfo", typeInfo)
+
+        dbDataService.runMigrationByType(type, mock, newConfig)
     }
 
     fun runMigrations(typeRef: RecordRef, mock: Boolean = true, diff: Boolean = true): List<String> {
@@ -240,9 +259,12 @@ class DbRecordsDao(
         }
         val originalPredicate = recsQuery.getQuery(Predicate::class.java)
 
-        val queryTypePred = PredicateUtils.filterValuePredicates(originalPredicate, Function {
-            it.getAttribute() == "_type" && it.getValue().asText().isNotBlank()
-        }).orElse(null)
+        val queryTypePred = PredicateUtils.filterValuePredicates(
+            originalPredicate,
+            Function {
+                it.getAttribute() == "_type" && it.getValue().asText().isNotBlank()
+            }
+        ).orElse(null)
 
         val ecosTypeRef = if (queryTypePred is ValuePredicate) {
             RecordRef.valueOf(queryTypePred.getValue().asText())
@@ -284,7 +306,7 @@ class DbRecordsDao(
                                 )
                             }
                         }
-                        if (attDef?.type == AttributeType.ASSOC && newPred.getValue().isTextual()) {
+                        if (DbRecordsUtils.isAssocLikeAttribute(attDef) && newPred.getValue().isTextual()) {
                             val txtValue = newPred.getValue().asText()
                             if (txtValue.isNotBlank()) {
                                 val refs = dbRecordRefService.getIdByRecordRefs(
@@ -511,7 +533,7 @@ class DbRecordsDao(
                             it.column.multiple
                         )
                     )
-                } else if (it.attribute.type == AttributeType.ASSOC) {
+                } else if (DbRecordsUtils.isAssocLikeAttribute(it.attribute)) {
                     val assocValue = recAttributes.get(it.attribute.id)
                     val convertedValue = preProcessAssocBeforeMutate(
                         recToMutate.extId,
@@ -524,7 +546,7 @@ class DbRecordsDao(
                 }
             }
 
-            val assocAttsDef = typesAttColumns.filter { it.attribute.type == AttributeType.ASSOC }
+            val assocAttsDef = typesAttColumns.filter { DbRecordsUtils.isAssocLikeAttribute(it.attribute) }
 
             if (assocAttsDef.isNotEmpty()) {
                 val assocRefs = mutableSetOf<RecordRef>()
@@ -796,6 +818,10 @@ class DbRecordsDao(
     }
 
     private fun emitEventAfterMutation(before: DbEntity, after: DbEntity, isNewRecord: Boolean) {
+
+        if (listeners.isEmpty()) {
+            return
+        }
 
         val typeInfo = ecosTypeService.getTypeInfo(after.type) ?: error("Entity with unknown type: " + after.type)
 
@@ -1168,7 +1194,7 @@ class DbRecordsDao(
 
             // assoc mapping
             val assocIdValues = mutableSetOf<Long>()
-            attTypes.filter { it.value == AttributeType.ASSOC }.keys.forEach { attId ->
+            attTypes.filter { DbRecordsUtils.isAssocLikeAttribute(it.value) }.keys.forEach { attId ->
                 val value = recData[attId]
                 if (value is Iterable<*>) {
                     for (elem in value) {
@@ -1190,29 +1216,27 @@ class DbRecordsDao(
 
             attTypes.forEach { (attId, attType) ->
                 val value = recData[attId]
-                when (attType) {
-                    AttributeType.ASSOC,
-                    AttributeType.AUTHORITY,
-                    AttributeType.PERSON,
-                    AttributeType.AUTHORITY_GROUP -> {
-                        if (value != null) {
-                            recData[attId] = toRecordRef(value)
+                if (DbRecordsUtils.isAssocLikeAttribute(attType)) {
+                    if (value != null) {
+                        recData[attId] = toRecordRef(value)
+                    }
+                } else {
+                    when (attType) {
+                        AttributeType.JSON -> {
+                            if (value is String) {
+                                recData[attId] = Json.mapper.read(value)
+                            }
                         }
-                    }
-                    AttributeType.JSON -> {
-                        if (value is String) {
-                            recData[attId] = Json.mapper.read(value)
+                        AttributeType.MLTEXT -> {
+                            if (value is String) {
+                                recData[attId] = Json.mapper.read(value, MLText::class.java)
+                            }
                         }
-                    }
-                    AttributeType.MLTEXT -> {
-                        if (value is String) {
-                            recData[attId] = Json.mapper.read(value, MLText::class.java)
+                        AttributeType.CONTENT -> {
+                            recData[attId] = convertContentAtt(value, attId)
                         }
-                    }
-                    AttributeType.CONTENT -> {
-                        recData[attId] = convertContentAtt(value, attId)
-                    }
-                    else -> {
+                        else -> {
+                        }
                     }
                 }
             }

@@ -41,13 +41,17 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
         assertThat(records.getAtt(rec1, "assocAtt?id").asText()).isEqualTo(rec0.toString())
         assertThat(records.getAtt(rec1, "assocAtt.textAtt").asText()).isEqualTo(txtValue)
 
-        val execQuery =  { condition: Predicate ->
-            records.query(baseQuery.copy {
-                withQuery(Predicates.and(
-                    condition,
-                    Predicates.eq("_type", REC_TEST_TYPE_REF)
-                ))
-            })
+        val execQuery = { condition: Predicate ->
+            records.query(
+                baseQuery.copy {
+                    withQuery(
+                        Predicates.and(
+                            condition,
+                            Predicates.eq("_type", REC_TEST_TYPE_REF)
+                        )
+                    )
+                }
+            )
         }
 
         val queryRes = execQuery(Predicates.eq("assocAtt", rec0))
@@ -87,8 +91,8 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
         val rec5 = createRecord("assocAtt" to extIdRef)
         assertThat(records.getAtt(rec5, "assocAtt.aa").asText()).isEqualTo("bb")
 
-        //printQueryRes("SELECT * FROM ${tableRef.withTable("ecos_record_ref").fullName}")
-        //printQueryRes("SELECT * FROM ${tableRef.fullName}")
+        // printQueryRes("SELECT * FROM ${tableRef.withTable("ecos_record_ref").fullName}")
+        // printQueryRes("SELECT * FROM ${tableRef.fullName}")
 
         // todo add query by array support and test for it
     }

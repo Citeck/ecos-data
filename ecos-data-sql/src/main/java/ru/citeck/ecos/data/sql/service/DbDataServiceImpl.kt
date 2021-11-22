@@ -25,6 +25,8 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
+import ru.citeck.ecos.data.sql.service.migration.DbMigration
+import ru.citeck.ecos.data.sql.service.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.records2.predicate.model.Predicate
@@ -59,6 +61,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     private val entityRepo: DbEntityRepo<T>
     private val schemaDao: DbSchemaDao
     private val dataSource: DbDataSource
+
+    private val migrations: DbMigrationService<T>
 
     private val config: DbDataServiceConfig
 
@@ -191,6 +195,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         )
 
         hasDeletedFlag = entityMapper.getEntityColumns().any { it.columnDef.name == DbEntity.DELETED }
+
+        migrations = DbMigrationService(this, schemaDao, entityRepo, dataSource)
     }
 
     private fun isAuthTableRequiredAndDoesntExists(): Boolean {
@@ -539,6 +545,19 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         authorityDataService?.resetColumnsCache()
         permsDataService?.resetColumnsCache()
         tableMetaService?.resetColumnsCache()
+    }
+
+    override fun runMigrationByType(type: String, mock: Boolean, config: ObjectData) {
+        return dataSource.withTransaction(mock) {
+            migrations.runMigrationByType(type, mock, config)
+            txnDataService?.runMigrationByType(type, mock, config)
+            resetColumnsCache()
+        }
+    }
+
+    override fun registerMigration(migration: DbMigration<T, *>) {
+        migrations.register(migration)
+        txnDataService?.registerMigration(migration)
     }
 
     override fun runMigrations(
