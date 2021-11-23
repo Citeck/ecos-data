@@ -45,4 +45,8 @@ class DbRecordRefService(
         val entitiesById = entities.associate { it.id to RecordRef.valueOf(it.extId) }
         return ids.map { entitiesById[it] ?: error("Ref doesn't found for id $it") }
     }
+
+    fun runMigrations(mock: Boolean, diff: Boolean): List<String> {
+        return dataService.runMigrations(mock, diff, true)
+    }
 }

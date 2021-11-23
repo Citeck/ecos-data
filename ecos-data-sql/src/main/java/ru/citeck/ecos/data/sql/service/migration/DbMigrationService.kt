@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.service.migration
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.commons.utils.ReflectUtils
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
@@ -31,7 +32,9 @@ class DbMigrationService<T : Any>(
         val convertedConfig = Json.mapper.convert(config, configType)
             ?: error("Error while config conversion for " + migration::class)
 
-        migration.run(this, mock, convertedConfig)
+        AuthContext.runAsSystem {
+            migration.run(this, mock, convertedConfig)
+        }
     }
 
     fun register(migration: DbMigration<*, *>) {

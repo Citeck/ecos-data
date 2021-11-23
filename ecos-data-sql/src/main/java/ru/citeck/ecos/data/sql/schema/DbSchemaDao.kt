@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.schema
 
+import ru.citeck.ecos.data.sql.dto.DbColumnConstraint
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbIndexDef
@@ -18,4 +19,6 @@ interface DbSchemaDao {
     fun createIndexes(indexes: List<DbIndexDef>)
 
     fun createFkConstraints(constraints: List<DbFkConstraint>)
+
+    fun setColumnConstraints(columnName: String, constraints: List<DbColumnConstraint>)
 }

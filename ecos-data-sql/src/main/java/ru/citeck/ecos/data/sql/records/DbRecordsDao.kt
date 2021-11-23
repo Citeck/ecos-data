@@ -167,6 +167,12 @@ class DbRecordsDao(
         val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
         val newConfig = config.deepCopy()
         newConfig.set("typeInfo", typeInfo)
+        if (!newConfig.has("sourceId")) {
+            newConfig.set("sourceId", id)
+        }
+        if (!newConfig.has("appName")) {
+            newConfig.set("appName", serviceFactory.properties.appName)
+        }
 
         dbDataService.runMigrationByType(type, mock, newConfig)
     }
@@ -175,12 +181,11 @@ class DbRecordsDao(
         val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
         val columns = ecosTypeService.getColumnsForTypes(listOf(typeInfo)).map { it.column }
         dbDataService.resetColumnsCache()
-        var migrations = dbDataService.runMigrations(columns, mock, diff, false)
+        val migrations = ArrayList(dbDataService.runMigrations(columns, mock, diff, false))
         if (contentService is DbMigrationsExecutor) {
-            val newMigrations = ArrayList(migrations)
-            newMigrations.addAll(contentService.runMigrations(mock, diff))
-            migrations = newMigrations
+            migrations.addAll(contentService.runMigrations(mock, diff))
         }
+        migrations.addAll(dbRecordRefService.runMigrations(mock, diff))
         return migrations
     }
 

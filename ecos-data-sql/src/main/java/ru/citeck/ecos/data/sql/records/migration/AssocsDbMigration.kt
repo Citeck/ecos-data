@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.records.migration
 
 import mu.KotlinLogging
+import ru.citeck.ecos.data.sql.dto.DbColumnConstraint
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
@@ -10,6 +11,7 @@ import ru.citeck.ecos.data.sql.service.migration.DbMigration
 import ru.citeck.ecos.data.sql.service.migration.DbMigrationService
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 
 class AssocsDbMigration(
     private val dbRecordRefService: DbRecordRefService
@@ -35,7 +37,6 @@ class AssocsDbMigration(
 
         if (assocAttributes.isEmpty()) {
             log.info { "Association attributes doesn't found in type '${config.typeInfo.id}'" }
-            return
         }
 
         val tempColumnPostfix = "__assoc_bigint"
@@ -53,17 +54,47 @@ class AssocsDbMigration(
 
         log.info { "Association attributes: ${assocAttributes.joinToString { it.id }}" }
 
-        val entities = service.dataService.findAll()
+        val entities = service.dataService.findAll(VoidPredicate.INSTANCE, true)
 
         log.info { "Found ${entities.size} entities" }
+
+        var refIdColumnWasAdded = false
+        if (entities.isNotEmpty() && service.schemaDao.getColumns().none { it.name == DbEntity.REF_ID }) {
+            // add __ref_id column manually to avoid error with not-null constraint
+            service.schemaDao.addColumns(
+                listOf(
+                    DbColumnDef.create {
+                        withName(DbEntity.REF_ID)
+                        withType(DbColumnType.LONG)
+                    }
+                )
+            )
+            service.dataService.resetColumnsCache()
+            refIdColumnWasAdded = true
+        }
 
         for (entity in entities) {
             var changed = false
             for (attribute in assocAttributes) {
                 if (entity.attributes.containsKey(attribute.id)) {
-                    entity.attributes[attribute.id + tempColumnPostfix] = mapAssocValue(entity.attributes[attribute.id])
+                    val mappedValue = mapAssocValue(entity.attributes[attribute.id])
+                    val newValue = if (mappedValue == null && attribute.multiple) {
+                        emptyList<Long>()
+                    } else {
+                        mappedValue
+                    }
+                    entity.attributes[attribute.id + tempColumnPostfix] = newValue
                     changed = true
                 }
+            }
+            if (entity.refId == DbEntity.NEW_REC_ID) {
+                val entityRef = RecordRef.create(
+                    config.appName,
+                    config.sourceId,
+                    entity.extId
+                )
+                entity.refId = dbRecordRefService.getOrCreateIdByRecordRefs(listOf(entityRef))[0]
+                changed = true
             }
             if (changed) {
                 service.dataService.save(entity)
@@ -71,13 +102,24 @@ class AssocsDbMigration(
         }
 
         for (attribute in assocAttributes) {
+
             service.dataSource.updateSchema(
                 "ALTER TABLE ${service.dataService.getTableRef().fullName} " +
-                    "RENAME COLUMN \"${attribute.id}\" TO \"${attribute.id}__assoc_str\""
+                    "DROP COLUMN \"${attribute.id}\""
             )
             service.dataSource.updateSchema(
                 "ALTER TABLE ${service.dataService.getTableRef().fullName} " +
                     "RENAME COLUMN \"${attribute.id}$tempColumnPostfix\" TO \"${attribute.id}\""
+            )
+        }
+
+        if (refIdColumnWasAdded) {
+            service.schemaDao.setColumnConstraints(
+                DbEntity.REF_ID,
+                listOf(
+                    DbColumnConstraint.UNIQUE,
+                    DbColumnConstraint.NOT_NULL
+                )
             )
         }
     }
@@ -97,17 +139,19 @@ class AssocsDbMigration(
         if (value is String) {
             val ref = RecordRef.valueOf(value)
             return if (RecordRef.isEmpty(ref)) {
-                value
+                null
             } else {
                 dbRecordRefService.getOrCreateIdByRecordRefs(listOf(ref))[0]
             }
         }
-        return value
+        error("unknown assoc type: ${value::class.java}")
     }
 
     override fun getType() = TYPE
 
     data class AssocsDbMigrationConfig(
-        val typeInfo: TypeInfo
+        val typeInfo: TypeInfo,
+        val sourceId: String,
+        val appName: String
     )
 }

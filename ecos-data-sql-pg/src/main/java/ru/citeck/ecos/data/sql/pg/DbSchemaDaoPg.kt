@@ -182,6 +182,22 @@ class DbSchemaDaoPg(
         }
     }
 
+    override fun setColumnConstraints(columnName: String, constraints: List<DbColumnConstraint>) {
+
+        for (constraint in constraints) {
+
+            val query = StringBuilder()
+            query.append("ALTER TABLE ")
+                .append(tableRef.fullName)
+                .append(" ALTER COLUMN \"")
+                .append(columnName)
+                .append("\" SET ")
+                .append(getColumnSqlConstraint(constraint))
+
+            dataSource.updateSchema(query.toString())
+        }
+    }
+
     override fun createIndexes(indexes: List<DbIndexDef>) {
 
         indexes.forEach { index ->
@@ -235,11 +251,15 @@ class DbSchemaDaoPg(
             return ""
         }
         return " " + constraints.joinToString(" ") {
-            when (it) {
-                DbColumnConstraint.NOT_NULL -> "NOT NULL"
-                DbColumnConstraint.PRIMARY_KEY -> "PRIMARY KEY"
-                DbColumnConstraint.UNIQUE -> "UNIQUE"
-            }
+            getColumnSqlConstraint(it)
+        }
+    }
+
+    private fun getColumnSqlConstraint(constraint: DbColumnConstraint): String {
+        return when (constraint) {
+            DbColumnConstraint.NOT_NULL -> "NOT NULL"
+            DbColumnConstraint.PRIMARY_KEY -> "PRIMARY KEY"
+            DbColumnConstraint.UNIQUE -> "UNIQUE"
         }
     }
 

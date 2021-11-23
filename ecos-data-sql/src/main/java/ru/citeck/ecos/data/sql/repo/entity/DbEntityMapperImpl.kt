@@ -63,6 +63,10 @@ class DbEntityMapperImpl<T : Any>(
                 entityAtts[entityField.fieldName] = converter.convert(v, entityField.fieldType)
             }
         }
+        if (entityAtts.containsKey(DbEntity.REF_ID) && entityAtts[DbEntity.REF_ID] == null) {
+            // protection against NullPointer for legacy records
+            entityAtts[DbEntity.REF_ID] = DbEntity.NEW_REC_ID
+        }
         val entity = Json.mapper.convert(entityAtts, entityType.java) ?: error("Conversion error")
         if (hasAttributesField) {
             PropertyUtils.setProperty(entity, ATTRIBUTES_FIELD, additionalAtts)
