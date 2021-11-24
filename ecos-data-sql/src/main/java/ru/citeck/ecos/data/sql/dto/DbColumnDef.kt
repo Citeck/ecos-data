@@ -28,6 +28,12 @@ data class DbColumnDef(
         }
     }
 
+    fun withConstraints(constraints: List<DbColumnConstraint>): DbColumnDef {
+        return Builder(this)
+            .withConstraints(constraints)
+            .build()
+    }
+
     class Builder() {
 
         var name: String = ""

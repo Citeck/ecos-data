@@ -717,12 +717,22 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             }
         }
 
-        val missingColumns = expectedColumns.filter { !currentColumnsByName.containsKey(it.name) }
-        schemaDao.addColumns(missingColumns)
-        addIndexesAndConstraintsForNewColumns(missingColumns, expectedIndexes, config.fkConstraints)
+        val missedColumns = expectedColumns.filter { !currentColumnsByName.containsKey(it.name) }
+
+        // fix for legacy tables where REF_ID is not filled
+        val fixedMissedColumns = missedColumns.map { col ->
+            if (col.name == DbEntity.REF_ID) {
+                col.withConstraints(col.constraints.filter { it != DbColumnConstraint.NOT_NULL })
+            } else {
+                col
+            }
+        }
+
+        schemaDao.addColumns(fixedMissedColumns)
+        addIndexesAndConstraintsForNewColumns(fixedMissedColumns, expectedIndexes, config.fkConstraints)
 
         val changedColumns = ArrayList(columnsWithChangedType)
-        changedColumns.addAll(missingColumns)
+        changedColumns.addAll(fixedMissedColumns)
 
         return changedColumns
     }
