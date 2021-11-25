@@ -26,6 +26,7 @@ import ru.citeck.ecos.data.sql.records.refs.DbRecordRefEntity
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
+import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.utils.use
@@ -85,6 +86,7 @@ abstract class DbRecordsTestBase {
     lateinit var tableRef: DbTableRef
     lateinit var dbSchemaDao: DbSchemaDao
     lateinit var ecosTypeRepo: TypesRepo
+    lateinit var dataService: DbDataService<DbEntity>
 
     val baseQuery = RecordsQuery.create {
         withSourceId(RECS_DAO_ID)
@@ -124,7 +126,7 @@ abstract class DbRecordsTestBase {
             withTransactional(true)
             withTableRef(tableRef)
         }
-        val dataService = DbDataServiceImpl(
+        dataService = DbDataServiceImpl(
             DbEntity::class.java,
             dataServiceConfig,
             dbDataSource,

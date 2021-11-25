@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.pg.records.DbRecordsTestBase
 import ru.citeck.ecos.data.sql.records.migration.AssocsDbMigration
+import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 
@@ -69,6 +70,12 @@ class AssocsMigrationTest : DbRecordsTestBase() {
                 }
             )
         )
+
+        dbDataSource.withTransaction(false) {
+            dbDataSource.updateSchema("ALTER TABLE ${tableRef.fullName} DROP COLUMN ${DbEntity.REF_ID}")
+            dbDataSource.updateSchema("ALTER TABLE ${tableRef.fullName.dropLast(1)}__ext_txn\" DROP COLUMN ${DbEntity.REF_ID}")
+        }
+        dataService.resetColumnsCache()
 
         printQueryRes("SELECT * from ${tableRef.fullName}")
 

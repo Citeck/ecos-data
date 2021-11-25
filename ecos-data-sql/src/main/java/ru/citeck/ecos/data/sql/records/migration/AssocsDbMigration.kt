@@ -116,10 +116,7 @@ class AssocsDbMigration(
         if (refIdColumnWasAdded) {
             service.schemaDao.setColumnConstraints(
                 DbEntity.REF_ID,
-                listOf(
-                    DbColumnConstraint.UNIQUE,
-                    DbColumnConstraint.NOT_NULL
-                )
+                listOf(DbColumnConstraint.NOT_NULL)
             )
         }
     }
