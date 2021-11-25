@@ -27,9 +27,15 @@ class DbDomainFactory(
 
     inner class Builder(val domainConfig: DbDomainConfig) {
 
+        var dataSource: DbDataSource? = null
         var permsComponent: DbPermsComponent? = null
         var computedAttsComponent: DbComputedAttsComponent? = null
         var ecosContentService: EcosContentService? = null
+
+        fun withDataSource(dataSource: DbDataSource): Builder {
+            this.dataSource = dataSource
+            return this
+        }
 
         fun withPermsComponent(permsComponent: DbPermsComponent): Builder {
             this.permsComponent = permsComponent
@@ -47,6 +53,8 @@ class DbDomainFactory(
         }
 
         fun build(): DbRecordsDao {
+
+            val dataSource = dataSource ?: this@DbDomainFactory.dataSource
 
             val dataService = DbDataServiceImpl(
                 DbEntity::class.java,
