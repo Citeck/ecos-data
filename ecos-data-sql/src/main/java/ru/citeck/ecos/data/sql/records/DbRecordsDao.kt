@@ -67,7 +67,6 @@ import kotlin.collections.ArrayList
 import kotlin.math.min
 
 class DbRecordsDao(
-    private val id: String,
     private val config: DbRecordsDaoConfig,
     private val ecosTypesRepo: TypesRepo,
     private val dbDataService: DbDataService<DbEntity>,
@@ -168,7 +167,7 @@ class DbRecordsDao(
         val newConfig = config.deepCopy()
         newConfig.set("typeInfo", typeInfo)
         if (!newConfig.has("sourceId")) {
-            newConfig.set("sourceId", id)
+            newConfig.set("sourceId", getId())
         }
         if (!newConfig.has("appName")) {
             newConfig.set("appName", serviceFactory.properties.appName)
@@ -1018,7 +1017,7 @@ class DbRecordsDao(
         }
     }
 
-    override fun getId() = id
+    override fun getId() = config.id
 
     fun addListener(listener: DbRecordsListener) {
         this.listeners.add(listener)
@@ -1032,7 +1031,7 @@ class DbRecordsDao(
 
         val appName = serviceFactory.properties.appName
 
-        val recordsDaoIdEnc = URLEncoder.encode(id, Charsets.UTF_8.name())
+        val recordsDaoIdEnc = URLEncoder.encode(getId(), Charsets.UTF_8.name())
         val recordIdEnc = URLEncoder.encode(recordId, Charsets.UTF_8.name())
         val attributeEnc = URLEncoder.encode(attribute, Charsets.UTF_8.name())
 
@@ -1279,7 +1278,7 @@ class DbRecordsDao(
         }
 
         override fun getId(): Any {
-            return RecordRef.create(this@DbRecordsDao.id, entity.extId)
+            return RecordRef.create(this@DbRecordsDao.getId(), entity.extId)
         }
 
         override fun asText(): String {

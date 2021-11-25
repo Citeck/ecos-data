@@ -205,13 +205,10 @@ abstract class DbRecordsTestBase {
         )
 
         recordsDao = DbRecordsDao(
-            RECS_DAO_ID,
-            DbRecordsDaoConfig(
-                insertable = true,
-                updatable = true,
-                deletable = true,
-                typeRef = RecordRef.EMPTY
-            ),
+            DbRecordsDaoConfig.create {
+                withId(RECS_DAO_ID)
+                withTypeRef(RecordRef.EMPTY)
+            },
             ecosTypeRepo,
             dataService,
             dbRecordRefService,
