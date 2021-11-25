@@ -17,8 +17,8 @@ class DbDomainFactory(
     val dataServiceFactory: DbDataServiceFactory,
     val permsComponent: DbPermsComponent,
     val computedAttsComponent: DbComputedAttsComponent,
-    val recordRefServiceSupplier: (String) -> DbRecordRefService,
-    val ecosContentServiceSupplier: (String) -> EcosContentService
+    val recordRefServiceSupplier: (DbDataSource, String) -> DbRecordRefService,
+    val ecosContentServiceSupplier: (DbDataSource, String) -> EcosContentService
 ) {
 
     fun create(domainConfig: DbDomainConfig): Builder {
@@ -69,10 +69,10 @@ class DbDomainFactory(
                 domainConfig.recordsDao,
                 ecosTypeRepo,
                 dataService,
-                recordRefServiceSupplier.invoke(schema),
+                recordRefServiceSupplier.invoke(dataSource, schema),
                 permsComponent ?: this@DbDomainFactory.permsComponent,
                 computedAttsComponent ?: this@DbDomainFactory.computedAttsComponent,
-                this.ecosContentService ?: ecosContentServiceSupplier.invoke(schema)
+                this.ecosContentService ?: ecosContentServiceSupplier.invoke(dataSource, schema)
             )
         }
     }

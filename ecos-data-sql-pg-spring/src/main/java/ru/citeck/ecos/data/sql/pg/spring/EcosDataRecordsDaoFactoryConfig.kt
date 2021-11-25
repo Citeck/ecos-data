@@ -27,67 +27,56 @@ import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.RecordsService
-import java.util.concurrent.ConcurrentHashMap
 import javax.sql.DataSource
 
 @Configuration
 open class EcosDataRecordsDaoFactoryConfig {
 
-    private val recordRefServiceBySchema: ConcurrentHashMap<String, DbRecordRefService> = ConcurrentHashMap()
-    private val contentServiceBySchema: ConcurrentHashMap<String, EcosContentService> = ConcurrentHashMap()
-
-    @Autowired
-    private lateinit var dbDataSource: DbDataSource
     @Autowired
     private lateinit var dbDataServiceFactory: DbDataServiceFactory
 
-    private fun getRecordRefService(schema: String): DbRecordRefService {
+    private fun getRecordRefService(dataSource: DbDataSource, schema: String): DbRecordRefService {
 
-        return recordRefServiceBySchema.computeIfAbsent(schema) {
-            DbRecordRefService(
-                DbDataServiceImpl(
-                    DbRecordRefEntity::class.java,
-                    DbDataServiceConfig.create()
-                        .withTableRef(DbTableRef(schema, "ecos_record_ref"))
-                        .build(),
-                    dbDataSource,
-                    dbDataServiceFactory
-                )
+        return DbRecordRefService(
+            DbDataServiceImpl(
+                DbRecordRefEntity::class.java,
+                DbDataServiceConfig.create()
+                    .withTableRef(DbTableRef(schema, "ecos_record_ref"))
+                    .build(),
+                dataSource,
+                dbDataServiceFactory
             )
-        }
+        )
     }
 
-    private fun getContentServiceBySchema(schema: String): EcosContentService {
+    private fun getContentServiceBySchema(dataSource: DbDataSource, schema: String): EcosContentService {
 
-        return contentServiceBySchema.computeIfAbsent(schema) {
-
-            val contentDataService = EcosContentDataServiceImpl()
-            contentDataService.register(
-                EcosContentLocalStorage(
-                    DbDataServiceImpl(
-                        DbContentDataEntity::class.java,
-                        DbDataServiceConfig.create()
-                            .withTableRef(DbTableRef(schema, "ecos_content_data"))
-                            .withStoreTableMeta(true)
-                            .build(),
-                        dbDataSource,
-                        dbDataServiceFactory
-                    )
-                )
-            )
-            EcosContentServiceImpl(
+        val contentDataService = EcosContentDataServiceImpl()
+        contentDataService.register(
+            EcosContentLocalStorage(
                 DbDataServiceImpl(
-                    DbContentEntity::class.java,
+                    DbContentDataEntity::class.java,
                     DbDataServiceConfig.create()
-                        .withTableRef(DbTableRef(schema, "ecos_content"))
+                        .withTableRef(DbTableRef(schema, "ecos_content_data"))
                         .withStoreTableMeta(true)
                         .build(),
-                    dbDataSource,
+                    dataSource,
                     dbDataServiceFactory
-                ),
-                contentDataService
+                )
             )
-        }
+        )
+        return EcosContentServiceImpl(
+            DbDataServiceImpl(
+                DbContentEntity::class.java,
+                DbDataServiceConfig.create()
+                    .withTableRef(DbTableRef(schema, "ecos_content"))
+                    .withStoreTableMeta(true)
+                    .build(),
+                dataSource,
+                dbDataServiceFactory
+            ),
+            contentDataService
+        )
     }
 
     @Bean
@@ -102,6 +91,7 @@ open class EcosDataRecordsDaoFactoryConfig {
 
     @Bean
     open fun dbDomainFactory(
+        dbDataSource: DbDataSource,
         ecosTypesRepo: TypesRepo,
         recordsService: RecordsService,
         permsComponent: DbPermsComponent,
@@ -112,6 +102,7 @@ open class EcosDataRecordsDaoFactoryConfig {
             override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: RecordRef): ObjectData {
                 return modelServiceFactory.computedAttsService.computeAttsToStore(value, isNewRecord, typeRef)
             }
+
             override fun computeDisplayName(value: Any, typeRef: RecordRef): MLText {
                 return modelServiceFactory.computedAttsService.computeDisplayName(value, typeRef)
             }
@@ -123,8 +114,8 @@ open class EcosDataRecordsDaoFactoryConfig {
             dbDataServiceFactory,
             permsComponent,
             computedAttsComponent,
-            { schema -> getRecordRefService(schema) },
-            { schema -> getContentServiceBySchema(schema) }
+            { dataSource, schema -> getRecordRefService(dataSource, schema) },
+            { dataSource, schema -> getContentServiceBySchema(dataSource, schema) }
         )
     }
 }

@@ -205,6 +205,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     override fun findById(id: Set<Long>): List<T> {
         if (txnDataService == null) {
+            initColumns()
             return dataSource.withTransaction(true) {
                 entityRepo.findById(id)
             }
@@ -548,7 +549,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     override fun runMigrationByType(type: String, mock: Boolean, config: ObjectData) {
-        return dataSource.withTransaction(mock) {
+        dataSource.withTransaction(mock) {
             migrations.runMigrationByType(type, mock, config)
             txnDataService?.runMigrationByType(type, mock, config)
             resetColumnsCache()
@@ -576,7 +577,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     ): List<String> {
 
         return dataSource.withTransaction(mock) {
-            runMigrationsInTxn(expectedColumns, mock, diff, onlyOwn)
+            val result = runMigrationsInTxn(expectedColumns, mock, diff, onlyOwn)
+            resetColumnsCache()
+            result
         }
     }
 
