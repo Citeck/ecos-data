@@ -95,6 +95,9 @@ class DbTypesConverter {
         register(Instant::class, Long::class) { it.toEpochMilli() }
         register(Instant::class, Timestamp::class) { Timestamp.from(it) }
         register(Instant::class, Date::class) { Date(it.truncatedTo(ChronoUnit.DAYS).toEpochMilli()) }
+        register(Date::class, Timestamp::class) {
+            Timestamp.from(it.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant())
+        }
         register(Timestamp::class, Instant::class) { it.toInstant() }
         register(Instant::class, OffsetDateTime::class) { OffsetDateTime.ofInstant(it, ZoneOffset.UTC) }
         register(OffsetDateTime::class, Instant::class) { it.toInstant() }
