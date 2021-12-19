@@ -321,7 +321,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
                 runMigrationsInTxn(columns, mock = false, diff = true, onlyOwn = false)
 
-                val newEntity = HashMap(entityMapper.convertToMap(entity))
+                val newEntity = LinkedHashMap(entityMapper.convertToMap(entity))
 
                 // entities with 'deleted' flag field doesn't really delete from table.
                 // We set deleted = true for it instead. When new record will be created
@@ -487,7 +487,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                         entityMap[DbEntity.UPD_VERSION] = entityMapFromRepo[DbEntity.UPD_VERSION]
                     }
                     if (entityFromRepo != null || entityMap[DbEntity.DELETED] != true) {
-                        entityRepo.save(entityMapper.convertToEntity(entityMap))
+                        ExtTxnContext.withCommitting {
+                            entityRepo.save(entityMapper.convertToEntity(entityMap))
+                        }
                     }
                 }
                 txnDataService.forceDelete(txnEntity)

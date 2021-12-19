@@ -15,10 +15,65 @@ import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
+import ru.citeck.ecos.records3.record.request.RequestContext
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 class DbRecordsDaoTest : DbRecordsTestBase() {
+
+    @Test
+    fun testMetaFields() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("testStr")
+                }
+            )
+        )
+
+        val instantBeforeCreate = Instant.now()
+
+        val testAttValue = "abc"
+        val ref = RequestContext.doWithTxn {
+            val ref = createRecord("testStr" to testAttValue)
+            ref
+        }
+
+        assertThat(records.getAtt(ref, "testStr").asText()).isEqualTo(testAttValue)
+
+        val getCreatedModified = {
+            val created = Instant.parse(records.getAtt(ref, "_created").asText())
+            val modified = Instant.parse(records.getAtt(ref, "_modified").asText())
+            created to modified
+        }
+
+        val (created1, modified1) = getCreatedModified()
+
+        assertThat(modified1).isAfterOrEqualTo(created1)
+        assertThat(created1).isAfter(instantBeforeCreate)
+        assertThat(modified1).isAfter(instantBeforeCreate)
+
+        updateRecord(ref, "testStr" to testAttValue + 1)
+
+        val (created2, modified2) = getCreatedModified()
+
+        assertThat(created2).isEqualTo(created1)
+        assertThat(modified2).isAfter(modified1)
+
+        val (created3, modified3) = RequestContext.doWithTxn {
+            updateRecord(ref, "testStr" to testAttValue + 2)
+            getCreatedModified()
+        }
+
+        assertThat(created3).isEqualTo(created1)
+        assertThat(modified3).isAfter(modified2)
+
+        val (created4, modified4) = getCreatedModified()
+
+        assertThat(created4).isEqualTo(created1)
+        assertThat(modified4).isEqualTo(modified3)
+    }
 
     @Test
     fun testWithChangedSchema() {

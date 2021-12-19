@@ -16,6 +16,7 @@ import ru.citeck.ecos.data.sql.repo.entity.auth.DbPermsEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
@@ -344,17 +345,16 @@ class DbEntityRepoPg<T : Any>(
 
         val attsToSave = LinkedHashMap(entityMap)
         attsToSave.remove(DbEntity.ID)
-        attsToSave[DbEntity.MODIFIED] = nowInstant
-        attsToSave[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
-
-        val resultId = if (id == DbEntity.NEW_REC_ID) {
+        if (!ExtTxnContext.isCommitting()) {
+            attsToSave[DbEntity.MODIFIED] = nowInstant
+            attsToSave[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
+        }
+        return if (id == DbEntity.NEW_REC_ID) {
             insertImpl(attsToSave, nowInstant)
         } else {
             updateImpl(id, attsToSave)
             id
         }
-
-        return resultId
     }
 
     private fun insertImpl(entity: Map<String, Any?>, nowInstant: Instant): Long {
@@ -364,8 +364,15 @@ class DbEntityRepoPg<T : Any>(
             attsToInsert[DbEntity.DELETED] = false
         }
         attsToInsert[DbEntity.UPD_VERSION] = 0L
-        attsToInsert[DbEntity.CREATED] = nowInstant
-        attsToInsert[DbEntity.CREATOR] = AuthContext.getCurrentUser()
+
+        val currentCreator = entity[DbEntity.CREATOR]
+        if (currentCreator == null || currentCreator == "") {
+            attsToInsert[DbEntity.CREATOR] = AuthContext.getCurrentUser()
+            val currentCreated = attsToInsert[DbEntity.CREATED]
+            if (currentCreated == null || currentCreated == Instant.EPOCH) {
+                attsToInsert[DbEntity.CREATED] = nowInstant
+            }
+        }
 
         val valuesForDb = prepareValuesForDb(attsToInsert)
         val columnNames = valuesForDb.joinToString(",") { "\"${it.name}\"" }
