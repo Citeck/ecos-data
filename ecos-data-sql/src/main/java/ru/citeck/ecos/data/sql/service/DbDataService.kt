@@ -28,6 +28,8 @@ interface DbDataService<T : Any> {
 
     fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage): DbFindRes<T>
 
+    fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage, withDeleted: Boolean): DbFindRes<T>
+
     fun getCount(predicate: Predicate): Long
 
     fun save(entity: T): T

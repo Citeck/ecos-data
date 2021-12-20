@@ -241,7 +241,7 @@ abstract class DbRecordsTestBase {
         return RecordRef.create(recordsDao.getId(), id)
     }
 
-    fun updateRecord(rec: RecordRef, vararg atts: Pair<String, Any>): RecordRef {
+    fun updateRecord(rec: RecordRef, vararg atts: Pair<String, Any?>): RecordRef {
         return records.mutate(rec, mapOf(*atts))
     }
 

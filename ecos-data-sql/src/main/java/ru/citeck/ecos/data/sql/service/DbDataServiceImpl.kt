@@ -9,6 +9,8 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.*
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
 import ru.citeck.ecos.data.sql.dto.fk.FkCascadeActionOptions
+import ru.citeck.ecos.data.sql.job.DbJob
+import ru.citeck.ecos.data.sql.job.DbJobsProvider
 import ru.citeck.ecos.data.sql.meta.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.meta.dto.DbTableChangeSet
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaConfig
@@ -25,6 +27,8 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
+import ru.citeck.ecos.data.sql.service.job.txn.TxnDataCleaner
+import ru.citeck.ecos.data.sql.service.job.txn.TxnDataCleanerConfig
 import ru.citeck.ecos.data.sql.service.migration.DbMigration
 import ru.citeck.ecos.data.sql.service.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
@@ -32,17 +36,14 @@ import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
+import java.sql.SQLException
 import java.time.Instant
 import java.util.*
-import kotlin.collections.ArrayList
-import kotlin.collections.HashMap
-import kotlin.collections.HashSet
-import kotlin.collections.LinkedHashMap
 
-class DbDataServiceImpl<T : Any> : DbDataService<T> {
+class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
 
     companion object {
-        private const val COLUMN_EXT_TXN_ID = "__ext_txn_id"
+        const val COLUMN_EXT_TXN_ID = "__ext_txn_id"
 
         private const val META_TABLE_NAME = "ecos_data_table_meta"
         private const val AUTHORITIES_TABLE_NAME = "ecos_authorities"
@@ -289,12 +290,21 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     override fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage): DbFindRes<T> {
+        return find(predicate, sort, page, false)
+    }
+
+    override fun find(
+        predicate: Predicate,
+        sort: List<DbFindSort>,
+        page: DbFindPage,
+        withDeleted: Boolean
+    ): DbFindRes<T> {
         initColumns()
         if (isAuthTableRequiredAndDoesntExists()) {
             return DbFindRes()
         }
         return dataSource.withTransaction(true) {
-            entityRepo.find(predicate, sort, page)
+            entityRepo.find(predicate, sort, page, withDeleted)
         }
     }
 
@@ -353,7 +363,11 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                             // modify existing record, but it is not in txn table yet
                             newEntity[COLUMN_EXT_TXN_ID] = txnId
                             newEntity.remove(DbEntity.ID)
-                            txnDataService.save(entityMapper.convertToEntity(newEntity), getTxnColumns(columns))
+                            try {
+                                txnDataService.save(entityMapper.convertToEntity(newEntity), getTxnColumns(columns))
+                            } catch (e: SQLException) {
+                                throw convertTxnSaveException(extId, e)
+                            }
                         } else {
                             // modify existing record in txn table
                             txnDataService.save(entity, getTxnColumns(columns))
@@ -366,6 +380,23 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             entityRepo.setColumns(columnsBefore ?: emptyList())
             throw e
         }
+    }
+
+    private fun convertTxnSaveException(extId: String, exception: SQLException): Exception {
+
+        txnDataService ?: return exception
+        val exMsg = exception.message ?: ""
+
+        val uniqueExtIdConstraint = txnDataService.getTableRef().table + "___ext_id_idx"
+        if (!exMsg.contains("violates unique constraint \"$uniqueExtIdConstraint\"")) {
+            return exception
+        }
+
+        return RuntimeException(
+            "Record with id '$extId' cannot be changed because " +
+                "it is currently being updated in other transaction. Please try again later.",
+            exception
+        )
     }
 
     override fun delete(entity: T) {
@@ -487,7 +518,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                         entityMap[DbEntity.UPD_VERSION] = entityMapFromRepo[DbEntity.UPD_VERSION]
                     }
                     if (entityFromRepo != null || entityMap[DbEntity.DELETED] != true) {
-                        ExtTxnContext.withCommitting {
+                        ExtTxnContext.withoutModifiedMeta {
                             entityRepo.save(entityMapper.convertToEntity(entityMap))
                         }
                     }
@@ -793,5 +824,19 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             this.columns = columns
         }
         return columns
+    }
+
+    override fun getJobs(): List<DbJob> {
+        if (txnDataService == null) {
+            return emptyList()
+        }
+        return listOf(
+            TxnDataCleaner(
+                entityMapper,
+                txnDataService,
+                dataSource,
+                TxnDataCleanerConfig.create {}
+            )
+        )
     }
 }

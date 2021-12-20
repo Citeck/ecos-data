@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.repo
 
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
+import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
@@ -28,6 +29,8 @@ interface DbEntityRepo<T : Any> {
 
     fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage): DbFindRes<T>
 
+    fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage, withDeleted: Boolean): DbFindRes<T>
+
     fun getCount(predicate: Predicate): Long
 
     fun save(entity: T): T
@@ -41,4 +44,6 @@ interface DbEntityRepo<T : Any> {
     fun forceDelete(entities: List<T>)
 
     fun setColumns(columns: List<DbColumnDef>)
+
+    fun getTableRef(): DbTableRef
 }

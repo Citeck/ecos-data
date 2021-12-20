@@ -5,14 +5,14 @@ import java.util.*
 object ExtTxnContext {
 
     private val thExtTxnId = ThreadLocal<ExtTxnState>()
-    private val thIsCommitting = ThreadLocal<Boolean>()
+    private val thWithoutModifiedMeta = ThreadLocal<Boolean>()
 
     fun <T> withExtTxn(txnId: UUID, readOnly: Boolean, action: () -> T): T {
         return withThreadVar(thExtTxnId, ExtTxnState(readOnly, txnId), action)
     }
 
-    fun <T> withCommitting(action: () -> T): T {
-        return withThreadVar(thIsCommitting, true, action)
+    fun <T> withoutModifiedMeta(action: () -> T): T {
+        return withThreadVar(thWithoutModifiedMeta, true, action)
     }
 
     private fun <T, V> withThreadVar(variable: ThreadLocal<V>, value: V, action: () -> T): T {
@@ -33,8 +33,8 @@ object ExtTxnContext {
         return thExtTxnId.get()?.txnId
     }
 
-    fun isCommitting(): Boolean {
-        return thIsCommitting.get() ?: false
+    fun isWithoutModifiedMeta(): Boolean {
+        return thWithoutModifiedMeta.get() ?: false
     }
 
     data class ExtTxnState(val readOnly: Boolean, val txnId: UUID)

@@ -14,6 +14,7 @@ import ru.citeck.ecos.data.sql.content.data.storage.local.EcosContentLocalStorag
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
+import ru.citeck.ecos.data.sql.job.DbJobsProvider
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.listener.*
@@ -41,6 +42,9 @@ import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.EmptyPredicate
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
+import ru.citeck.ecos.records2.source.dao.local.job.Job
+import ru.citeck.ecos.records2.source.dao.local.job.JobsProvider
+import ru.citeck.ecos.records2.source.dao.local.job.PeriodicJob
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
@@ -79,7 +83,8 @@ class DbRecordsDao(
     RecordsQueryDao,
     RecordsMutateDao,
     RecordsDeleteDao,
-    TxnRecordsDao {
+    TxnRecordsDao,
+    JobsProvider {
 
     companion object {
 
@@ -138,6 +143,8 @@ class DbRecordsDao(
     private lateinit var ecosTypeService: DbEcosTypeService
 
     private val listeners: MutableList<DbRecordsListener> = CopyOnWriteArrayList()
+
+    private val recordsJobs: List<Job> by lazy { evalJobs() }
 
     init {
         dbDataService.registerMigration(AssocsDbMigration(dbRecordRefService))
@@ -1086,6 +1093,33 @@ class DbRecordsDao(
             operationsNames.forEach { attributes.remove(it) }
         }
         return operations
+    }
+
+    override fun getJobs(): List<Job> {
+        return recordsJobs
+    }
+
+    private fun evalJobs(): List<Job> {
+        if (dbDataService !is DbJobsProvider) {
+            return emptyList()
+        }
+        val jobs = dbDataService.getJobs()
+        if (jobs.isEmpty()) {
+            return emptyList()
+        }
+        return jobs.map {
+            object : PeriodicJob {
+                override fun getInitDelay(): Long {
+                    return it.getInitDelay()
+                }
+                override fun execute(): Boolean {
+                    return it.execute()
+                }
+                override fun getPeriod(): Long {
+                    return it.getPeriod()
+                }
+            }
+        }
     }
 
     private interface AttValueOperation {

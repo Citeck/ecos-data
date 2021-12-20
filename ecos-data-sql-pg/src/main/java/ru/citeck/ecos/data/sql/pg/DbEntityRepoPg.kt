@@ -345,7 +345,7 @@ class DbEntityRepoPg<T : Any>(
 
         val attsToSave = LinkedHashMap(entityMap)
         attsToSave.remove(DbEntity.ID)
-        if (!ExtTxnContext.isCommitting()) {
+        if (!ExtTxnContext.isWithoutModifiedMeta()) {
             attsToSave[DbEntity.MODIFIED] = nowInstant
             attsToSave[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
         }
@@ -468,7 +468,7 @@ class DbEntityRepoPg<T : Any>(
         return find(predicate, sort, page, false)
     }
 
-    private fun find(
+    override fun find(
         predicate: Predicate,
         sort: List<DbFindSort>,
         page: DbFindPage,
@@ -902,6 +902,10 @@ class DbEntityRepoPg<T : Any>(
             dataSource.updateSchema("DEALLOCATE ALL")
             schemaCacheUpdateRequired = false
         }
+    }
+
+    override fun getTableRef(): DbTableRef {
+        return tableRef
     }
 
     private data class ValueForDb(

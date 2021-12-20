@@ -73,6 +73,17 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         assertThat(created4).isEqualTo(created1)
         assertThat(modified4).isEqualTo(modified3)
+
+        var updatedTime: Instant? = null
+        RequestContext.doWithTxn {
+            updateRecord(ref, "testStr" to testAttValue + 3)
+            updatedTime = Instant.now()
+            // check that modified time doesn't change on commit
+            Thread.sleep(1_000)
+        }
+        val (created5, modified5) = getCreatedModified()
+        assertThat(created5).isEqualTo(created1)
+        assertThat(modified5).isBefore(updatedTime)
     }
 
     @Test
