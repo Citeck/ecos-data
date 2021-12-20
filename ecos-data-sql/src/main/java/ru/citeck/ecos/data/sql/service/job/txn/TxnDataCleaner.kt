@@ -37,7 +37,7 @@ class TxnDataCleaner<T : Any>(
      */
     private fun cleanTxnTable(): Boolean {
 
-        log.info { "Cleaning started for table ${txnDataService.getTableRef()}" }
+        log.debug { "Cleaning started for table ${txnDataService.getTableRef()}" }
 
         val entitiesToCleanFindRes = findStuckTxnEntities()
         val entitiesToClean = entitiesToCleanFindRes.entities
@@ -48,7 +48,8 @@ class TxnDataCleaner<T : Any>(
 
         log.warn {
             "Found ${entitiesToClean.size} entities in transaction table $tableRef to clean. " +
-                "Total count to clean: ${entitiesToCleanFindRes.totalCount}"
+                "Total count to clean: ${entitiesToCleanFindRes.totalCount}." +
+                "This is an indicator of problem with the commit or rollback of the transactions"
         }
 
         for (entity in entitiesToClean) {
