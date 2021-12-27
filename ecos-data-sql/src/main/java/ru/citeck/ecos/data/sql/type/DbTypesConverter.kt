@@ -49,7 +49,7 @@ class DbTypesConverter {
         } else if (targetClass.java.isArray) {
             val targetComponentType = getComponentType(targetClass)
             if (value is Iterable<*>) {
-                val resultList = value.map { convert(it, targetComponentType) }
+                val resultList = value.mapNotNull { convert(it, targetComponentType) }
                 val result = Array.newInstance(targetComponentType.java, resultList.size)
                 for (i in resultList.indices) {
                     Array.set(result, i, resultList[i])

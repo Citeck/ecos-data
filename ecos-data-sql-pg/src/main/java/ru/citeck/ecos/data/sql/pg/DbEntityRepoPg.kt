@@ -650,10 +650,15 @@ class DbEntityRepoPg<T : Any>(
                     value
                 } else {
                     val multiple = column.multiple && column.type != DbColumnType.JSON
-                    typesConverter.convert(
-                        value,
-                        getParamTypeForColumn(column.type, multiple)
-                    )
+                    val targetType = getParamTypeForColumn(column.type, multiple)
+                    try {
+                        typesConverter.convert(value, targetType)
+                    } catch (exception: RuntimeException) {
+                        throw RuntimeException(
+                            "Column data conversion failed. Column: ${column.name} Target type: $targetType entityId: ${entity[DbEntity.ID]}",
+                            exception
+                        )
+                    }
                 }
                 ValueForDb(column.name, placeholder, value)
             }

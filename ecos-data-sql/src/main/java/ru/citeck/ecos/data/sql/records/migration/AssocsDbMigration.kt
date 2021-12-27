@@ -37,6 +37,8 @@ class AssocsDbMigration(
 
         if (assocAttributes.isEmpty()) {
             log.info { "Association attributes doesn't found in type '${config.typeInfo.id}'" }
+        } else {
+            log.info { "Association attributes: ${assocAttributes.joinToString { it.id }}" }
         }
 
         val tempColumnPostfix = "__assoc_bigint"
@@ -51,8 +53,6 @@ class AssocsDbMigration(
             }
         )
         service.dataService.resetColumnsCache()
-
-        log.info { "Association attributes: ${assocAttributes.joinToString { it.id }}" }
 
         val entities = service.dataService.findAll(VoidPredicate.INSTANCE, true)
 
