@@ -464,6 +464,13 @@ class DbRecordsDao(
                 updatePermissions(listOf(record.id))
                 return@mapIndexed record.id
             }
+            if (record.attributes.get("__runAssocsMigration").asBoolean()) {
+                if (!AuthContext.getCurrentAuthorities().contains(AuthRole.ADMIN)) {
+                    error("Assocs migration allowed only for admin")
+                }
+                runMigrationByType(AssocsDbMigration.TYPE, RecordRef.EMPTY, false, ObjectData.create())
+                return@mapIndexed record.id
+            }
 
             val extId = record.id.ifEmpty { record.attributes.get("id").asText() }
 
