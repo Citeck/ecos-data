@@ -7,6 +7,10 @@ object ExtTxnContext {
     private val thExtTxnId = ThreadLocal<ExtTxnState>()
     private val thWithoutModifiedMeta = ThreadLocal<Boolean>()
 
+    fun <T> withoutExtTxn(action: () -> T): T {
+        return withThreadVar(thExtTxnId, null, action)
+    }
+
     fun <T> withExtTxn(txnId: UUID, readOnly: Boolean, action: () -> T): T {
         return withThreadVar(thExtTxnId, ExtTxnState(readOnly, txnId), action)
     }
@@ -15,9 +19,13 @@ object ExtTxnContext {
         return withThreadVar(thWithoutModifiedMeta, true, action)
     }
 
-    private fun <T, V> withThreadVar(variable: ThreadLocal<V>, value: V, action: () -> T): T {
+    private fun <T, V> withThreadVar(variable: ThreadLocal<V>, value: V?, action: () -> T): T {
         val prevValue = variable.get()
-        variable.set(value)
+        if (value == null) {
+            variable.remove()
+        } else {
+            variable.set(value)
+        }
         try {
             return action.invoke()
         } finally {

@@ -30,7 +30,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
                 }
             )
         )
-        initWithTable(tableRef, true)
+        initServices(tableRef, true)
     }
 
     @Test

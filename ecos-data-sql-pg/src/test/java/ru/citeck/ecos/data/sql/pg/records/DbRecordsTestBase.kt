@@ -61,6 +61,8 @@ abstract class DbRecordsTestBase {
         private lateinit var dataSource: DataSource
         private var started = false
 
+        private val DEFAULT_TABLE = DbTableRef("records-test-schema", "test-records-table")
+
         @BeforeAll
         @JvmStatic
         fun beforeAll() {
@@ -87,6 +89,8 @@ abstract class DbRecordsTestBase {
     lateinit var dbSchemaDao: DbSchemaDao
     lateinit var ecosTypeRepo: TypesRepo
     lateinit var dataService: DbDataService<DbEntity>
+    lateinit var dbRecordRefDataService: DbDataService<DbRecordRefEntity>
+    lateinit var dbRecordRefService: DbRecordRefService
 
     val baseQuery = RecordsQuery.create {
         withSourceId(RECS_DAO_ID)
@@ -101,7 +105,7 @@ abstract class DbRecordsTestBase {
         typesInfo.clear()
         recReadPerms.clear()
 
-        initWithTable(DbTableRef("records-test-schema", "test-records-table"), false)
+        initServices()
     }
 
     fun setPerms(rec: RecordRef, perms: Collection<String>) {
@@ -113,7 +117,11 @@ abstract class DbRecordsTestBase {
         setPerms(rec, perms.toSet())
     }
 
-    fun initWithTable(tableRef: DbTableRef, authEnabled: Boolean = false) {
+    fun initServices(
+        tableRef: DbTableRef = DEFAULT_TABLE,
+        authEnabled: Boolean = false,
+        typeRef: RecordRef = RecordRef.EMPTY
+    ) {
 
         this.tableRef = tableRef
 
@@ -195,21 +203,20 @@ abstract class DbRecordsTestBase {
             contentDataService
         )
 
-        val dbRecordRefService = DbRecordRefService(
-            DbDataServiceImpl(
-                DbRecordRefEntity::class.java,
-                DbDataServiceConfig.create {
-                    withTableRef(tableRef.withTable("ecos_record_ref"))
-                },
-                dbDataSource,
-                pgDataServiceFactory
-            )
+        dbRecordRefDataService = DbDataServiceImpl(
+            DbRecordRefEntity::class.java,
+            DbDataServiceConfig.create {
+                withTableRef(tableRef.withTable("ecos_record_ref"))
+            },
+            dbDataSource,
+            pgDataServiceFactory
         )
+        dbRecordRefService = DbRecordRefService(dbRecordRefDataService)
 
         recordsDao = DbRecordsDao(
             DbRecordsDaoConfig.create {
                 withId(RECS_DAO_ID)
-                withTypeRef(RecordRef.EMPTY)
+                withTypeRef(typeRef)
             },
             ecosTypeRepo,
             dataService,
@@ -245,7 +252,7 @@ abstract class DbRecordsTestBase {
         return records.mutate(rec, mapOf(*atts))
     }
 
-    fun createRecord(vararg atts: Pair<String, Any>): RecordRef {
+    fun createRecord(vararg atts: Pair<String, Any?>): RecordRef {
         val map = hashMapOf(*atts)
         if (!map.containsKey("_type")) {
             map["_type"] = REC_TEST_TYPE_REF

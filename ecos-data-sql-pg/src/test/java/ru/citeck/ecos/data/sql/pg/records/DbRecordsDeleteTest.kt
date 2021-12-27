@@ -13,7 +13,7 @@ class DbRecordsDeleteTest : DbRecordsTestBase() {
     @Test
     fun test() {
 
-        initWithTable(tableRef, true)
+        initServices(tableRef, true)
 
         registerAtts(
             listOf(

@@ -655,7 +655,8 @@ class DbEntityRepoPg<T : Any>(
                         typesConverter.convert(value, targetType)
                     } catch (exception: RuntimeException) {
                         throw RuntimeException(
-                            "Column data conversion failed. Column: ${column.name} Target type: $targetType entityId: ${entity[DbEntity.ID]}",
+                            "Column data conversion failed. Column: ${column.name} Target type: $targetType " +
+                                "entityId: ${entity[DbEntity.ID]} extId: ${entity[DbEntity.EXT_ID]}",
                             exception
                         )
                     }

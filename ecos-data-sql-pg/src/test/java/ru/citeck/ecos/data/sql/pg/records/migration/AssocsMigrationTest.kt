@@ -2,17 +2,22 @@ package ru.citeck.ecos.data.sql.pg.records.migration
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.context.lib.auth.AuthRole
 import ru.citeck.ecos.data.sql.pg.records.DbRecordsTestBase
-import ru.citeck.ecos.data.sql.records.migration.AssocsDbMigration
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
+import ru.citeck.ecos.records3.record.request.RequestContext
 
 class AssocsMigrationTest : DbRecordsTestBase() {
 
     @Test
     fun test() {
+
+        initServices(typeRef = REC_TEST_TYPE_REF)
 
         registerAtts(
             listOf(
@@ -34,7 +39,19 @@ class AssocsMigrationTest : DbRecordsTestBase() {
             "source-id@localId-$it"
         }
         val assocArrayValues = Array(10) { recIdx ->
-            Array(3) { "source-id@assoc-array-$recIdx-$it" }.toList()
+            when (recIdx) {
+                3 -> Array(3) {
+                    if (it != 1) {
+                        "source-id@assoc-array-$recIdx-$it"
+                    } else {
+                        null
+                    }
+                }.toList()
+                4 -> null
+                else -> {
+                    Array(3) { "source-id@assoc-array-$recIdx-$it" }.toList()
+                }
+            }
         }
         val createdRecords = assocValues.mapIndexed { idx, assocValue ->
             createRecord(
@@ -44,15 +61,26 @@ class AssocsMigrationTest : DbRecordsTestBase() {
             )
         }
 
+        val deletedRecords = mutableSetOf<RecordRef>()
+
         val checkAssocValues = {
             for ((idx, record) in createdRecords.withIndex()) {
                 val assocActualValue = records.getAtt(record, "assoc?id").asText()
-                assertThat(assocActualValue).isEqualTo(assocValues[idx])
                 val assocArrayActualValue = records.getAtt(record, "assocArray[]?id").asStrList()
-                assertThat(assocArrayActualValue).isEqualTo(assocArrayValues[idx])
+                if (deletedRecords.contains(record)) {
+                    assertThat(assocActualValue).isEmpty()
+                    assertThat(assocArrayActualValue).isEmpty()
+                } else {
+                    assertThat(assocActualValue).isEqualTo(assocValues[idx])
+                    assertThat(assocArrayActualValue)
+                        .containsExactlyElementsOf(assocArrayValues[idx]?.filterNotNull() ?: emptyList())
+                }
             }
         }
         checkAssocValues()
+
+        records.delete(createdRecords[5])
+        deletedRecords.add(createdRecords[5])
 
         registerAtts(
             listOf(
@@ -74,12 +102,22 @@ class AssocsMigrationTest : DbRecordsTestBase() {
         dbDataSource.withTransaction(false) {
             dbDataSource.updateSchema("ALTER TABLE ${tableRef.fullName} DROP COLUMN ${DbEntity.REF_ID}")
             dbDataSource.updateSchema("ALTER TABLE ${tableRef.fullName.dropLast(1)}__ext_txn\" DROP COLUMN ${DbEntity.REF_ID}")
+            dbDataSource.updateSchema("DROP TABLE \"${tableRef.schema}\".\"ecos_record_ref\"")
         }
+        dbRecordRefDataService.resetColumnsCache()
         dataService.resetColumnsCache()
 
         printQueryRes("SELECT * from ${tableRef.fullName}")
 
-        recordsDao.runMigrationByType(AssocsDbMigration.TYPE, REC_TEST_TYPE_REF, false, ObjectData.create())
+        RequestContext.doWithTxn {
+            AuthContext.runAs("admin", listOf(AuthRole.ADMIN)) {
+                val emptyRef = RecordRef.create(recordsDao.getId(), "")
+                val atts = RecordAtts(emptyRef)
+                atts.setAtt("__runAssocsMigration", true)
+                atts.setAtt("_type", REC_TEST_TYPE_ID)
+                records.mutate(atts)
+            }
+        }
 
         printQueryRes("SELECT * from ${tableRef.fullName}")
 

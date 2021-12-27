@@ -468,7 +468,11 @@ class DbRecordsDao(
                 if (!AuthContext.getCurrentAuthorities().contains(AuthRole.ADMIN)) {
                     error("Assocs migration allowed only for admin")
                 }
-                runMigrationByType(AssocsDbMigration.TYPE, RecordRef.EMPTY, false, ObjectData.create())
+                ExtTxnContext.withoutModifiedMeta {
+                    ExtTxnContext.withoutExtTxn {
+                        runMigrationByType(AssocsDbMigration.TYPE, RecordRef.EMPTY, false, ObjectData.create())
+                    }
+                }
                 return@mapIndexed record.id
             }
 
