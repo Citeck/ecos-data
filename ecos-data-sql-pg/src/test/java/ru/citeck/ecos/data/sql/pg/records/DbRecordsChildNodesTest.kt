@@ -7,6 +7,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
+import ru.citeck.ecos.records3.record.request.RequestContext
 
 class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
@@ -44,5 +45,16 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
         val parentId = records.getAtt(mutatedRecords[1], "_parent?id").getAs(RecordRef::class.java)
         assertThat(parentId).isEqualTo(mutatedRecords[0])
+
+        // test with sourceId mapping
+
+        val otherSourceId = "other-source-id"
+        val mutatedRecords2 = RequestContext.doWithCtx({ ctxData ->
+            ctxData.withSourceIdMapping(mapOf(recordsDao.getId() to otherSourceId))
+        }) {
+            records.mutate(listOf(mainRec, childRec))
+        }
+        val parentId2 = records.getAtt(mutatedRecords2[1], "_parent?id").getAs(RecordRef::class.java)
+        assertThat(parentId2?.sourceId).isEqualTo(otherSourceId)
     }
 }

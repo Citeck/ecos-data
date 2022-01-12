@@ -63,6 +63,7 @@ import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.records3.utils.RecordRefUtils
 import java.io.InputStream
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -712,6 +713,18 @@ class DbRecordsDao(
                         "Children of $recRef was changed. Added: $addedChildren Removed: $removedChildren"
                     }
 
+                    val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
+                    val currentAppName = serviceFactory.properties.appName
+
+                    val currentRef = RecordRef.create(currentAppName, getId(), recAfterSave.extId)
+                    val newRecordRef = RecordRefUtils.mapAppIdAndSourceId(currentRef, currentAppName, sourceIdMapping)
+
+                    val parentRefId = if (newRecordRef == currentRef) {
+                        recAfterSave.refId
+                    } else {
+                        dbRecordRefService.getOrCreateIdByRecordRef(newRecordRef)
+                    }
+
                     val childRefsById = dbRecordRefService.getRecordRefsByIdsMap(changedChildren)
                     val addOrRemoveParentRef = { children: Set<Long>, add: Boolean ->
                         for (removedId in children) {
@@ -721,7 +734,7 @@ class DbRecordsDao(
                             if (RecordRef.isNotEmpty(childRef)) {
                                 val childAtts = RecordAtts(childRef)
                                 if (add) {
-                                    childAtts.setAtt(RecordConstants.ATT_PARENT, recAfterSave.refId)
+                                    childAtts.setAtt(RecordConstants.ATT_PARENT, parentRefId)
                                 } else {
                                     childAtts.setAtt(RecordConstants.ATT_PARENT, null)
                                 }

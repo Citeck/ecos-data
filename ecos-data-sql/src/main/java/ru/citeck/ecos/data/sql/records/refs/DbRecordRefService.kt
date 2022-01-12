@@ -8,6 +8,12 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 class DbRecordRefService(
     private val dataService: DbDataService<DbRecordRefEntity>
 ) {
+    /**
+     * Get or create record identifier for reference
+     */
+    fun getOrCreateIdByRecordRef(ref: RecordRef): Long {
+        return getOrCreateIdByRecordRefs(listOf(ref))[0]
+    }
 
     /**
      * Get record identifiers for references or -1 if reference is not registered
