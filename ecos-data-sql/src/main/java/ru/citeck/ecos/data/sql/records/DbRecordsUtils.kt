@@ -5,6 +5,11 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 
 object DbRecordsUtils {
 
+    fun isChildAssocAttribute(def: AttributeDef?): Boolean {
+        def ?: return false
+        return def.type == AttributeType.ASSOC && def.config.get("child", false)
+    }
+
     fun isAssocLikeAttribute(def: AttributeDef?): Boolean {
         return isAssocLikeAttribute(def?.type)
     }

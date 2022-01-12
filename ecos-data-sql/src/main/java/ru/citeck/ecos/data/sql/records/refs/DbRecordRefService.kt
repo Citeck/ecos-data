@@ -37,6 +37,19 @@ class DbRecordRefService(
         return result.toList()
     }
 
+    fun getRecordRefsByIdsMap(ids: Collection<Long>): Map<Long, RecordRef> {
+        if (ids.isEmpty()) {
+            return emptyMap()
+        }
+        val idsList = ids.toList()
+        val refs = getRecordRefsByIds(idsList)
+        val result = HashMap<Long, RecordRef>(ids.size)
+        for (idx in ids.indices) {
+            result[idsList[idx]] = refs[idx]
+        }
+        return result
+    }
+
     fun getRecordRefsByIds(ids: List<Long>): List<RecordRef> {
         val entities = dataService.findById(ids.toSet())
         if (entities.size != ids.size) {

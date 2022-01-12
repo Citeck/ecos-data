@@ -29,6 +29,7 @@ import ru.citeck.ecos.data.sql.service.DbCommitEntityDto
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
@@ -47,6 +48,7 @@ import ru.citeck.ecos.records2.source.dao.local.job.JobsProvider
 import ru.citeck.ecos.records2.source.dao.local.job.PeriodicJob
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
+import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
@@ -68,6 +70,7 @@ import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.function.Function
 import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
 import kotlin.math.min
 
 class DbRecordsDao(
@@ -121,6 +124,10 @@ class DbRecordsDao(
             DbColumnDef.create {
                 withName("_cipher")
                 withType(DbColumnType.JSON)
+            },
+            DbColumnDef.create {
+                withName("_parent")
+                withType(DbColumnType.LONG)
             }
         )
 
@@ -677,10 +684,77 @@ class DbRecordsDao(
                 }
                 newEntity
             }
+
+            if (recAfterSave.refId != DbEntity.NEW_REC_ID) {
+
+                val childAssociations = typesAttColumns.filter {
+                    DbRecordsUtils.isChildAssocAttribute(it.attribute)
+                }
+
+                val addedChildren = mutableSetOf<Long>()
+                val removedChildren = mutableSetOf<Long>()
+
+                for (att in childAssociations) {
+                    val before = anyToSetOfLong(recordEntityBeforeMutation.attributes[att.attribute.id])
+                    val after = anyToSetOfLong(recAfterSave.attributes[att.attribute.id])
+                    addedChildren.addAll(after.subtract(before))
+                    removedChildren.addAll(before.subtract(after))
+                }
+
+                val changedChildren = mutableSetOf<Long>()
+                changedChildren.addAll(addedChildren)
+                changedChildren.addAll(removedChildren)
+
+                if (changedChildren.isNotEmpty()) {
+
+                    log.debug {
+                        val recRef = RecordRef.create(getId(), recAfterSave.extId)
+                        "Children of $recRef was changed. Added: $addedChildren Removed: $removedChildren"
+                    }
+
+                    val childRefsById = dbRecordRefService.getRecordRefsByIdsMap(changedChildren)
+                    val addOrRemoveParentRef = { children: Set<Long>, add: Boolean ->
+                        for (removedId in children) {
+                            val childRef = childRefsById[removedId]
+                                ?: error("Child ref doesn't found by id. Refs: $childRefsById id: $removedId")
+
+                            if (RecordRef.isNotEmpty(childRef)) {
+                                val childAtts = RecordAtts(childRef)
+                                if (add) {
+                                    childAtts.setAtt(RecordConstants.ATT_PARENT, recAfterSave.refId)
+                                } else {
+                                    childAtts.setAtt(RecordConstants.ATT_PARENT, null)
+                                }
+                                recordsService.mutate(childAtts)
+                            }
+                        }
+                    }
+                    addOrRemoveParentRef.invoke(addedChildren, true)
+                    addOrRemoveParentRef.invoke(removedChildren, false)
+                }
+            }
+
             emitEventAfterMutation(recordEntityBeforeMutation, recAfterSave, isNewRecord)
 
             recAfterSave.extId
         }
+    }
+
+    private fun anyToSetOfLong(value: Any?): Set<Long> {
+        value ?: return emptySet()
+        if (value is Collection<*>) {
+            val res = hashSetOf<Long>()
+            for (item in value) {
+                if (item is Long) {
+                    res.add(item)
+                }
+            }
+            return res
+        }
+        if (value is Long) {
+            return setOf(value)
+        }
+        return emptySet()
     }
 
     private fun getRefForContentData(value: DataValue): RecordRef {
@@ -1235,6 +1309,11 @@ class DbRecordsDao(
                         DbColumnType.INT -> {
                             attTypes[it.name] = AttributeType.NUMBER
                         }
+                        DbColumnType.LONG -> {
+                            if (it.name == RecordConstants.ATT_PARENT) {
+                                attTypes[it.name] = AttributeType.ASSOC
+                            }
+                        }
                         else -> {
                         }
                     }
@@ -1448,6 +1527,11 @@ class DbRecordsDao(
         val url: String,
         val name: String,
         val size: Long
+    )
+
+    class ChildRef(
+        val ref: RecordRef,
+        val assoc: AttributeDef
     )
 
     data class StatusValue(private val def: StatusDef) : AttValue {
