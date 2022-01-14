@@ -1287,12 +1287,18 @@ class DbRecordsDao(
     }
 
     inner class EmptyRecord : AttValue {
-
         override fun getEdge(name: String?): AttEdge? {
             if (name == StatusConstants.ATT_STATUS) {
                 return StatusEdge(config.typeRef)
             }
             return super.getEdge(name)
+        }
+        override fun getDisplayName(): Any? {
+            if (RecordRef.isEmpty(config.typeRef)) {
+                return ""
+            }
+            val typeInfo = ecosTypeService.getTypeInfo(config.typeRef.id)
+            return typeInfo?.name ?: ""
         }
     }
 
