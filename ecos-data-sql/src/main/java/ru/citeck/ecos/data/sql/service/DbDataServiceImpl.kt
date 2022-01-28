@@ -574,7 +574,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
 
     override fun resetColumnsCache() {
         columns = null
-        entityRepo.setColumns(emptyList())
         tableMetaService?.resetColumnsCache()
         txnDataService?.resetColumnsCache()
         authorityDataService?.resetColumnsCache()
