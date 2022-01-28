@@ -5,5 +5,6 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 
 data class EcosAttColumnDef(
     val column: DbColumnDef,
-    val attribute: AttributeDef
+    val attribute: AttributeDef,
+    val systemAtt: Boolean
 )

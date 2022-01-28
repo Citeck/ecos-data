@@ -31,7 +31,7 @@ class AssocsDbMigration(
 
         log.info { "Associations migration started" }
 
-        val assocAttributes = config.typeInfo.model.attributes.filter {
+        val assocAttributes = config.typeInfo.model.getAllAttributes().filter {
             DbRecordsUtils.isAssocLikeAttribute(it)
         }
 

@@ -8,7 +8,9 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records3.record.dao.atts.RecordAttsDao
+import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 
 class DbRecordsAssocTest : DbRecordsTestBase() {
 
@@ -95,5 +97,59 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
         // printQueryRes("SELECT * FROM ${tableRef.fullName}")
 
         // todo add query by array support and test for it
+    }
+
+    @Test
+    fun searchTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("assocAtt")
+                    withType(AttributeType.ASSOC)
+                },
+                AttributeDef.create {
+                    withId("multiAssocAtt")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                }
+            )
+        )
+
+        val refs = Array(5) { "some/assoc@value-$it" }
+
+        val record = createRecord(
+            "assocAtt" to refs[0],
+            "multiAssocAtt" to refs.toList().take(3)
+        )
+
+        val queryTest = { query: Predicate, expected: List<RecordRef> ->
+            val result = records.query(
+                RecordsQuery.create {
+                    withSourceId(recordsDao.getId())
+                    withQuery(
+                        Predicates.and(
+                            Predicates.eq("_type", REC_TEST_TYPE_REF),
+                            query
+                        )
+                    )
+                }
+            )
+            assertThat(result.getRecords()).describedAs(query.toString()).hasSize(expected.size)
+            assertThat(result.getRecords()).describedAs(query.toString()).containsExactlyElementsOf(expected)
+        }
+
+        listOf(ValuePredicate.Type.EQ, ValuePredicate.Type.CONTAINS).forEach { predType ->
+
+            queryTest(ValuePredicate("assocAtt", predType, refs[0]), listOf(record))
+            queryTest(ValuePredicate("multiAssocAtt", predType, refs[0]), listOf(record))
+            queryTest(ValuePredicate("multiAssocAtt", predType, refs[1]), listOf(record))
+
+            queryTest(ValuePredicate("assocAtt", predType, refs[3]), listOf())
+            queryTest(ValuePredicate("multiAssocAtt", predType, refs[3]), listOf())
+
+            queryTest(ValuePredicate("multiAssocAtt", predType, listOf(refs[3], refs[4])), listOf())
+            queryTest(ValuePredicate("multiAssocAtt", predType, listOf(refs[3], refs[0])), listOf(record))
+        }
     }
 }

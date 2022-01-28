@@ -293,7 +293,7 @@ class DbRecordsDao(
 
         val attributesById = if (RecordRef.isNotEmpty(ecosTypeRef)) {
             val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.id)
-            typeInfo?.model?.attributes?.associateBy { it.id } ?: emptyMap()
+            typeInfo?.model?.getAllAttributes()?.associateBy { it.id } ?: emptyMap()
         } else {
             emptyMap()
         }
@@ -484,6 +484,17 @@ class DbRecordsDao(
                 return@mapIndexed record.id
             }
 
+            if (!AuthContext.isRunAsSystem()) {
+                val deniedAtts = typesAttColumns.filter {
+                    it.systemAtt && record.attributes.has(it.attribute.id)
+                }.map {
+                    it.attribute.id
+                }
+                if (deniedAtts.isNotEmpty()) {
+                    error("Permission denied. You should be in system context to change system attributes: $deniedAtts")
+                }
+            }
+
             val extId = record.id.ifEmpty { record.attributes.get("id").asText() }
 
             val recToMutate: DbEntity = if (extId.isEmpty()) {
@@ -502,7 +513,7 @@ class DbRecordsDao(
 
             if (recToMutate.id != DbEntity.NEW_REC_ID) {
                 val recordPerms = getRecordPerms(recToMutate.extId)
-                if (!recordPerms.isCurrentUserHasWritePerms()) {
+                if (!AuthContext.isRunAsSystem() && !recordPerms.isCurrentUserHasWritePerms()) {
                     error("Permissions Denied. You can't change record '${record.id}'")
                 }
             }
@@ -659,12 +670,11 @@ class DbRecordsDao(
 
             val isNewRecord = recToMutate.id == DbEntity.NEW_REC_ID
             if (isNewRecord) {
-                val currentRef = RecordRef.create(
-                    serviceFactory.properties.appName,
-                    getId(),
-                    recToMutate.extId
-                )
-                recToMutate.refId = dbRecordRefService.getOrCreateIdByRecordRefs(listOf(currentRef))[0]
+                val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
+                val currentAppName = serviceFactory.properties.appName
+                val currentRef = RecordRef.create(currentAppName, getId(), recToMutate.extId)
+                val newRecordRef = RecordRefUtils.mapAppIdAndSourceId(currentRef, currentAppName, sourceIdMapping)
+                recToMutate.refId = dbRecordRefService.getOrCreateIdByRecordRefs(listOf(newRecordRef))[0]
             }
             var recAfterSave = dbDataService.save(recToMutate, fullColumns)
 
@@ -713,17 +723,7 @@ class DbRecordsDao(
                         "Children of $recRef was changed. Added: $addedChildren Removed: $removedChildren"
                     }
 
-                    val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
-                    val currentAppName = serviceFactory.properties.appName
-
-                    val currentRef = RecordRef.create(currentAppName, getId(), recAfterSave.extId)
-                    val newRecordRef = RecordRefUtils.mapAppIdAndSourceId(currentRef, currentAppName, sourceIdMapping)
-
-                    val parentRefId = if (newRecordRef == currentRef) {
-                        recAfterSave.refId
-                    } else {
-                        dbRecordRefService.getOrCreateIdByRecordRef(newRecordRef)
-                    }
+                    val parentRefId = recAfterSave.refId
 
                     val childRefsById = dbRecordRefService.getRecordRefsByIdsMap(changedChildren)
                     val addOrRemoveParentRef = { children: Set<Long>, add: Boolean ->
@@ -1308,12 +1308,15 @@ class DbRecordsDao(
 
         private val additionalAtts: Map<String, Any?>
         private val assocMapping: Map<Long, RecordRef>
+        private val typeInfo: TypeInfo?
 
         init {
             val recData = LinkedHashMap(entity.attributes)
 
             val attTypes = HashMap<String, AttributeType>()
-            ecosTypeService.getTypeInfo(entity.type)?.model?.attributes?.forEach {
+            typeInfo = ecosTypeService.getTypeInfo(entity.type)
+
+            typeInfo?.model?.getAllAttributes()?.forEach {
                 attTypes[it.id] = it.type
             }
             OPTIONAL_COLUMNS.forEach {
@@ -1433,7 +1436,15 @@ class DbRecordsDao(
         }
 
         override fun asJson(): Any {
-            return additionalAtts
+            if (typeInfo == null) {
+                return additionalAtts
+            }
+            val nonSystemAttIds = typeInfo.model.attributes.map { it.id }.toSet()
+            val jsonAtts = HashMap<String, Any?>()
+            additionalAtts.keys.filter { nonSystemAttIds.contains(it) }.forEach {
+                jsonAtts[it] = additionalAtts[it]
+            }
+            return jsonAtts
         }
 
         override fun has(name: String): Boolean {

@@ -158,7 +158,11 @@ class DbEntityMapperImpl<T : Any>(
                     prop.name,
                     prop.propertyType.kotlin,
                     prop.readMethod.invoke(defaultValue),
-                    DbColumnDef(columnName, fieldType, false, constraints)
+                    DbColumnDef.create {
+                        withName(columnName)
+                        withType(fieldType)
+                        withConstraints(constraints)
+                    }
                 ) { obj -> prop.readMethod.invoke(obj) }
             }
         }

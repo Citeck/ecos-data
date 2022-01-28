@@ -761,14 +761,30 @@ class DbEntityRepoPg<T : Any>(
                     query.append(ALWAYS_FALSE_CONDITION)
                     return true
                 }
-                // todo: add ability to search for multiple values fields
-                if (columnDef.multiple) {
-                    return false
-                }
 
                 val type = predicate.getType()
                 val attribute: String = predicate.getAttribute()
                 val value = predicate.getValue()
+
+                if (columnDef.multiple) {
+                    if (type != ValuePredicate.Type.EQ && type != ValuePredicate.Type.CONTAINS) {
+                        return false
+                    }
+                    appendRecordColumnName(query, attribute)
+                    query.append(" && ARRAY[")
+                    if (!value.isArray()) {
+                        query.append("?")
+                        queryParams.add(value.asJavaObj())
+                    } else {
+                        for (elem in value) {
+                            query.append("?,")
+                            queryParams.add(elem.asJavaObj())
+                        }
+                        query.setLength(query.length - 1)
+                    }
+                    query.append("]")
+                    return true
+                }
 
                 val operator = when (type) {
                     ValuePredicate.Type.IN -> "IN"

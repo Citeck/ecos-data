@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.ecostype
 
 import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
+import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -29,18 +30,29 @@ class DbEcosTypeService(private val typesRepo: TypesRepo) {
         typesInfo.forEach { typeInfo ->
 
             if (processedTypes.add(typeInfo.id)) {
-                val columns = typeInfo.model.attributes.mapNotNull {
-                    mapAttToColumn(it)?.let { columnDef ->
-                        EcosAttColumnDef(columnDef, it)
-                    }
-                }
+
+                val model = typeInfo.model
+                val columns = ArrayList<EcosAttColumnDef>(
+                    model.attributes.size + model.systemAttributes.size
+                )
+                columns.addAll(mapAttsToColumns(model.attributes, false))
+                columns.addAll(mapAttsToColumns(model.systemAttributes, true))
+
                 columns.forEach {
                     val currentColumn = columnsById[it.column.name]
-                    if (currentColumn != null && it.column.type != currentColumn.column.type) {
-                        error(
-                            "Columns type doesn't match. " +
-                                "Current column: $currentColumn New column: $it"
-                        )
+                    if (currentColumn != null) {
+                        if (it.column.type != currentColumn.column.type) {
+                            error(
+                                "Columns type doesn't match. " +
+                                    "Current column: $currentColumn New column: $it"
+                            )
+                        }
+                        if (it.systemAtt != currentColumn.systemAtt) {
+                            error(
+                                "System attribute flag doesn't match. " +
+                                    "Current column: $currentColumn New column: $it"
+                            )
+                        }
                     }
                     columnsById[it.column.name] = it
                 }
@@ -48,6 +60,14 @@ class DbEcosTypeService(private val typesRepo: TypesRepo) {
         }
 
         return columnsById.values.toList()
+    }
+
+    private fun mapAttsToColumns(atts: List<AttributeDef>, system: Boolean): List<EcosAttColumnDef> {
+        return atts.mapNotNull {
+            mapAttToColumn(it)?.let { columnDef ->
+                EcosAttColumnDef(columnDef, it, system)
+            }
+        }
     }
 
     private fun mapAttToColumn(attribute: AttributeDef): DbColumnDef? {
@@ -77,7 +97,8 @@ class DbEcosTypeService(private val typesRepo: TypesRepo) {
             AttributeType.BINARY -> DbColumnType.BINARY
         }
         val multiple = attribute.type != AttributeType.CONTENT && attribute.multiple
+        val index = DbColumnIndexDef(attribute.index.enabled)
 
-        return DbColumnDef(attribute.id, columnType, multiple, emptyList())
+        return DbColumnDef(attribute.id, columnType, multiple, emptyList(), index)
     }
 }

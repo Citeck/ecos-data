@@ -14,6 +14,7 @@ import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
+import ru.citeck.ecos.records3.record.dao.impl.proxy.RecordsDaoProxy
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.request.RequestContext
 import java.time.Instant
@@ -450,5 +451,36 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         )
         assertThat(fullQueryAfterDeleteRes.getTotalCount()).isEqualTo(30)
         assertThat(fullQueryAfterDeleteRes.getRecords()).hasSize(30)
+    }
+
+    @Test
+    fun recIdProxyTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("att")
+                    .build()
+            )
+        )
+
+        records.register(RecordsDaoProxy("proxy-dao", recordsDao.getId(), null))
+
+        val atts = mapOf(
+            "_type" to REC_TEST_TYPE_REF,
+            "att" to "value"
+        )
+        val record = records.create("proxy-dao", atts)
+        val refId = selectRecFromDb(record, "\"__ref_id\"") as Long
+
+        val recordRef = RecordRef.valueOf(
+            selectFieldFromDbTable(
+                "__ext_id",
+                tableRef.withTable("ecos_record_ref").fullName,
+                "id=$refId"
+            ) as String
+        )
+
+        assertThat(recordRef.sourceId).isEqualTo("proxy-dao")
     }
 }

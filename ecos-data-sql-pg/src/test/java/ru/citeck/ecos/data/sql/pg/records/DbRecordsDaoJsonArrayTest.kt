@@ -47,8 +47,16 @@ class DbRecordsDaoJsonArrayTest : DbRecordsTestBase() {
         dbDataSource.withTransaction(true) {
             assertThat(dbSchemaDao.getColumns()).contains(
                 // check that json columns created with multiple: false
-                DbColumnDef(jsonAttSingle, DbColumnType.JSON, false, emptyList()),
-                DbColumnDef(jsonAttMultiple, DbColumnType.JSON, false, emptyList())
+                DbColumnDef.create {
+                    withName(jsonAttSingle)
+                    withType(DbColumnType.JSON)
+                    withMultiple(false)
+                },
+                DbColumnDef.create {
+                    withName(jsonAttMultiple)
+                    withType(DbColumnType.JSON)
+                    withMultiple(false)
+                }
             )
         }
 

@@ -273,6 +273,18 @@ abstract class DbRecordsTestBase {
         }
     }
 
+    fun selectFieldFromDbTable(field: String, table: String, condition: String): Any? {
+        return dbDataSource.withTransaction(true) {
+            dbDataSource.query(
+                "SELECT \"$field\" as res FROM $table WHERE $condition",
+                emptyList()
+            ) { res ->
+                res.next()
+                res.getObject("res")
+            }
+        }
+    }
+
     fun getColumns(): List<DbColumnDef> {
         return dbDataSource.withTransaction(true) {
             dbSchemaDao.getColumns()
@@ -356,17 +368,18 @@ abstract class DbRecordsTestBase {
         this.typesInfo[type.id] = type
     }
 
-    fun registerAtts(atts: List<AttributeDef>) {
-        registerAttributes(REC_TEST_TYPE_ID, atts)
+    fun registerAtts(atts: List<AttributeDef>, systemAtts: List<AttributeDef> = emptyList()) {
+        registerAttributes(REC_TEST_TYPE_ID, atts, systemAtts)
     }
 
-    fun registerAttributes(id: String, atts: List<AttributeDef>) {
+    fun registerAttributes(id: String, atts: List<AttributeDef>, systemAtts: List<AttributeDef> = emptyList()) {
         registerType(
             TypeInfo.create {
                 withId(id)
                 withModel(
                     TypeModelDef.create {
                         withAttributes(atts)
+                        withSystemAttributes(systemAtts)
                     }
                 )
             }

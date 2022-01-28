@@ -207,7 +207,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
     override fun findById(id: Set<Long>): List<T> {
         if (txnDataService == null) {
             initColumns()
-            return dataSource.withTransaction(true) {
+            return execReadOnlyQuery {
                 entityRepo.findById(id)
             }
         }
@@ -227,7 +227,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         if (isAuthTableRequiredAndDoesntExists()) {
             return null
         }
-        return dataSource.withTransaction(true) {
+        return execReadOnlyQuery {
             val txnId = ExtTxnContext.getExtTxnId()
             if (txnDataService == null || txnId == null) {
                 findByAnyIdInEntityRepo(id)
@@ -260,7 +260,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         if (isAuthTableRequiredAndDoesntExists()) {
             return emptyList()
         }
-        return dataSource.withTransaction(true) {
+        return execReadOnlyQuery {
             entityRepo.findAll()
         }
     }
@@ -274,7 +274,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         if (isAuthTableRequiredAndDoesntExists()) {
             return emptyList()
         }
-        return dataSource.withTransaction(true) {
+        return execReadOnlyQuery {
             entityRepo.findAll(predicate, withDeleted)
         }
     }
@@ -284,7 +284,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         if (isAuthTableRequiredAndDoesntExists()) {
             return emptyList()
         }
-        return dataSource.withTransaction(true) {
+        return execReadOnlyQuery {
             entityRepo.findAll(predicate, sort)
         }
     }
@@ -303,7 +303,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         if (isAuthTableRequiredAndDoesntExists()) {
             return DbFindRes()
         }
-        return dataSource.withTransaction(true) {
+        return execReadOnlyQuery {
+            // resetColumnsCache()
             entityRepo.find(predicate, sort, page, withDeleted)
         }
     }
@@ -313,7 +314,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         if (isAuthTableRequiredAndDoesntExists()) {
             return 0
         }
-        return dataSource.withTransaction(true) {
+        return execReadOnlyQuery {
             entityRepo.getCount(predicate)
         }
     }
@@ -699,12 +700,10 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
     private fun getTxnColumns(columns: List<DbColumnDef>): List<DbColumnDef> {
         val txnColumns = ArrayList(columns)
         txnColumns.add(
-            DbColumnDef(
-                COLUMN_EXT_TXN_ID,
-                DbColumnType.UUID,
-                false,
-                emptyList()
-            )
+            DbColumnDef.create {
+                withName(COLUMN_EXT_TXN_ID)
+                withType(DbColumnType.UUID)
+            }
         )
         return txnColumns
     }
@@ -838,5 +837,23 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
                 TxnDataCleanerConfig.create {}
             )
         )
+    }
+
+    private fun <T> execReadOnlyQuery(action: () -> T): T {
+        try {
+            return dataSource.withTransaction(true, action)
+        } catch (rootEx: SQLException) {
+            if (rootEx.message?.contains("column .+ does not exist".toRegex()) == true) {
+                resetColumnsCache()
+                initColumns()
+                try {
+                    return dataSource.withTransaction(true, action)
+                } catch (e: Exception) {
+                    e.addSuppressed(rootEx)
+                    throw e
+                }
+            }
+            throw rootEx
+        }
     }
 }

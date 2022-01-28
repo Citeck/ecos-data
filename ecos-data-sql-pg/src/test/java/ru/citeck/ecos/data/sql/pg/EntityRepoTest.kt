@@ -33,7 +33,10 @@ class EntityRepoTest {
     private fun testImpl(dbDataSource: DbDataSource) {
 
         val columns = listOf(
-            DbColumnDef(STR_COLUMN, DbColumnType.TEXT, false, emptyList())
+            DbColumnDef.create {
+                withName(STR_COLUMN)
+                withType(DbColumnType.TEXT)
+            }
         )
 
         val context = SqlDataServiceTestUtils.createService(dbDataSource, "test")
@@ -81,7 +84,11 @@ class EntityRepoTest {
     fun testArrays(dbDataSource: DbDataSource) {
 
         val columns = listOf(
-            DbColumnDef(STR_COLUMN, DbColumnType.TEXT, true, emptyList())
+            DbColumnDef.create {
+                withName(STR_COLUMN)
+                withType(DbColumnType.TEXT)
+                withMultiple(true)
+            }
         )
 
         val context = SqlDataServiceTestUtils.createService(dbDataSource, "test-arrays")

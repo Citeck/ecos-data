@@ -18,6 +18,18 @@ class DbSchemaDaoPg(
 
         const val COLUMN_TYPE_NAME = "TYPE_NAME"
         const val COLUMN_COLUMN_NAME = "COLUMN_NAME"
+
+        private val INDEXED_COLUMN_TYPES = setOf(
+            DbColumnType.DATETIME,
+            DbColumnType.DATE,
+            DbColumnType.INT,
+            DbColumnType.LONG,
+            DbColumnType.DOUBLE,
+            DbColumnType.TEXT,
+            DbColumnType.BIGSERIAL,
+            DbColumnType.BOOLEAN,
+            DbColumnType.UUID
+        )
     }
 
     override fun getColumns(): List<DbColumnDef> {
@@ -32,12 +44,11 @@ class DbSchemaDaoPg(
                             val typeName = it.getString(COLUMN_TYPE_NAME)
                             val (type, multiple) = getColumnType(typeName)
                             columns.add(
-                                DbColumnDef(
-                                    it.getString(COLUMN_COLUMN_NAME),
-                                    type,
-                                    multiple,
-                                    emptyList()
-                                )
+                                DbColumnDef.create {
+                                    withName(it.getString(COLUMN_COLUMN_NAME))
+                                    withType(type)
+                                    withMultiple(multiple)
+                                }
                             )
                         } catch (e: Exception) {
                             log.warn { "Column error: '${it.getString(COLUMN_COLUMN_NAME)}' ${e.message}" }
@@ -74,6 +85,10 @@ class DbSchemaDaoPg(
         queryBuilder.append(")")
 
         dataSource.updateSchema(queryBuilder.toString())
+
+        columns.forEach {
+            addColumnIndex(it)
+        }
     }
 
     @Synchronized
@@ -88,7 +103,20 @@ class DbSchemaDaoPg(
                 getColumnSqlType(column.type, column.multiple) +
                 getColumnSqlConstraintsWithSpaceIfNotEmpty(column.constraints)
             dataSource.updateSchema(query)
+            addColumnIndex(column)
         }
+    }
+
+    private fun addColumnIndex(column: DbColumnDef) {
+        if (!column.index.enabled || !INDEXED_COLUMN_TYPES.contains(column.type)) {
+            return
+        }
+        val query = if (column.multiple) {
+            "CREATE INDEX ON ${tableRef.fullName} USING GIN (\"${column.name}\");"
+        } else {
+            "CREATE INDEX ON ${tableRef.fullName} (\"${column.name}\");"
+        }
+        dataSource.updateSchema(query)
     }
 
     @Synchronized
