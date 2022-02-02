@@ -39,18 +39,66 @@ class DbRecordsDaoColumnUpdateTest : DbRecordsTestBase() {
 
         val rec2 = createRecord(attId to dateTimeValue)
         assertThat(records.getAtt(rec2, attId).asText()).isEqualTo(dateTimeValue)
-/*
-        //automatic conversion is not allowed yet because when we convert 2021-01-01
+    }
 
-        registerTypeWithAtt(AttributeType.DATETIME)
-        val rec3 = createRecord(attId to dateTimeValue)
+    @Test
+    fun dateToDateTimeTest() {
 
-        var idx = 0
-        listOf(rec, rec2, rec3).forEach {
-            assertThat(records.getAtt(it, attId).asText())
-                .describedAs(it.toString() + "-" + (idx++))
-                .isEqualTo(dateTimeValue)
-        }*/
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("strField")
+                    withType(AttributeType.TEXT)
+                },
+                AttributeDef.create {
+                    withId("dateField")
+                    withType(AttributeType.DATE)
+                },
+                AttributeDef.create {
+                    withId("dateTimeField")
+                    withType(AttributeType.DATETIME)
+                }
+            )
+        )
+
+        val dateFields = Array(5) { "2021-01-0${it + 1}" }.toList()
+        val recordsList = dateFields.map { createRecord("dateField" to it, "dateTimeField" to it) }
+
+        val checkDateTime = { field: String ->
+            assertThat(
+                records.getAtts(recordsList, listOf(field)).map {
+                    it.getAtt(field).asText()
+                }
+            ).containsExactlyElementsOf(dateFields.map { it + "T00:00:00Z" })
+        }
+        checkDateTime("dateField")
+        checkDateTime("dateTimeField")
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("strField")
+                    withType(AttributeType.TEXT)
+                },
+                AttributeDef.create {
+                    withId("dateField")
+                    withType(AttributeType.DATETIME)
+                },
+                AttributeDef.create {
+                    withId("dateTimeField")
+                    withType(AttributeType.DATETIME)
+                }
+            )
+        )
+
+        printQueryRes("select * from pg_timezone_names")
+
+        updateRecord(recordsList[0], "strField" to "test")
+
+        printQueryRes("select * from ${tableRef.fullName}")
+
+        checkDateTime("dateTimeField")
+        checkDateTime("dateField")
     }
 
     @Test
