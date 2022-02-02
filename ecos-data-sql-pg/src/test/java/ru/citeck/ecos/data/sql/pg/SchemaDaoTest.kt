@@ -87,21 +87,27 @@ class SchemaDaoTest {
                 DbColumnDef.create {
                     withName("text_column")
                     withType(DbColumnType.TEXT)
+                },
+                DbColumnDef.create {
+                    withName("date_column")
+                    withType(DbColumnType.DATE)
                 }
             )
         )
 
         // text to json
 
-        assertThat(dbSchemaDao.getColumns()).hasSize(1)
+        assertThat(dbSchemaDao.getColumns()).hasSize(2)
         assertThat(dbSchemaDao.getColumns()[0].type).isEqualTo(DbColumnType.TEXT)
+        assertThat(dbSchemaDao.getColumns()[1].type).isEqualTo(DbColumnType.DATE)
 
         dbSchemaDao.setColumnType("text_column", false, DbColumnType.JSON)
-
         assertThat(dbSchemaDao.getColumns()[0].type).isEqualTo(DbColumnType.JSON)
 
         dbSchemaDao.setColumnType("text_column", false, DbColumnType.TEXT)
-
         assertThat(dbSchemaDao.getColumns()[0].type).isEqualTo(DbColumnType.TEXT)
+
+        dbSchemaDao.setColumnType("date_column", false, DbColumnType.DATETIME)
+        assertThat(dbSchemaDao.getColumns()[1].type).isEqualTo(DbColumnType.DATETIME)
     }
 }
