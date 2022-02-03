@@ -6,6 +6,7 @@ import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 
 class DbRecordRefService(
+    private val appName: String,
     private val dataService: DbDataService<DbRecordRefEntity>
 ) {
     /**
@@ -19,7 +20,12 @@ class DbRecordRefService(
      * Get record identifiers for references or -1 if reference is not registered
      */
     fun getIdByRecordRefs(refs: List<RecordRef>): List<Long> {
-        val predicate = Predicates.`in`(DbEntity.EXT_ID, refs.map { it.toString() })
+        val predicate = Predicates.`in`(
+            DbEntity.EXT_ID,
+            refs.map {
+                it.withDefaultAppName(appName).toString()
+            }
+        )
         val entities = dataService.findAll(predicate)
         val entityByRef = entities.associateBy { RecordRef.valueOf(it.extId) }
         return refs.map { entityByRef[it]?.id ?: -1 }
@@ -34,7 +40,7 @@ class DbRecordRefService(
         for ((idx, id) in refsIds.withIndex()) {
             if (id == -1L) {
                 val entity = DbRecordRefEntity()
-                entity.extId = refs[idx].toString()
+                entity.extId = refs[idx].withDefaultAppName(appName).toString()
                 result[idx] = dataService.save(entity).id
             } else {
                 result[idx] = id

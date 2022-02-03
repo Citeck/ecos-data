@@ -772,8 +772,8 @@ class DbRecordsDao(
                             }
                         }
                     }
-                    addOrRemoveParentRef.invoke(addedChildren, true)
                     addOrRemoveParentRef.invoke(removedChildren, false)
+                    addOrRemoveParentRef.invoke(addedChildren, true)
                 }
             }
 

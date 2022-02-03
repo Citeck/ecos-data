@@ -26,7 +26,7 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.records2.RecordRef
-import ru.citeck.ecos.records3.RecordsService
+import ru.citeck.ecos.records3.RecordsServiceFactory
 import javax.sql.DataSource
 
 @Configuration
@@ -35,9 +35,9 @@ open class EcosDataRecordsDaoFactoryConfig {
     @Autowired
     private lateinit var dbDataServiceFactory: DbDataServiceFactory
 
-    private fun getRecordRefService(dataSource: DbDataSource, schema: String): DbRecordRefService {
-
+    private fun getRecordRefService(dataSource: DbDataSource, schema: String, appName: String): DbRecordRefService {
         return DbRecordRefService(
+            appName,
             DbDataServiceImpl(
                 DbRecordRefEntity::class.java,
                 DbDataServiceConfig.create()
@@ -93,7 +93,7 @@ open class EcosDataRecordsDaoFactoryConfig {
     open fun dbDomainFactory(
         dbDataSource: DbDataSource,
         ecosTypesRepo: TypesRepo,
-        recordsService: RecordsService,
+        recordsServices: RecordsServiceFactory,
         permsComponent: DbPermsComponent,
         modelServiceFactory: ModelServiceFactory
     ): DbDomainFactory {
@@ -108,13 +108,15 @@ open class EcosDataRecordsDaoFactoryConfig {
             }
         }
 
+        val appName = recordsServices.properties.appName
+
         return DbDomainFactory(
             ecosTypesRepo,
             dbDataSource,
             dbDataServiceFactory,
             permsComponent,
             computedAttsComponent,
-            { dataSource, schema -> getRecordRefService(dataSource, schema) },
+            { dataSource, schema -> getRecordRefService(dataSource, schema, appName) },
             { dataSource, schema -> getContentServiceBySchema(dataSource, schema) }
         )
     }

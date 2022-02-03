@@ -8,6 +8,7 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 
 class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
 
@@ -37,10 +38,6 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
         }
 
         val childRecord = AuthContext.runAs("user") { createRecord() }
-        checkReadPerms(childRecord, false)
-        AuthContext.runAs("user") {
-            checkReadPerms(childRecord, true)
-        }
         setPerms(childRecord, "user", "parent-user")
 
         val parentRecord = AuthContext.runAsFull("parent-user") {
@@ -48,18 +45,39 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
         }
         setPerms(parentRecord, "parent-user", "other-user")
 
-        checkReadPerms(parentRecord, false)
-        AuthContext.runAs("parent-user") {
-            checkReadPerms(parentRecord, true)
-        }
-        AuthContext.runAs("other-user") {
-            checkReadPerms(parentRecord, true)
-        }
-        AuthContext.runAs("user") {
+        val checkReadPermsForAll = {
+            checkReadPerms(childRecord, false)
+            AuthContext.runAs("user") {
+                checkReadPerms(childRecord, true)
+            }
             checkReadPerms(parentRecord, false)
+            AuthContext.runAs("parent-user") {
+                checkReadPerms(parentRecord, true)
+            }
+            AuthContext.runAs("other-user") {
+                checkReadPerms(parentRecord, true)
+            }
+            AuthContext.runAs("user") {
+                checkReadPerms(parentRecord, false)
+            }
+            AuthContext.runAs("other-user") {
+                checkReadPerms(childRecord, inheritParentPerms)
+            }
         }
-        AuthContext.runAs("other-user") {
-            checkReadPerms(childRecord, inheritParentPerms)
+
+        checkReadPermsForAll()
+
+        val additionalChildren = RecordAtts(RecordRef.create(RECS_DAO_ID, ""))
+        additionalChildren.setAtt("_alias", "alias-1")
+        additionalChildren.setAtt("_type", REC_TEST_TYPE_REF)
+
+        val mainRecord = RecordAtts(parentRecord)
+        mainRecord.setAtt("childAssocs", listOf(childRecord, "alias-1"))
+
+        AuthContext.runAs("parent-user") {
+            records.mutate(listOf(mainRecord, additionalChildren))
         }
+
+        checkReadPermsForAll()
     }
 }
