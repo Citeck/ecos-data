@@ -264,11 +264,34 @@ class DbRecordsDao(
             if (id.isEmpty()) {
                 EmptyRecord()
             } else {
-                dbDataService.findByExtId(id)?.let {
-                    Record(it)
-                } ?: EmptyAttValue.INSTANCE
+                findDbEntityByExtId(id)?.let { Record(it) } ?: EmptyAttValue.INSTANCE
             }
         }
+    }
+
+    private fun findDbEntityByExtId(extId: String): DbEntity? {
+
+        if (AuthContext.isRunAsSystem()) {
+            return dbDataService.findByExtId(extId)
+        }
+        var entity = dbDataService.findByExtId(extId)
+        if (entity != null || !config.inheritParentPerms) {
+            return entity
+        }
+        entity = AuthContext.runAsSystem {
+            dbDataService.findByExtId(extId)
+        } ?: return null
+
+        val parentRefId = entity.attributes[RecordConstants.ATT_PARENT] as? Long
+        if (parentRefId == null || parentRefId <= 0) {
+            return null
+        }
+        val parentRef = dbRecordRefService.getRecordRefById(parentRefId)
+
+        if (recordsService.getAtt(parentRef, RecordConstants.ATT_NOT_EXISTS + "?bool").asBoolean()) {
+            return null
+        }
+        return entity
     }
 
     override fun queryRecords(recsQuery: RecordsQuery): Any? {
@@ -424,7 +447,9 @@ class DbRecordsDao(
 
         val extId = record.id.ifBlank { record.attributes.get("id").asText() }
         if (extId.isNotBlank()) {
-            val typeFromRecord = dbDataService.findByExtId(extId)?.type
+            val typeFromRecord = AuthContext.runAsSystem {
+                dbDataService.findByExtId(extId)?.type
+            }
             if (!typeFromRecord.isNullOrBlank()) {
                 return typeFromRecord
             }
@@ -434,7 +459,10 @@ class DbRecordsDao(
             return config.typeRef.id
         }
 
-        error("${RecordConstants.ATT_TYPE} attribute is mandatory for mutation. Record: ${record.id}")
+        error(
+            "${RecordConstants.ATT_TYPE} attribute is mandatory for mutation. " +
+                "SourceId: '${getId()}' Record: ${record.id}"
+        )
     }
 
     override fun mutate(records: List<LocalRecordAtts>): List<String> {
@@ -489,7 +517,7 @@ class DbRecordsDao(
             val recToMutate: DbEntity = if (extId.isEmpty()) {
                 DbEntity()
             } else {
-                var entity = dbDataService.findByExtId(extId)
+                var entity = findDbEntityByExtId(extId)
                 if (entity == null) {
                     if (record.id.isNotEmpty()) {
                         error("Record with id: '$extId' doesn't found")
@@ -515,11 +543,13 @@ class DbRecordsDao(
             }
             if (customExtId.isNotBlank()) {
                 if (recToMutate.extId != customExtId) {
-                    if (dbDataService.findByExtId(customExtId) != null) {
-                        error("Record with ID $customExtId already exists. You should mutate it directly")
-                    } else {
-                        // copy of existing record
-                        recToMutate.id = DbEntity.NEW_REC_ID
+                    AuthContext.runAsSystem {
+                        if (dbDataService.findByExtId(customExtId) != null) {
+                            error("Record with ID $customExtId already exists. You should mutate it directly")
+                        } else {
+                            // copy of existing record
+                            recToMutate.id = DbEntity.NEW_REC_ID
+                        }
                     }
                     recToMutate.extId = customExtId
                 }

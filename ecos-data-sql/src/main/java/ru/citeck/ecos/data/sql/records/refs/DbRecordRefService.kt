@@ -56,6 +56,10 @@ class DbRecordRefService(
         return result
     }
 
+    fun getRecordRefById(id: Long): RecordRef {
+        return getRecordRefsByIds(listOf(id))[0]
+    }
+
     fun getRecordRefsByIds(ids: List<Long>): List<RecordRef> {
         val entities = dataService.findById(ids.toSet())
         if (entities.size != ids.size) {

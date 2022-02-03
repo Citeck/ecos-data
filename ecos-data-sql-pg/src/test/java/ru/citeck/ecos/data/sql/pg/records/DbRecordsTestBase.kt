@@ -120,7 +120,8 @@ abstract class DbRecordsTestBase {
     fun initServices(
         tableRef: DbTableRef = DEFAULT_TABLE,
         authEnabled: Boolean = false,
-        typeRef: RecordRef = RecordRef.EMPTY
+        typeRef: RecordRef = RecordRef.EMPTY,
+        inheritParentPerms: Boolean = true
     ) {
 
         this.tableRef = tableRef
@@ -217,6 +218,7 @@ abstract class DbRecordsTestBase {
             DbRecordsDaoConfig.create {
                 withId(RECS_DAO_ID)
                 withTypeRef(typeRef)
+                withInheritParentPerms(inheritParentPerms)
             },
             ecosTypeRepo,
             dataService,
