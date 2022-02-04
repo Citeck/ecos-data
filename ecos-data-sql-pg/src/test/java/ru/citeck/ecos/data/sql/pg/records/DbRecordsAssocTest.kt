@@ -93,7 +93,38 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
 
         // printQueryRes("SELECT * FROM ${tableRef.withTable("ecos_record_ref").fullName}")
         // printQueryRes("SELECT * FROM ${tableRef.fullName}")
+    }
 
-        // todo add query by array support and test for it
+    @Test
+    fun testWithAlfRecords() {
+
+        initServices(appName = "integrations")
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("assoc")
+                    withType(AttributeType.ASSOC)
+                }
+            )
+        )
+
+        val testWithRef = { ref: String, alfresco: Boolean ->
+
+            val ref0 = createRecord("assoc" to ref)
+            val ref1 = createRecord("assoc" to ref)
+
+            val recRef = if (alfresco) {
+                RecordRef.create("alfresco", "", ref).toString()
+            } else {
+                RecordRef.create("integrations", "", ref).toString()
+            }
+
+            assertThat(records.getAtt(ref0, "assoc?id").asText()).isEqualTo(recRef)
+            assertThat(records.getAtt(ref1, "assoc?id").asText()).isEqualTo(recRef)
+        }
+
+        testWithRef("workspace://SpacesStore/123123", true)
+        testWithRef("1234567890", false)
     }
 }

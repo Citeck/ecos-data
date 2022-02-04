@@ -17,21 +17,6 @@ class DbRecordRefService(
     }
 
     /**
-     * Get record identifiers for references or -1 if reference is not registered
-     */
-    fun getIdByRecordRefs(refs: List<RecordRef>): List<Long> {
-        val predicate = Predicates.`in`(
-            DbEntity.EXT_ID,
-            refs.map {
-                it.withDefaultAppName(appName).toString()
-            }
-        )
-        val entities = dataService.findAll(predicate)
-        val entityByRef = entities.associateBy { RecordRef.valueOf(it.extId) }
-        return refs.map { entityByRef[it]?.id ?: -1 }
-    }
-
-    /**
      * Get or create record references
      */
     fun getOrCreateIdByRecordRefs(refs: List<RecordRef>): List<Long> {
@@ -40,13 +25,27 @@ class DbRecordRefService(
         for ((idx, id) in refsIds.withIndex()) {
             if (id == -1L) {
                 val entity = DbRecordRefEntity()
-                entity.extId = refs[idx].withDefaultAppName(appName).toString()
+                entity.extId = fixRecordRef(refs[idx]).toString()
                 result[idx] = dataService.save(entity).id
             } else {
                 result[idx] = id
             }
         }
         return result.toList()
+    }
+
+    /**
+     * Get record identifiers for references or -1 if reference is not registered
+     */
+    fun getIdByRecordRefs(refs: List<RecordRef>): List<Long> {
+        val fixedRefs = refs.map { fixRecordRef(it) }
+        val predicate = Predicates.`in`(
+            DbEntity.EXT_ID,
+            fixedRefs.map { it.toString() }
+        )
+        val entities = dataService.findAll(predicate)
+        val entityByRef = entities.associateBy { RecordRef.valueOf(it.extId) }
+        return fixedRefs.map { entityByRef[it]?.id ?: -1 }
     }
 
     fun getRecordRefsByIdsMap(ids: Collection<Long>): Map<Long, RecordRef> {
@@ -77,5 +76,15 @@ class DbRecordRefService(
 
     fun runMigrations(mock: Boolean, diff: Boolean): List<String> {
         return dataService.runMigrations(mock, diff, true)
+    }
+
+    private fun fixRecordRef(recordRef: RecordRef): RecordRef {
+        if (recordRef.appName.isNotBlank()) {
+            return recordRef
+        }
+        if (recordRef.id.startsWith("workspace://SpacesStore/")) {
+            return RecordRef.create("alfresco", "", recordRef.id)
+        }
+        return recordRef.withDefaultAppName(appName)
     }
 }
