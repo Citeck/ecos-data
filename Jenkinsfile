@@ -40,8 +40,8 @@ timestamps {
       mattermostSend endpoint: 'https://mm.citeck.ru/hooks/9ytch3uox3retkfypuq7xi3yyr', channel: "build_notifications", color: 'good', message: " :arrow_forward: **Build project ${project_id}:**\n**Branch:** ${env.BRANCH_NAME}\n**Version:** ${project_version}\n**Build id:** ${env.BUILD_NUMBER}\n**Build url:** ${env.BUILD_URL}\n**Changes:**\n" + getChangeString()
       if ((env.BRANCH_NAME != "master") && (!project_version.contains('SNAPSHOT')))  {
         echo "Assembly of release artifacts is allowed only from the master branch!"
-        currentBuild.result = 'SUCCESS'
-        return
+        //currentBuild.result = 'SUCCESS'
+        //return
       }
       stage('Assembling and publishing project artifacts') {
         withMaven(mavenLocalRepo: '/opt/jenkins/.m2/repository', tempBinDir: '') {

@@ -50,6 +50,7 @@ abstract class DbRecordsTestBase {
     companion object {
         const val RECS_DAO_ID = "test"
         const val REC_TEST_TYPE_ID = "test-type"
+
         val REC_TEST_TYPE_REF = TypeUtils.getTypeRef(REC_TEST_TYPE_ID)
 
         const val COLUMN_TYPE_NAME = "TYPE_NAME"
@@ -120,7 +121,9 @@ abstract class DbRecordsTestBase {
     fun initServices(
         tableRef: DbTableRef = DEFAULT_TABLE,
         authEnabled: Boolean = false,
-        typeRef: RecordRef = RecordRef.EMPTY
+        typeRef: RecordRef = RecordRef.EMPTY,
+        inheritParentPerms: Boolean = true,
+        appName: String = ""
     ) {
 
         this.tableRef = tableRef
@@ -211,12 +214,13 @@ abstract class DbRecordsTestBase {
             dbDataSource,
             pgDataServiceFactory
         )
-        dbRecordRefService = DbRecordRefService(dbRecordRefDataService)
+        dbRecordRefService = DbRecordRefService(appName, dbRecordRefDataService)
 
         recordsDao = DbRecordsDao(
             DbRecordsDaoConfig.create {
                 withId(RECS_DAO_ID)
                 withTypeRef(typeRef)
+                withInheritParentPerms(inheritParentPerms)
             },
             ecosTypeRepo,
             dataService,
