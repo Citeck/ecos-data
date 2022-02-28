@@ -70,18 +70,10 @@ class DbEntityRepoPg<T : Any>(
         }
     }
 
-    override fun findById(id: Long): T? {
-        return findById(id, false)
-    }
-
     override fun findById(id: Long, withDeleted: Boolean): T? {
         return findOneByColumnAsMap(DbEntity.ID, id, columns, withDeleted)?.let {
             mapper.convertToEntity(it)
         }
-    }
-
-    override fun findByExtId(id: String): T? {
-        return findByExtId(id, false)
     }
 
     override fun findByExtId(id: String, withDeleted: Boolean): T? {
@@ -443,31 +435,6 @@ class DbEntityRepoPg<T : Any>(
         }
     }
 
-    override fun findAll(): List<T> {
-        return find(VoidPredicate.INSTANCE, emptyList(), DbFindPage.ALL).entities
-    }
-
-    override fun findAll(predicate: Predicate): List<T> {
-        return findAll(predicate, false)
-    }
-
-    override fun findAll(predicate: Predicate, withDeleted: Boolean): List<T> {
-        return find(predicate, emptyList(), DbFindPage.ALL, withDeleted).entities
-    }
-
-    override fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<T> {
-        return find(predicate, sort, DbFindPage.ALL).entities
-    }
-
-    override fun find(
-        predicate: Predicate,
-        sort: List<DbFindSort>,
-        page: DbFindPage
-    ): DbFindRes<T> {
-
-        return find(predicate, sort, page, false)
-    }
-
     override fun find(
         predicate: Predicate,
         sort: List<DbFindSort>,
@@ -757,10 +724,7 @@ class DbEntityRepoPg<T : Any>(
             is ValuePredicate -> {
 
                 val columnDef = columnsByName[predicate.getAttribute()]
-                if (columnDef == null) {
-                    query.append(ALWAYS_FALSE_CONDITION)
-                    return true
-                }
+                    ?: error("column is not found: ${predicate.getAttribute()}")
 
                 val type = predicate.getType()
                 val attribute: String = predicate.getAttribute()
@@ -840,6 +804,8 @@ class DbEntityRepoPg<T : Any>(
 
                         if (value.isTextual() && type == ValuePredicate.Type.CONTAINS) {
                             queryParams.add("%" + value.asText() + "%")
+                        } else if (columnDef.type == DbColumnType.BOOLEAN) {
+                            queryParams.add(value.asBoolean())
                         } else if (value.isTextual() && columnDef.type == DbColumnType.UUID) {
                             queryParams.add(UUID.fromString(value.asText()))
                         } else if (columnDef.type == DbColumnType.DATETIME || columnDef.type == DbColumnType.DATE) {
@@ -870,11 +836,6 @@ class DbEntityRepoPg<T : Any>(
                 return true
             }
             is NotPredicate -> {
-                val innerPredicate = predicate.getPredicate()
-                if (innerPredicate is EmptyPredicate && !columnsByName.containsKey(innerPredicate.getAttribute())) {
-                    query.append(ALWAYS_FALSE_CONDITION)
-                    return true
-                }
                 query.append("NOT ")
                 return if (toSqlCondition(query, predicate.getPredicate(), queryParams, columnsByName)) {
                     true
@@ -897,7 +858,6 @@ class DbEntityRepoPg<T : Any>(
                     appendRecordColumnName(query, attribute)
                     query.append("='')")
                 } else {
-                    query.append('"')
                     appendRecordColumnName(query, attribute)
                     query.append(" IS NULL")
                 }

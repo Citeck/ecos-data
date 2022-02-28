@@ -39,6 +39,7 @@ import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.EmptyPredicate
 import ru.citeck.ecos.records2.predicate.model.Predicate
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records2.source.dao.local.job.Job
 import ru.citeck.ecos.records2.source.dao.local.job.JobsProvider
@@ -322,7 +323,7 @@ class DbRecordsDao(
 
         val page = recsQuery.page
         val findRes = dbDataService.find(
-            predicate,
+            predicate ?: Predicates.alwaysTrue(),
             recsQuery.sortBy.map {
                 DbFindSort(DbRecord.ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.ascending)
             },
