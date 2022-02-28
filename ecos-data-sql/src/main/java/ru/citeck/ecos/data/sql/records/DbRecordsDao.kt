@@ -29,7 +29,6 @@ import ru.citeck.ecos.data.sql.service.DbCommitEntityDto
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
-import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
@@ -42,6 +41,7 @@ import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.EmptyPredicate
 import ru.citeck.ecos.records2.predicate.model.Predicate
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records2.source.dao.local.job.Job
 import ru.citeck.ecos.records2.source.dao.local.job.JobsProvider
@@ -380,7 +380,7 @@ class DbRecordsDao(
 
         val page = recsQuery.page
         val findRes = dbDataService.find(
-            predicate,
+            predicate ?: Predicates.alwaysTrue(),
             recsQuery.sortBy.map {
                 DbFindSort(ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.ascending)
             },
@@ -1587,11 +1587,6 @@ class DbRecordsDao(
         val url: String,
         val name: String,
         val size: Long
-    )
-
-    class ChildRef(
-        val ref: RecordRef,
-        val assoc: AttributeDef
     )
 
     data class StatusValue(private val def: StatusDef) : AttValue {

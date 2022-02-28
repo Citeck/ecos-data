@@ -33,9 +33,9 @@ import ru.citeck.ecos.data.sql.service.migration.DbMigration
 import ru.citeck.ecos.data.sql.service.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
+import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
-import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import java.sql.SQLException
 import java.time.Instant
 import java.util.*
@@ -72,6 +72,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
     private val maxItemsToAllowSchemaMigration: Long
 
     private var columns: List<DbColumnDef>? = null
+    private var columnsByName: Map<String, DbColumnDef> = emptyMap()
 
     private val hasDeletedFlag: Boolean
 
@@ -249,20 +250,14 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
 
     private fun findByAnyIdInEntityRepo(id: Any): T? {
         return when (id) {
-            is String -> entityRepo.findByExtId(id)
-            is Long -> entityRepo.findById(id)
+            is String -> entityRepo.findByExtId(id, false)
+            is Long -> entityRepo.findById(id, false)
             else -> error("Incorrect id type: ${id::class}")
         }
     }
 
     override fun findAll(): List<T> {
-        initColumns()
-        if (isAuthTableRequiredAndDoesntExists()) {
-            return emptyList()
-        }
-        return execReadOnlyQuery {
-            entityRepo.findAll()
-        }
+        return findAll(Predicates.alwaysTrue())
     }
 
     override fun findAll(predicate: Predicate): List<T> {
@@ -270,22 +265,14 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
     }
 
     override fun findAll(predicate: Predicate, withDeleted: Boolean): List<T> {
-        initColumns()
-        if (isAuthTableRequiredAndDoesntExists()) {
-            return emptyList()
-        }
-        return execReadOnlyQuery {
-            entityRepo.findAll(predicate, withDeleted)
+        return execReadOnlyQueryWithPredicate(predicate, emptyList()) { pred ->
+            entityRepo.find(pred, emptyList(), DbFindPage.ALL, withDeleted).entities
         }
     }
 
     override fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<T> {
-        initColumns()
-        if (isAuthTableRequiredAndDoesntExists()) {
-            return emptyList()
-        }
-        return execReadOnlyQuery {
-            entityRepo.findAll(predicate, sort)
+        return execReadOnlyQueryWithPredicate(predicate, emptyList()) { pred ->
+            entityRepo.find(pred, sort, DbFindPage.ALL, false).entities
         }
     }
 
@@ -299,23 +286,14 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         page: DbFindPage,
         withDeleted: Boolean
     ): DbFindRes<T> {
-        initColumns()
-        if (isAuthTableRequiredAndDoesntExists()) {
-            return DbFindRes()
-        }
-        return execReadOnlyQuery {
-            // resetColumnsCache()
-            entityRepo.find(predicate, sort, page, withDeleted)
+        return execReadOnlyQueryWithPredicate(predicate, DbFindRes.empty()) { pred ->
+            entityRepo.find(pred, sort, page, withDeleted)
         }
     }
 
     override fun getCount(predicate: Predicate): Long {
-        initColumns()
-        if (isAuthTableRequiredAndDoesntExists()) {
-            return 0
-        }
-        return execReadOnlyQuery {
-            entityRepo.getCount(predicate)
+        return execReadOnlyQueryWithPredicate(predicate, 0) { pred ->
+            entityRepo.getCount(pred)
         }
     }
 
@@ -377,8 +355,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
                 }
             }
         } catch (e: Exception) {
-            this.columns = columnsBefore
-            entityRepo.setColumns(columnsBefore ?: emptyList())
+            setColumns(columnsBefore)
             throw e
         }
     }
@@ -512,7 +489,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
                     entityMap.remove(DbEntity.ID)
                     entityMap.remove(COLUMN_EXT_TXN_ID)
 
-                    val entityFromRepo = entityRepo.findByExtId(entityMap[DbEntity.EXT_ID] as String)
+                    val entityFromRepo = entityRepo.findByExtId(entityMap[DbEntity.EXT_ID] as String, false)
                     if (entityFromRepo != null) {
                         val entityMapFromRepo = entityMapper.convertToMap(entityFromRepo)
                         entityMap[DbEntity.ID] = entityMapFromRepo[DbEntity.ID]
@@ -573,7 +550,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
     }
 
     override fun resetColumnsCache() {
-        columns = null
+        setColumns(null)
         tableMetaService?.resetColumnsCache()
         txnDataService?.resetColumnsCache()
         authorityDataService?.resetColumnsCache()
@@ -654,9 +631,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         val durationMs = System.currentTimeMillis() - startTime.toEpochMilli()
 
         if (!mock && commands.isNotEmpty()) {
-            this.columns = null
-            val newColumns = initColumns()
-            entityRepo.setColumns(newColumns)
+            setColumns(null)
+            initColumns()
         }
 
         if (commands.isNotEmpty() && tableMetaService != null) {
@@ -737,7 +713,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         }
         if (columnsWithChangedType.isNotEmpty()) {
             if (!mock) {
-                val currentCount = entityRepo.getCount(VoidPredicate.INSTANCE)
+                val currentCount = entityRepo.getCount(Predicates.alwaysTrue())
                 if (currentCount > maxItemsToAllowSchemaMigration) {
                     val baseMsg = "Schema migration can't be performed because table has too much items: $currentCount."
                     val newColumnsMsg = columnsWithChangedType.joinToString { it.toString() }
@@ -815,11 +791,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         var columns = this.columns
         if (columns == null) {
             columns = dataSource.withTransaction(true) {
-                val schemaCols = schemaDao.getColumns()
-                entityRepo.setColumns(schemaCols)
-                schemaCols
+                schemaDao.getColumns()
             }
-            this.columns = columns
+            setColumns(columns)
         }
         return columns
     }
@@ -836,6 +810,56 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
                 TxnDataCleanerConfig.create {}
             )
         )
+    }
+
+    private fun preparePredicate(predicate: Predicate): Predicate {
+
+        if (PredicateUtils.isAlwaysTrue(predicate) || PredicateUtils.isAlwaysFalse(predicate)) {
+            return predicate
+        }
+
+        val columnsPred = PredicateUtils.mapAttributePredicates(
+            predicate,
+            { pred ->
+                val column = columnsByName[pred.getAttribute()]
+                if (column == null) {
+                    Predicates.alwaysFalse()
+                } else {
+                    pred
+                }
+            },
+            onlyAnd = false, optimize = true
+        ) ?: Predicates.alwaysTrue()
+
+        return PredicateUtils.optimize(columnsPred)
+    }
+
+    private fun setColumns(columns: List<DbColumnDef>?) {
+        if (this.columns == columns) {
+            return
+        }
+        this.columns = columns
+
+        val notNullColumns = columns ?: emptyList()
+        this.columnsByName = notNullColumns.associateBy { it.name }
+
+        if (notNullColumns.isNotEmpty()) {
+            entityRepo.setColumns(notNullColumns)
+        }
+    }
+
+    private fun <T> execReadOnlyQueryWithPredicate(predicate: Predicate, defaultRes: T, action: (Predicate) -> T): T {
+        if (isAuthTableRequiredAndDoesntExists()) {
+            return defaultRes
+        }
+        initColumns()
+        val preparedPred = preparePredicate(predicate)
+        if (PredicateUtils.isAlwaysFalse(preparedPred)) {
+            return defaultRes
+        }
+        return execReadOnlyQuery {
+            action(preparedPred)
+        }
     }
 
     private fun <T> execReadOnlyQuery(action: () -> T): T {

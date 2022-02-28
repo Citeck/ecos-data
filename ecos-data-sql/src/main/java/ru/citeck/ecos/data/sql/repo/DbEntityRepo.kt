@@ -11,23 +11,9 @@ interface DbEntityRepo<T : Any> {
 
     fun findById(ids: Set<Long>): List<T>
 
-    fun findById(id: Long): T?
-
     fun findById(id: Long, withDeleted: Boolean): T?
 
-    fun findByExtId(id: String): T?
-
     fun findByExtId(id: String, withDeleted: Boolean): T?
-
-    fun findAll(): List<T>
-
-    fun findAll(predicate: Predicate): List<T>
-
-    fun findAll(predicate: Predicate, withDeleted: Boolean): List<T>
-
-    fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<T>
-
-    fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage): DbFindRes<T>
 
     fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage, withDeleted: Boolean): DbFindRes<T>
 
