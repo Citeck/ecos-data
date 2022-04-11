@@ -9,7 +9,10 @@ interface DbDataSource {
 
     fun <T> query(query: String, params: List<Any?>, action: (ResultSet) -> T): T
 
-    fun update(query: String, params: List<Any?>): Int
+    /**
+     * Return updated rows count or id of last inserted column if query contains 'RETURNING id'
+     */
+    fun update(query: String, params: List<Any?>): Long
 
     fun <T> withSchemaMock(action: () -> T): T
 

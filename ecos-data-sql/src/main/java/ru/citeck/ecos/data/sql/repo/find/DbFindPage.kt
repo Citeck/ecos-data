@@ -6,5 +6,6 @@ data class DbFindPage(
 ) {
     companion object {
         val ALL = DbFindPage(0, -1)
+        val FIRST = DbFindPage(0, 1)
     }
 }

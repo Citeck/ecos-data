@@ -33,7 +33,10 @@ class EntityRepoTest {
     private fun testImpl(dbDataSource: DbDataSource) {
 
         val columns = listOf(
-            DbColumnDef(STR_COLUMN, DbColumnType.TEXT, false, emptyList())
+            DbColumnDef.create {
+                withName(STR_COLUMN)
+                withType(DbColumnType.TEXT)
+            }
         )
 
         val context = SqlDataServiceTestUtils.createService(dbDataSource, "test")
@@ -64,7 +67,7 @@ class EntityRepoTest {
         assertThat(findRes).hasSize(1)
         assertThat(findRes[0].attributes[STR_COLUMN]).isEqualTo(STR_COLUMN_V0)
 
-        val entityById = context.service.findById(newEntity.extId) ?: error("Entity is null: ${newEntity.extId}")
+        val entityById = context.service.findByExtId(newEntity.extId) ?: error("Entity is null: ${newEntity.extId}")
         assertThat(entityById.attributes[STR_COLUMN]).isEqualTo(STR_COLUMN_V0)
 
         val findByPredicateEqRes = context.service.findAll(ValuePredicate.eq(STR_COLUMN, STR_COLUMN_V0))
@@ -81,7 +84,11 @@ class EntityRepoTest {
     fun testArrays(dbDataSource: DbDataSource) {
 
         val columns = listOf(
-            DbColumnDef(STR_COLUMN, DbColumnType.TEXT, true, emptyList())
+            DbColumnDef.create {
+                withName(STR_COLUMN)
+                withType(DbColumnType.TEXT)
+                withMultiple(true)
+            }
         )
 
         val context = SqlDataServiceTestUtils.createService(dbDataSource, "test-arrays")

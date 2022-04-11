@@ -11,7 +11,8 @@ import java.time.Instant
     Index(columns = [DbEntity.EXT_ID], unique = true),
     Index(columns = [DbEntity.DELETED]),
     Index(columns = [DbEntity.MODIFIED]),
-    Index(columns = [DbEntity.CREATED])
+    Index(columns = [DbEntity.CREATED]),
+    Index(columns = [DbEntity.NAME])
 )
 class DbEntity {
 
@@ -29,10 +30,14 @@ class DbEntity {
         const val TYPE = "__type"
         const val STATUS = "__status"
         const val NAME = "__name"
+        const val REF_ID = "__ref_id"
     }
 
     @Constraints(PRIMARY_KEY)
     var id: Long = NEW_REC_ID
+
+    @Constraints(NOT_NULL)
+    var refId: Long = NEW_REC_ID
 
     @Constraints(NOT_NULL)
     var extId: String = ""
@@ -61,4 +66,22 @@ class DbEntity {
     var name: MLText = MLText.EMPTY
 
     var attributes: MutableMap<String, Any?> = LinkedHashMap()
+
+    fun copy(): DbEntity {
+        val newEntity = DbEntity()
+        newEntity.id = id
+        newEntity.extId = extId
+        newEntity.refId = refId
+        newEntity.updVersion = updVersion
+        newEntity.modified = modified
+        newEntity.modifier = modifier
+        newEntity.created = created
+        newEntity.creator = creator
+        newEntity.deleted = deleted
+        newEntity.type = type
+        newEntity.status = status
+        newEntity.name = name
+        newEntity.attributes = LinkedHashMap(attributes)
+        return newEntity
+    }
 }

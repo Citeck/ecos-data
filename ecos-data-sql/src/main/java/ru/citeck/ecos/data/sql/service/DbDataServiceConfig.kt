@@ -17,10 +17,12 @@ class DbDataServiceConfig(
         @JvmField
         val EMPTY = create {}
 
+        @JvmStatic
         fun create(): Builder {
             return Builder()
         }
 
+        @JvmStatic
         fun create(builder: Builder.() -> Unit): DbDataServiceConfig {
             val builderObj = Builder()
             builder.invoke(builderObj)
@@ -31,7 +33,7 @@ class DbDataServiceConfig(
     class Builder() {
 
         var tableRef: DbTableRef = DbTableRef("", "")
-        var maxItemsToAllowSchemaMigration: Long = 10
+        var maxItemsToAllowSchemaMigration: Long = 1000
 
         var authEnabled: Boolean = false
         var storeTableMeta: Boolean = false

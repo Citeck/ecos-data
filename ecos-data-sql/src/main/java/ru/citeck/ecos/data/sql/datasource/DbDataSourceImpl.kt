@@ -33,21 +33,48 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
 
     override fun <T> query(query: String, params: List<Any?>, action: (ResultSet) -> T): T {
         return withConnection { connection ->
-            log.debug { "Query: $query" }
-            connection.prepareStatement(query).use { statement ->
-                setParams(connection, statement, params)
-                statement.executeQuery().use { action.invoke(it) }
+            val queryStart = System.currentTimeMillis()
+            val result = try {
+                connection.prepareStatement(query).use { statement ->
+                    setParams(connection, statement, params)
+                    statement.executeQuery().use { action.invoke(it) }
+                }
+            } finally {
+                logQuery(System.currentTimeMillis() - queryStart, query)
             }
+            result
         }
     }
 
-    override fun update(query: String, params: List<Any?>): Int {
+    override fun update(query: String, params: List<Any?>): Long {
         return withConnection { connection ->
-            log.debug { "Update: $query" }
-            connection.prepareStatement(query).use { statement ->
-                setParams(connection, statement, params)
-                statement.executeUpdate()
+            val queryStart = System.currentTimeMillis()
+            val result = try {
+                connection.prepareStatement(query).use { statement ->
+                    setParams(connection, statement, params)
+                    if (query.contains("RETURNING id")) {
+                        statement.executeQuery().use { rs ->
+                            rs.next()
+                            rs.getLong(1)
+                        }
+                    } else {
+                        statement.executeUpdate().toLong()
+                    }
+                }
+            } finally {
+                logQuery(System.currentTimeMillis() - queryStart, query)
             }
+            result
+        }
+    }
+
+    private fun logQuery(time: Long, query: String) {
+        if (time < 1000) {
+            log.debug { "[SQL][$time] $query" }
+        } else if (time < 5000) {
+            log.info { "[SQL][$time] $query" }
+        } else if (time < 10_000) {
+            log.warn { "[SQL][$time] $query" }
         }
     }
 
@@ -98,7 +125,7 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
 
     override fun <T> withTransaction(readOnly: Boolean, action: () -> T): T {
         val currentTxn = currentThreadTxn.get()
-        if (currentTxn != null) {
+        if (currentTxn != null && !currentTxn.connection.isClosed) {
             if (currentTxn.readOnly && !readOnly) {
                 error("Write transaction can't be started from readOnly context")
             }

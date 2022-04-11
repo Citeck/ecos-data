@@ -3,14 +3,103 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import ru.citeck.ecos.commons.data.MLText
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 
 class DbRecordsDaoColumnUpdateTest : DbRecordsTestBase() {
+
+    @Test
+    fun dateTimeTest() {
+
+        val attId = "att-id"
+        val registerTypeWithAtt = { type: AttributeType ->
+            registerAtts(
+                listOf(
+                    AttributeDef.create()
+                        .withId(attId)
+                        .withType(type)
+                        .build()
+                )
+            )
+        }
+
+        registerTypeWithAtt(AttributeType.DATETIME)
+
+        val dateTimeValue = "2021-01-01T00:00:00Z"
+        val rec = createRecord(attId to dateTimeValue)
+        assertThat(records.getAtt(rec, attId).asText()).isEqualTo(dateTimeValue)
+
+        registerTypeWithAtt(AttributeType.DATE)
+
+        sqlUpdate("ALTER TABLE ${tableRef.fullName} ALTER COLUMN \"$attId\" TYPE DATE USING \"$attId\"::date;")
+        sqlUpdate("ALTER TABLE ${tableRef.fullName.removeSuffix("\"")}__ext_txn\" ALTER COLUMN \"$attId\" TYPE DATE USING \"$attId\"::date;")
+
+        val rec2 = createRecord(attId to dateTimeValue)
+        assertThat(records.getAtt(rec2, attId).asText()).isEqualTo(dateTimeValue)
+    }
+
+    @Test
+    fun dateToDateTimeTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("strField")
+                    withType(AttributeType.TEXT)
+                },
+                AttributeDef.create {
+                    withId("dateField")
+                    withType(AttributeType.DATE)
+                },
+                AttributeDef.create {
+                    withId("dateTimeField")
+                    withType(AttributeType.DATETIME)
+                }
+            )
+        )
+
+        val dateFields = Array(5) { "2021-01-0${it + 1}" }.toList()
+        val recordsList = dateFields.map { createRecord("dateField" to it, "dateTimeField" to it) }
+
+        val checkDateTime = { field: String ->
+            assertThat(
+                records.getAtts(recordsList, listOf(field)).map {
+                    it.getAtt(field).asText()
+                }
+            ).containsExactlyElementsOf(dateFields.map { it + "T00:00:00Z" })
+        }
+        checkDateTime("dateField")
+        checkDateTime("dateTimeField")
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("strField")
+                    withType(AttributeType.TEXT)
+                },
+                AttributeDef.create {
+                    withId("dateField")
+                    withType(AttributeType.DATETIME)
+                },
+                AttributeDef.create {
+                    withId("dateTimeField")
+                    withType(AttributeType.DATETIME)
+                }
+            )
+        )
+
+        printQueryRes("select * from pg_timezone_names")
+
+        updateRecord(recordsList[0], "strField" to "test")
+
+        printQueryRes("select * from ${tableRef.fullName}")
+
+        checkDateTime("dateTimeField")
+        checkDateTime("dateField")
+    }
 
     @Test
     fun convertToArrayTest() {
@@ -18,16 +107,22 @@ class DbRecordsDaoColumnUpdateTest : DbRecordsTestBase() {
         val testTypeId = "test-type"
         val registerTypeWithAtt = { attId: String, multiple: Boolean ->
             registerType(
-                DbEcosTypeInfo(
-                    testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                    listOf(
-                        AttributeDef.create()
-                            .withId(attId)
-                            .withType(AttributeType.TEXT)
-                            .withMultiple(multiple)
-                    ).map { it.build() },
-                    emptyList()
-                )
+                TypeInfo.create {
+                    withId(testTypeId)
+                    withModel(
+                        TypeModelDef.create()
+                            .withAttributes(
+                                listOf(
+                                    AttributeDef.create()
+                                        .withId(attId)
+                                        .withType(AttributeType.TEXT)
+                                        .withMultiple(multiple)
+                                        .build()
+                                )
+                            )
+                            .build()
+                    )
+                }
             )
         }
 

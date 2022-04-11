@@ -13,12 +13,15 @@ class DbPermsEntity(
     @Constraints(NOT_NULL)
     var recordId: Long,
     @Constraints(NOT_NULL)
-    var authorityId: Long
+    var authorityId: Long,
+    @Constraints(NOT_NULL)
+    var allowed: Boolean
 ) {
     companion object {
         const val RECORD_ID = "__record_id"
         const val AUTHORITY_ID = "__authority_id"
+        const val ALLOWED = "__allowed"
     }
 
-    constructor() : this(-1, -1)
+    constructor() : this(-1, -1, true)
 }

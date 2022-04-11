@@ -10,6 +10,8 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.request.RequestContext
+import java.util.*
+import kotlin.collections.ArrayList
 
 class DbRecordsAuthTest : DbRecordsTestBase() {
 
@@ -28,7 +30,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
                 }
             )
         )
-        initWithTable(tableRef, true)
+        initServices(tableRef, true)
     }
 
     @Test
@@ -192,5 +194,51 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         AuthContext.runAs("user5") {
             assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
         }
+    }
+
+    @Test
+    fun testWithRevokeOwnPerms() {
+
+        val testId = "test-id"
+        val setRecPerms = { perms: List<String> ->
+            setPerms(RecordRef.create(recordsDao.getId(), testId), perms)
+        }
+        setRecPerms(listOf("user0", "user1"))
+
+        val rec = AuthContext.runAs("user0") {
+            createRecord(
+                "id" to testId,
+                "textAtt" to "123"
+            )
+        }
+
+        val testTextAttValueAsUser0 = { value: String ->
+            val attValue = AuthContext.runAs("user0") {
+                records.getAtt(rec, "textAtt").asText()
+            }
+            assertThat(attValue).isEqualTo(value)
+        }
+
+        testTextAttValueAsUser0("123")
+        recordsDao.commit(UUID.randomUUID(), listOf(rec.id))
+        testTextAttValueAsUser0("123")
+
+        AuthContext.runAs("user1") {
+            RequestContext.doWithTxn {
+                records.mutateAtt(rec, "textAtt", "1234")
+            }
+        }
+
+        testTextAttValueAsUser0("1234")
+
+        AuthContext.runAs("user1") {
+            RequestContext.doWithTxn {
+                records.mutateAtt(rec, "textAtt", "1234")
+                setRecPerms(listOf("user0"))
+                records.mutateAtt(rec, "textAtt", "123456")
+            }
+        }
+
+        testTextAttValueAsUser0("123456")
     }
 }

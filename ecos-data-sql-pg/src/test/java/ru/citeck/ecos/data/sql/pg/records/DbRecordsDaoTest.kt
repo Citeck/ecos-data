@@ -6,18 +6,86 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.dto.DbTableRef
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
+import ru.citeck.ecos.records3.record.dao.impl.proxy.RecordsDaoProxy
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
+import ru.citeck.ecos.records3.record.request.RequestContext
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 class DbRecordsDaoTest : DbRecordsTestBase() {
+
+    @Test
+    fun testMetaFields() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("testStr")
+                }
+            )
+        )
+
+        val instantBeforeCreate = Instant.now()
+
+        val testAttValue = "abc"
+        val ref = RequestContext.doWithTxn {
+            val ref = createRecord("testStr" to testAttValue)
+            ref
+        }
+
+        assertThat(records.getAtt(ref, "testStr").asText()).isEqualTo(testAttValue)
+
+        val getCreatedModified = {
+            val created = Instant.parse(records.getAtt(ref, "_created").asText())
+            val modified = Instant.parse(records.getAtt(ref, "_modified").asText())
+            created to modified
+        }
+
+        val (created1, modified1) = getCreatedModified()
+
+        assertThat(modified1).isAfterOrEqualTo(created1)
+        assertThat(created1).isAfter(instantBeforeCreate)
+        assertThat(modified1).isAfter(instantBeforeCreate)
+
+        updateRecord(ref, "testStr" to testAttValue + 1)
+
+        val (created2, modified2) = getCreatedModified()
+
+        assertThat(created2).isEqualTo(created1)
+        assertThat(modified2).isAfter(modified1)
+
+        val (created3, modified3) = RequestContext.doWithTxn {
+            updateRecord(ref, "testStr" to testAttValue + 2)
+            getCreatedModified()
+        }
+
+        assertThat(created3).isEqualTo(created1)
+        assertThat(modified3).isAfter(modified2)
+
+        val (created4, modified4) = getCreatedModified()
+
+        assertThat(created4).isEqualTo(created1)
+        assertThat(modified4).isEqualTo(modified3)
+
+        var updatedTime: Instant? = null
+        RequestContext.doWithTxn {
+            updateRecord(ref, "testStr" to testAttValue + 3)
+            updatedTime = Instant.now()
+            // check that modified time doesn't change on commit
+            Thread.sleep(1_000)
+        }
+        val (created5, modified5) = getCreatedModified()
+        assertThat(created5).isEqualTo(created1)
+        assertThat(modified5).isBefore(updatedTime)
+    }
 
     @Test
     fun testWithChangedSchema() {
@@ -25,10 +93,10 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         val ref = RecordRef.create(RECS_DAO_ID, "test")
 
         val firstTableRef = DbTableRef("ecos-data", "test-data")
-        initWithTable(firstTableRef)
+        initServices(firstTableRef)
 
         val testTypeId = "test-type"
-        registerType(
+        registerAttributes(
             testTypeId,
             listOf(
                 AttributeDef.create()
@@ -51,7 +119,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(records.getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
 
         val secondTableRef = DbTableRef("ecos_data", "test_data")
-        initWithTable(secondTableRef)
+        initServices(secondTableRef)
 
         assertThat(records.getAtt(rec0Id, "textAtt").asText()).isEmpty()
 
@@ -64,7 +132,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         )
         assertThat(records.getAtt(rec1Id, "textAtt").asText()).isEqualTo("value2")
 
-        initWithTable(firstTableRef)
+        initServices(firstTableRef)
 
         assertThat(records.getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
     }
@@ -74,15 +142,20 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         val testTypeId = "test-type"
         registerType(
-            DbEcosTypeInfo(
-                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT)
-                ).map { it.build() },
-                emptyList()
-            )
+            TypeInfo.create {
+                withId(testTypeId)
+                withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .withType(AttributeType.TEXT)
+                            ).map { it.build() }
+                        )
+                        .build()
+                )
+            }
         )
 
         val typeRef = TypeUtils.getTypeRef(testTypeId)
@@ -93,19 +166,26 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         records.create(RECS_DAO_ID, mapOf("textAtt" to "value", "_type" to testTypeId))
 
+        recordsDao.runMigrations(typeRef, mock = false, diff = true)
+
         registerType(
-            DbEcosTypeInfo(
-                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT),
-                    AttributeDef.create()
-                        .withId("textAtt2")
-                        .withType(AttributeType.TEXT)
-                ).map { it.build() },
-                emptyList()
-            )
+            TypeInfo.create {
+                withId(testTypeId)
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .withType(AttributeType.TEXT),
+                                AttributeDef.create()
+                                    .withId("textAtt2")
+                                    .withType(AttributeType.TEXT)
+                            ).map { it.build() }
+                        )
+                    }
+                )
+            }
         )
 
         assertThat(recordsDao.runMigrations(typeRef, diff = true))
@@ -121,27 +201,32 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         val testTypeId = "test-type"
         registerType(
-            DbEcosTypeInfo(
-                testTypeId, MLText(), MLText(), RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT),
-                    AttributeDef.create()
-                        .withId("textArrayAtt")
-                        .withType(AttributeType.TEXT)
-                        .withMultiple(true),
-                    AttributeDef.create()
-                        .withId("numArrayAtt")
-                        .withType(AttributeType.NUMBER)
-                        .withMultiple(true),
-                    AttributeDef.create()
-                        .withId("dateTimeArrayAtt")
-                        .withType(AttributeType.DATETIME)
-                        .withMultiple(true)
-                ).map { it.build() },
-                emptyList()
-            )
+            TypeInfo.create {
+                withId(testTypeId)
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .withType(AttributeType.TEXT),
+                                AttributeDef.create()
+                                    .withId("textArrayAtt")
+                                    .withType(AttributeType.TEXT)
+                                    .withMultiple(true),
+                                AttributeDef.create()
+                                    .withId("numArrayAtt")
+                                    .withType(AttributeType.NUMBER)
+                                    .withMultiple(true),
+                                AttributeDef.create()
+                                    .withId("dateTimeArrayAtt")
+                                    .withType(AttributeType.DATETIME)
+                                    .withMultiple(true)
+                            ).map { it.build() }
+                        )
+                    }
+                )
+            }
         )
 
         val attsMap = mapOf(
@@ -161,7 +246,11 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         val result = records.getAtts(newRecId, attsToReq)
         assertThat(result.getAtt("textArrayAtt").asText()).isEqualTo((attsMap["textArrayAtt"] as List<*>)[0])
         assertThat(result.getAtt("numArrayAtt?num").asInt()).isEqualTo((attsMap["numArrayAtt"] as List<*>)[0])
-        assertThat(Instant.parse(result.getAtt("dateTimeArrayAtt").asText())).isEqualTo((attsMap["dateTimeArrayAtt"] as List<*>)[0])
+        assertThat(
+            Instant.parse(
+                result.getAtt("dateTimeArrayAtt").asText()
+            )
+        ).isEqualTo((attsMap["dateTimeArrayAtt"] as List<*>)[0])
 
         val strList = arrayListOf("aaa", "bbb", "ccc")
         records.mutateAtt(newRecId, "textArrayAtt", strList)
@@ -179,24 +268,27 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
 
         val testTypeId = "test-type"
         registerType(
-            DbEcosTypeInfo(
-                testTypeId,
-                MLText(),
-                MLText("Имя #\${numAtt}"),
-                RecordRef.EMPTY,
-                listOf(
-                    AttributeDef.create()
-                        .withId("textAtt")
-                        .withType(AttributeType.TEXT),
-                    AttributeDef.create()
-                        .withId("numAtt")
-                        .withType(AttributeType.NUMBER),
-                    AttributeDef.create()
-                        .withId("dateTimeAtt")
-                        .withType(AttributeType.DATETIME)
-                ).map { it.build() },
-                emptyList()
-            )
+            TypeInfo.create {
+                withId(testTypeId)
+                withDispNameTemplate(MLText("Имя #\${numAtt}"))
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .withType(AttributeType.TEXT),
+                                AttributeDef.create()
+                                    .withId("numAtt")
+                                    .withType(AttributeType.NUMBER),
+                                AttributeDef.create()
+                                    .withId("dateTimeAtt")
+                                    .withType(AttributeType.DATETIME)
+                            ).map { it.build() }
+                        )
+                    }
+                )
+            }
         )
 
         val timeBeforeCreated = Instant.now().truncatedTo(ChronoUnit.MILLIS)
@@ -359,5 +451,36 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         )
         assertThat(fullQueryAfterDeleteRes.getTotalCount()).isEqualTo(30)
         assertThat(fullQueryAfterDeleteRes.getRecords()).hasSize(30)
+    }
+
+    @Test
+    fun recIdProxyTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("att")
+                    .build()
+            )
+        )
+
+        records.register(RecordsDaoProxy("proxy-dao", recordsDao.getId(), null))
+
+        val atts = mapOf(
+            "_type" to REC_TEST_TYPE_REF,
+            "att" to "value"
+        )
+        val record = records.create("proxy-dao", atts)
+        val refId = selectRecFromDb(record, "\"__ref_id\"") as Long
+
+        val recordRef = RecordRef.valueOf(
+            selectFieldFromDbTable(
+                "__ext_id",
+                tableRef.withTable("ecos_record_ref").fullName,
+                "id=$refId"
+            ) as String
+        )
+
+        assertThat(recordRef.sourceId).isEqualTo("proxy-dao")
     }
 }

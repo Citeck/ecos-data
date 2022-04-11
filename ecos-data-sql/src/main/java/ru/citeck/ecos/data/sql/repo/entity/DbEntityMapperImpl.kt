@@ -11,7 +11,11 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import java.lang.reflect.Array
+import java.net.URI
+import java.sql.Date
+import java.sql.Timestamp
 import java.time.Instant
+import java.time.ZoneOffset
 import kotlin.collections.ArrayList
 import kotlin.collections.LinkedHashMap
 import kotlin.reflect.KClass
@@ -23,6 +27,7 @@ class DbEntityMapperImpl<T : Any>(
 
     companion object {
         private const val ATTRIBUTES_FIELD = "attributes"
+        private const val EXT_ID_FIELD = "extId"
 
         private val CAMEL_REGEX = "(?<=[a-zA-Z])[A-Z]".toRegex()
     }
@@ -40,6 +45,10 @@ class DbEntityMapperImpl<T : Any>(
         return columns
     }
 
+    override fun getExtId(entity: T): String {
+        return PropertyUtils.getProperty(entity, EXT_ID_FIELD) as? String ?: ""
+    }
+
     override fun convertToEntity(data: Map<String, Any?>): T {
 
         val entityColumns = columns.associateBy { it.columnDef.name }
@@ -49,25 +58,39 @@ class DbEntityMapperImpl<T : Any>(
         data.forEach { (k, v) ->
             val entityField = entityColumns[k]
             if (entityField == null) {
-                if (v != null && v::class.java.isArray) {
-                    val arraySize = Array.getLength(v)
-                    val list = ArrayList<Any>(arraySize)
-                    for (i in 0 until arraySize) {
-                        list.add(Array.get(v, i))
-                    }
-                    additionalAtts[k] = list
-                } else {
-                    additionalAtts[k] = v
-                }
+                additionalAtts[k] = convertAdditionalAttValue(v)
             } else {
                 entityAtts[entityField.fieldName] = converter.convert(v, entityField.fieldType)
             }
+        }
+        if (entityAtts.containsKey(DbEntity.REF_ID) && entityAtts[DbEntity.REF_ID] == null) {
+            // protection against NullPointer for legacy records
+            entityAtts[DbEntity.REF_ID] = DbEntity.NEW_REC_ID
         }
         val entity = Json.mapper.convert(entityAtts, entityType.java) ?: error("Conversion error")
         if (hasAttributesField) {
             PropertyUtils.setProperty(entity, ATTRIBUTES_FIELD, additionalAtts)
         }
         return entity
+    }
+
+    private fun convertAdditionalAttValue(value: Any?): Any? {
+        if (value == null) {
+            return null
+        }
+        if (value::class.java.isArray) {
+            val arraySize = Array.getLength(value)
+            val list = ArrayList<Any?>(arraySize)
+            for (i in 0 until arraySize) {
+                list.add(convertAdditionalAttValue(Array.get(value, i)))
+            }
+            return list
+        } else if (value is Date) {
+            return value.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant()
+        } else if (value is Timestamp) {
+            return value.toInstant()
+        }
+        return value
     }
 
     override fun convertToMap(entity: T): Map<String, Any?> {
@@ -119,6 +142,8 @@ class DbEntityMapperImpl<T : Any>(
                     prop.propertyType.kotlin == Int::class -> DbColumnType.INT
                     prop.propertyType.kotlin == Boolean::class -> DbColumnType.BOOLEAN
                     prop.propertyType.kotlin == Instant::class -> DbColumnType.DATETIME
+                    prop.propertyType.kotlin == ByteArray::class -> DbColumnType.BINARY
+                    prop.propertyType.kotlin == URI::class -> DbColumnType.TEXT
                     else -> error("Unknown type: ${prop.propertyType}")
                 }
 
@@ -133,7 +158,11 @@ class DbEntityMapperImpl<T : Any>(
                     prop.name,
                     prop.propertyType.kotlin,
                     prop.readMethod.invoke(defaultValue),
-                    DbColumnDef(columnName, fieldType, false, constraints)
+                    DbColumnDef.create {
+                        withName(columnName)
+                        withType(fieldType)
+                        withConstraints(constraints)
+                    }
                 ) { obj -> prop.readMethod.invoke(obj) }
             }
         }

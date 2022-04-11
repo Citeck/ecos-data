@@ -4,5 +4,5 @@ import ru.citeck.ecos.records2.RecordRef
 
 interface DbPermsComponent {
 
-    fun getAuthoritiesWithReadPermission(recordRef: RecordRef): Set<String>
+    fun getRecordPerms(recordRef: RecordRef): DbRecordPerms
 }

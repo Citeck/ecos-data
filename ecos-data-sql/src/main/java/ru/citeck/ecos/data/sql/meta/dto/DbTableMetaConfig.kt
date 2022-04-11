@@ -12,10 +12,12 @@ data class DbTableMetaConfig(
         @JvmField
         val DEFAULT = DbTableMetaConfig(DbDataServiceConfig.EMPTY)
 
+        @JvmStatic
         fun create(): Builder {
             return Builder()
         }
 
+        @JvmStatic
         fun create(builder: Builder.() -> Unit): DbTableMetaConfig {
             val builderObj = Builder()
             builder.invoke(builderObj)

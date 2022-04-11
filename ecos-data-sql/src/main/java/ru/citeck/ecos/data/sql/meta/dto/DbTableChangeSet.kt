@@ -18,10 +18,12 @@ class DbTableChangeSet(
         @JvmField
         val EMPTY = create {}
 
+        @JvmStatic
         fun create(): Builder {
             return Builder()
         }
 
+        @JvmStatic
         fun create(builder: Builder.() -> Unit): DbTableChangeSet {
             val builderObj = Builder()
             builder.invoke(builderObj)

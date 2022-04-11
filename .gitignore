@@ -18,3 +18,4 @@ build
 target
 nodejs/*
 node_modules/*
+.flattened-pom.xml

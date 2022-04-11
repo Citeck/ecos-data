@@ -7,7 +7,8 @@ data class DbColumnDef(
     val name: String,
     val type: DbColumnType,
     val multiple: Boolean,
-    val constraints: List<DbColumnConstraint>
+    val constraints: List<DbColumnConstraint>,
+    val index: DbColumnIndexDef
 ) {
 
     companion object {
@@ -15,15 +16,23 @@ data class DbColumnDef(
         @JvmField
         val EMPTY = create {}
 
+        @JvmStatic
         fun create(): Builder {
             return Builder()
         }
 
+        @JvmStatic
         fun create(builder: Builder.() -> Unit): DbColumnDef {
             val builderObj = Builder()
             builder.invoke(builderObj)
             return builderObj.build()
         }
+    }
+
+    fun withConstraints(constraints: List<DbColumnConstraint>): DbColumnDef {
+        return Builder(this)
+            .withConstraints(constraints)
+            .build()
     }
 
     class Builder() {
@@ -32,12 +41,14 @@ data class DbColumnDef(
         var type: DbColumnType = DbColumnType.TEXT
         var multiple: Boolean = false
         var constraints: List<DbColumnConstraint> = emptyList()
+        var index: DbColumnIndexDef = DbColumnIndexDef.EMPTY
 
         constructor(base: DbColumnDef) : this() {
             name = base.name
             type = base.type
             multiple = base.multiple
             constraints = base.constraints
+            index = base.index
         }
 
         fun withName(name: String?): Builder {
@@ -60,12 +71,18 @@ data class DbColumnDef(
             return this
         }
 
+        fun withIndex(index: DbColumnIndexDef?): Builder {
+            this.index = index ?: DbColumnIndexDef.EMPTY
+            return this
+        }
+
         fun build(): DbColumnDef {
             return DbColumnDef(
                 name,
                 type,
                 multiple,
-                constraints
+                constraints,
+                index
             )
         }
     }
