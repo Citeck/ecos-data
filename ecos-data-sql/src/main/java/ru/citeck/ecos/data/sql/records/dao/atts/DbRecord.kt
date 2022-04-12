@@ -1,7 +1,9 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
 import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.commons.json.YamlUtils
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
@@ -17,12 +19,14 @@ import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.request.RequestContext
+import java.nio.charset.StandardCharsets
 import java.util.LinkedHashMap
 
 class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValue {
 
     companion object {
         const val ATT_NAME = "_name"
+        const val YAML_DATA = "yamlData"
 
         val ATTS_MAPPING = mapOf(
             "id" to DbEntity.EXT_ID,
@@ -229,6 +233,15 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 val typeInfo = ctx.ecosTypeService.getTypeInfo(entity.type) ?: return statusId
                 val statusDef = typeInfo.model.statuses.firstOrNull { it.id == statusId } ?: return statusId
                 return DbStatusValue(statusDef)
+            }
+            YAML_DATA -> {
+                val typeInfo = ctx.ecosTypeService.getTypeInfo(entity.type) ?: return null
+                val typeData = ObjectData.create()
+                val typeAttributes = typeInfo?.model?.attributes
+                typeAttributes.forEach{
+                    typeData.set(it.id, additionalAtts.get(it.id))
+                }
+                return YamlUtils.toString(typeData).toByteArray(StandardCharsets.UTF_8)
             }
             else -> additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
         }
