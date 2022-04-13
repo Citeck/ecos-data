@@ -8,7 +8,7 @@ import ru.citeck.ecos.records3.record.atts.value.AttValue
 
 class DbEmptyRecord(private val ctx: DbRecordsDaoCtx) : AttValue {
 
-    override fun getEdge(name: String?): AttEdge? {
+    override fun getEdge(name: String): AttEdge? {
         if (name == StatusConstants.ATT_STATUS) {
             return DbStatusEdge(ctx, ctx.config.typeRef)
         }

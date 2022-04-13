@@ -1,12 +1,9 @@
 package ru.citeck.ecos.data.sql.pg.records
 
-import org.apache.commons.codec.binary.Base64
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.json.Json
-import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
-import java.nio.charset.StandardCharsets
 
 class DbRecordsYamlDataTest: DbRecordsTestBase() {
 
@@ -43,9 +40,8 @@ class DbRecordsYamlDataTest: DbRecordsTestBase() {
         )
         val ref = createRecord(ATT_TEXT to textValue, ATT_DATETIME to dateTimeValue, ATT_NUMBER to numberValue)
 
-        val yamlDataString = records.getAtt(ref, DbRecord.YAML_DATA).asText()
-        val decodedYamlData = Base64.decodeBase64(yamlDataString.toByteArray(StandardCharsets.UTF_8))
-        val data = Json.mapper.read(String(decodedYamlData))
+        val yamlData = records.getAtt(ref, "?json|yaml()").asText()
+        val data = Json.mapper.read(yamlData)
 
         assertThat(data?.get(ATT_NUMBER)?.asInt()).isEqualTo(numberValue)
         assertThat(data?.get(ATT_TEXT)?.asText()).isEqualTo(textValue)
