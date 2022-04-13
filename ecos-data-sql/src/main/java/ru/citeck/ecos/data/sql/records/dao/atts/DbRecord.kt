@@ -1,7 +1,9 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
 import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.commons.json.YamlUtils
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
@@ -17,7 +19,7 @@ import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.request.RequestContext
-import java.util.LinkedHashMap
+import kotlin.collections.LinkedHashMap
 
 class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValue {
 
@@ -193,11 +195,13 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     }
 
     override fun asJson(): Any {
+        val jsonAtts = LinkedHashMap<String, Any?>()
+        jsonAtts["id"] = entity.extId
         if (typeInfo == null) {
-            return additionalAtts
+            jsonAtts.putAll(additionalAtts)
+            return jsonAtts
         }
         val nonSystemAttIds = typeInfo.model.attributes.map { it.id }.toSet()
-        val jsonAtts = HashMap<String, Any?>()
         additionalAtts.keys.filter { nonSystemAttIds.contains(it) }.forEach {
             jsonAtts[it] = additionalAtts[it]
         }
