@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 
-class DbRecordsYamlDataTest: DbRecordsTestBase() {
+class DbRecordsYamlDataTest : DbRecordsTestBase() {
 
     companion object {
         const val ATT_TEXT = "description"

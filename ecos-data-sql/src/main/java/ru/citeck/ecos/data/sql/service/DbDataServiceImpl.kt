@@ -27,6 +27,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
+import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.service.job.txn.TxnDataCleaner
 import ru.citeck.ecos.data.sql.service.job.txn.TxnDataCleanerConfig
 import ru.citeck.ecos.data.sql.service.migration.DbMigration
@@ -288,6 +289,19 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
     ): DbFindRes<T> {
         return execReadOnlyQueryWithPredicate(predicate, DbFindRes.empty()) { pred ->
             entityRepo.find(pred, sort, page, withDeleted)
+        }
+    }
+
+    override fun find(
+        predicate: Predicate,
+        sort: List<DbFindSort>,
+        page: DbFindPage,
+        withDeleted: Boolean,
+        groupBy: List<String>,
+        selectFunctions: List<AggregateFunc>
+    ): DbFindRes<T> {
+        return execReadOnlyQueryWithPredicate(predicate, DbFindRes.empty()) { pred ->
+            entityRepo.find(pred, sort, page, withDeleted, groupBy, selectFunctions)
         }
     }
 

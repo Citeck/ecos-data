@@ -27,6 +27,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbCommitEntityDto
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
+import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
@@ -47,6 +48,7 @@ import ru.citeck.ecos.records2.source.dao.local.job.PeriodicJob
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
+import ru.citeck.ecos.records3.record.atts.schema.resolver.AttContext
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.records3.record.dao.AbstractRecordsDao
 import ru.citeck.ecos.records3.record.dao.atts.RecordsAttsDao
@@ -54,6 +56,7 @@ import ru.citeck.ecos.records3.record.dao.delete.DelStatus
 import ru.citeck.ecos.records3.record.dao.delete.RecordsDeleteDao
 import ru.citeck.ecos.records3.record.dao.mutate.RecordsMutateDao
 import ru.citeck.ecos.records3.record.dao.query.RecordsQueryDao
+import ru.citeck.ecos.records3.record.dao.query.RecsGroupQueryDao
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
@@ -63,6 +66,7 @@ import java.io.InputStream
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.function.Function
+import java.util.regex.Pattern
 import kotlin.collections.ArrayList
 import kotlin.math.min
 
@@ -80,12 +84,15 @@ class DbRecordsDao(
     RecordsMutateDao,
     RecordsDeleteDao,
     TxnRecordsDao,
-    JobsProvider {
+    JobsProvider,
+    RecsGroupQueryDao {
 
     companion object {
 
         private const val ATT_STATE = "_state"
         private const val ATT_CUSTOM_NAME = "name"
+
+        private val AGG_FUNC_PATTERN = Pattern.compile("^(\\w+)\\((\\w+|\\*)\\)$")
 
         private val log = KotlinLogging.logger {}
     }
@@ -321,6 +328,22 @@ class DbRecordsDao(
             }
         }
 
+        val selectFunctions = mutableListOf<AggregateFunc>()
+        AttContext.getCurrentNotNull().getSchemaAtt().inner.forEach {
+            if (it.name.contains("(")) {
+                val matcher = AGG_FUNC_PATTERN.matcher(it.name)
+                if (matcher.matches()) {
+                    selectFunctions.add(
+                        AggregateFunc(
+                            it.name,
+                            matcher.group(1),
+                            matcher.group(2)
+                        )
+                    )
+                }
+            }
+        }
+
         val page = recsQuery.page
         val findRes = dbDataService.find(
             predicate ?: Predicates.alwaysTrue(),
@@ -334,7 +357,10 @@ class DbRecordsDao(
                 } else {
                     min(page.maxItems, config.queryMaxItems)
                 }
-            )
+            ),
+            false,
+            recsQuery.groupBy,
+            selectFunctions
         )
 
         val queryRes = RecsQueryRes<Any>()
