@@ -5,6 +5,7 @@ import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.records2.predicate.model.Predicate
 
 interface DbEntityRepo<T : Any> {
@@ -16,6 +17,15 @@ interface DbEntityRepo<T : Any> {
     fun findByExtId(id: String, withDeleted: Boolean): T?
 
     fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage, withDeleted: Boolean): DbFindRes<T>
+
+    fun find(
+        predicate: Predicate,
+        sort: List<DbFindSort>,
+        page: DbFindPage,
+        withDeleted: Boolean,
+        groupBy: List<String>,
+        selectFunctions: List<AggregateFunc>
+    ): DbFindRes<T>
 
     fun getCount(predicate: Predicate): Long
 

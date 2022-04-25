@@ -61,14 +61,12 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             }
         }
 
-        if (!isNewRecord) {
-            val isDraftBefore = before.attributes[DbRecord.COLUMN_IS_DRAFT.name] as? Boolean
-            val isDraftAfter = after.attributes[DbRecord.COLUMN_IS_DRAFT.name] as? Boolean
-            if (isDraftBefore != null && isDraftAfter != null && isDraftBefore != isDraftAfter) {
-                val event = DbRecordDraftStatusChangedEvent(recAfter, typeInfo, isDraftBefore, isDraftAfter)
-                ctx.listeners.forEach {
-                    it.onDraftStatusChanged(event)
-                }
+        val isDraftBefore = before.attributes[DbRecord.COLUMN_IS_DRAFT.name] as? Boolean
+        val isDraftAfter = after.attributes[DbRecord.COLUMN_IS_DRAFT.name] as? Boolean
+        if (isDraftBefore != null && isDraftAfter != null && isDraftBefore != isDraftAfter) {
+            val event = DbRecordDraftStatusChangedEvent(recAfter, typeInfo, isDraftBefore, isDraftAfter)
+            ctx.listeners.forEach {
+                it.onDraftStatusChanged(event)
             }
         }
     }

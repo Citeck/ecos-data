@@ -16,6 +16,7 @@ import ru.citeck.ecos.data.sql.repo.entity.auth.DbPermsEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
@@ -26,6 +27,7 @@ import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.*
 import java.util.*
+import kotlin.collections.ArrayList
 import kotlin.collections.HashSet
 import kotlin.reflect.KClass
 
@@ -149,18 +151,49 @@ class DbEntityRepoPg<T : Any>(
         return query.contains(WHERE_ALWAYS_FALSE)
     }
 
-    private fun convertRowToMap(row: ResultSet, columns: List<DbColumnDef>): Map<String, Any?> {
+    private fun convertRowToMap(
+        row: ResultSet,
+        columns: List<DbColumnDef>,
+        groupBy: List<String> = emptyList(),
+        selectFunctions: List<AggregateFunc> = emptyList()
+    ): Map<String, Any?> {
         val result = LinkedHashMap<String, Any?>()
-        columns.forEach { column ->
-            val value = row.getObject(column.name)
-            result[column.name] = if (value != null) {
-                var expectedType = column.type.type
-                if (column.multiple && column.type != DbColumnType.JSON) {
-                    expectedType = DbTypeUtils.getArrayType(expectedType)
+        if (groupBy.isEmpty()) {
+            columns.forEach { column ->
+                val value = row.getObject(column.name)
+                result[column.name] = if (value != null) {
+                    var expectedType = column.type.type
+                    if (column.multiple && column.type != DbColumnType.JSON) {
+                        expectedType = DbTypeUtils.getArrayType(expectedType)
+                    }
+                    typesConverter.convert(value, expectedType)
+                } else {
+                    null
                 }
-                typesConverter.convert(value, expectedType)
-            } else {
-                null
+            }
+        } else {
+            val columnByName = columns.associateBy { it.name }
+            groupBy.forEach {
+                val value = row.getObject(it)
+                result[it] = if (value != null) {
+                    val column = columnByName[it]!!
+                    typesConverter.convert(value, column.type.type)
+                } else {
+                    null
+                }
+            }
+            selectFunctions.forEach {
+                val value = row.getObject(it.alias)
+                result[it.alias] = if (value != null) {
+                    val expectedType = when (it.func) {
+                        "sum", "count" -> DbColumnType.DOUBLE
+                        else -> columnByName[it.field]!!.type
+                    }
+                    typesConverter.convert(value, expectedType.type)
+                } else {
+                    null
+                }
+                it.alias
             }
         }
         return result
@@ -441,21 +474,64 @@ class DbEntityRepoPg<T : Any>(
         page: DbFindPage,
         withDeleted: Boolean
     ): DbFindRes<T> {
+        return find(predicate, sort, page, withDeleted, emptyList(), emptyList())
+    }
+
+    override fun find(
+        predicate: Predicate,
+        sort: List<DbFindSort>,
+        page: DbFindPage,
+        withDeleted: Boolean,
+        groupBy: List<String>,
+        selectFunctions: List<AggregateFunc>
+    ): DbFindRes<T> {
 
         if (columns.isEmpty()) {
             return DbFindRes(emptyList(), 0)
         }
         updateSchemaCacheIfRequired()
-
         val columnsByName = columns.associateBy { it.name }
+
+        val queryGroupBy = ArrayList(groupBy)
+        if (selectFunctions.isNotEmpty()) {
+            val invalidFunctions = selectFunctions.filter { it.field != "*" && !columnsByName.containsKey(it.field) }
+            if (invalidFunctions.isNotEmpty()) {
+                error("Function can't be evaluated by non-existing column. Invalid functions: $invalidFunctions")
+            }
+        }
+        if (queryGroupBy.isNotEmpty()) {
+            val invalidColumns = queryGroupBy.filter { !columnsByName.containsKey(it) }
+            if (invalidColumns.isNotEmpty()) {
+                error("Grouping by columns $invalidColumns is not allowed")
+            }
+        }
+
         val params = mutableListOf<Any?>()
         val sqlCondition = toSqlCondition(predicate, params, columnsByName)
-        val query = createSelectQuery(columns, isAuthEnabled(), withDeleted, sqlCondition, sort, page)
+        val query = createSelectQuery(
+            columns,
+            isAuthEnabled(),
+            withDeleted,
+            sqlCondition,
+            sort,
+            page,
+            queryGroupBy,
+            selectFunctions
+        )
 
         val resultEntities = dataSource.query(query, params) { resultSet ->
             val resultList = mutableListOf<T>()
             while (resultSet.next()) {
-                resultList.add(mapper.convertToEntity(convertRowToMap(resultSet, columns)))
+                resultList.add(
+                    mapper.convertToEntity(
+                        convertRowToMap(
+                            resultSet,
+                            columns,
+                            queryGroupBy,
+                            selectFunctions
+                        )
+                    )
+                )
             }
             resultList
         }
@@ -475,12 +551,30 @@ class DbEntityRepoPg<T : Any>(
         condition: String,
         sort: List<DbFindSort> = emptyList(),
         page: DbFindPage = DbFindPage.ALL,
+        groupBy: List<String> = emptyList(),
+        selectFunctions: List<AggregateFunc> = emptyList(),
     ): String {
 
         val selectColumnsStr = StringBuilder()
-        selectColumns.forEach {
-            appendRecordColumnName(selectColumnsStr, it.name)
-            selectColumnsStr.append(",")
+        if (groupBy.isEmpty()) {
+            selectColumns.forEach {
+                appendRecordColumnName(selectColumnsStr, it.name)
+                selectColumnsStr.append(",")
+            }
+        } else {
+            groupBy.forEach {
+                appendRecordColumnName(selectColumnsStr, it)
+                selectColumnsStr.append(",")
+            }
+        }
+        selectFunctions.forEach {
+            selectColumnsStr.append(it.func).append("(")
+            if (it.field != "*") {
+                appendRecordColumnName(selectColumnsStr, it.field)
+            } else {
+                selectColumnsStr.append("*")
+            }
+            selectColumnsStr.append(") AS \"${it.alias}\",")
         }
         selectColumnsStr.setLength(selectColumnsStr.length - 1)
 
@@ -490,7 +584,8 @@ class DbEntityRepoPg<T : Any>(
             withDeleted,
             condition,
             sort,
-            page
+            page,
+            groupBy
         )
     }
 
@@ -501,6 +596,7 @@ class DbEntityRepoPg<T : Any>(
         condition: String,
         sort: List<DbFindSort> = emptyList(),
         page: DbFindPage = DbFindPage.ALL,
+        groupBy: List<String> = emptyList(),
         innerAuthSelect: Boolean = false
     ): String {
 
@@ -537,7 +633,7 @@ class DbEntityRepoPg<T : Any>(
             } else {
                 val innerQuery = createSelectQuery(
                     selectColumns = "\"$RECORD_TABLE_ALIAS\".\"id\"",
-                    withAuth = withAuth,
+                    withAuth = true,
                     withDeleted = withDeleted,
                     condition = condition,
                     sort,
@@ -561,9 +657,22 @@ class DbEntityRepoPg<T : Any>(
         if (newCondition.isNotBlank()) {
             query.append(" WHERE ").append(newCondition)
         }
+        addGrouping(query, groupBy)
         addSortAndPage(query, sort, page)
 
         return query.toString()
+    }
+
+    private fun addGrouping(query: StringBuilder, groupBy: List<String>) {
+        if (groupBy.isEmpty()) {
+            return
+        }
+        query.append(" GROUP BY ")
+        groupBy.forEach {
+            appendRecordColumnName(query, it)
+            query.append(",")
+        }
+        query.setLength(query.length - 1)
     }
 
     private fun addSortAndPage(query: StringBuilder, sort: List<DbFindSort>, page: DbFindPage) {

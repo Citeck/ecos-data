@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.service.migration.DbMigration
 import ru.citeck.ecos.records2.predicate.model.Predicate
 
@@ -29,6 +30,15 @@ interface DbDataService<T : Any> {
     fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage): DbFindRes<T>
 
     fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage, withDeleted: Boolean): DbFindRes<T>
+
+    fun find(
+        predicate: Predicate,
+        sort: List<DbFindSort>,
+        page: DbFindPage,
+        withDeleted: Boolean,
+        groupBy: List<String>,
+        selectFunctions: List<AggregateFunc>
+    ): DbFindRes<T>
 
     fun getCount(predicate: Predicate): Long
 
