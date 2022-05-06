@@ -13,7 +13,7 @@ import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 
 class DbDomainFactory(
     val ecosTypeRepo: TypesRepo,
-    val dataSource: DbDataSource,
+    val dataSource: DbDataSource?,
     val dataServiceFactory: DbDataServiceFactory,
     val permsComponent: DbPermsComponent,
     val computedAttsComponent: DbComputedAttsComponent,
@@ -55,6 +55,7 @@ class DbDomainFactory(
         fun build(): DbRecordsDao {
 
             val dataSource = dataSource ?: this@DbDomainFactory.dataSource
+                ?: error("dataSource is null")
 
             val dataService = DbDataServiceImpl(
                 DbEntity::class.java,
