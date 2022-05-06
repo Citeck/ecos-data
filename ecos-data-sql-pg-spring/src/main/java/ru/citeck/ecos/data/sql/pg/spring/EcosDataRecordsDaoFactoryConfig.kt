@@ -35,6 +35,10 @@ open class EcosDataRecordsDaoFactoryConfig {
     @Autowired
     private lateinit var dbDataServiceFactory: DbDataServiceFactory
 
+    @Autowired(required = false)
+    private var dataSource: DataSource? = null
+    private val dbDataSource: DbDataSource? by lazy { dataSource?.let { DbDataSourceImpl(it) } }
+
     private fun getRecordRefService(dataSource: DbDataSource, schema: String, appName: String): DbRecordRefService {
         return DbRecordRefService(
             appName,
@@ -85,13 +89,7 @@ open class EcosDataRecordsDaoFactoryConfig {
     }
 
     @Bean
-    open fun dbDataSource(dataSource: DataSource): DbDataSource {
-        return DbDataSourceImpl(dataSource)
-    }
-
-    @Bean
     open fun dbDomainFactory(
-        dbDataSource: DbDataSource,
         ecosTypesRepo: TypesRepo,
         recordsServices: RecordsServiceFactory,
         permsComponent: DbPermsComponent,
