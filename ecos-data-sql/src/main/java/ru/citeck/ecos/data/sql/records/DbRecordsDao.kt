@@ -130,12 +130,12 @@ class DbRecordsDao(
 
         val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
         val newConfig = config.deepCopy()
-        newConfig.set("typeInfo", typeInfo)
+        newConfig["typeInfo"] = typeInfo
         if (!newConfig.has("sourceId")) {
-            newConfig.set("sourceId", getId())
+            newConfig["sourceId"] = getId()
         }
         if (!newConfig.has("appName")) {
-            newConfig.set("appName", serviceFactory.properties.appName)
+            newConfig["appName"] = serviceFactory.webappProps.appName
         }
 
         dbDataService.runMigrationByType(type, mock, newConfig)
@@ -623,7 +623,7 @@ class DbRecordsDao(
         val isNewRecord = recToMutate.id == DbEntity.NEW_REC_ID
         if (isNewRecord) {
             val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
-            val currentAppName = serviceFactory.properties.appName
+            val currentAppName = serviceFactory.webappProps.appName
             val currentRef = RecordRef.create(currentAppName, getId(), recToMutate.extId)
             val newRecordRef = RecordRefUtils.mapAppIdAndSourceId(currentRef, currentAppName, sourceIdMapping)
             recToMutate.refId = dbRecordRefService.getOrCreateIdByRecordRefs(listOf(newRecordRef))[0]
@@ -776,7 +776,7 @@ class DbRecordsDao(
         super.setRecordsServiceFactory(serviceFactory)
         ecosTypeService = DbEcosTypeService(ecosTypesRepo)
         daoCtx = DbRecordsDaoCtx(
-            serviceFactory.properties.appName,
+            serviceFactory.webappProps.appName,
             getId(),
             config,
             contentService,

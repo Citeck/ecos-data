@@ -106,7 +106,7 @@ open class EcosDataRecordsDaoFactoryConfig {
             }
         }
 
-        val appName = recordsServices.properties.appName
+        val appName = recordsServices.webappProps.appName
 
         return DbDomainFactory(
             ecosTypesRepo,
