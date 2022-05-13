@@ -12,7 +12,7 @@
 
     <properties>
 
-        <revision>1.17.1</revision>
+        <revision>1.17.2</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
@@ -273,7 +273,6 @@
     <modules>
         <module>ecos-data-sql</module>
         <module>ecos-data-sql-pg</module>
-        <module>ecos-data-sql-pg-spring</module>
     </modules>
 
     <repositories>
