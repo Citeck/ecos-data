@@ -528,7 +528,7 @@ class DbRecordsDao(
                 entity
             }
 
-            if (recToMutate.id != DbEntity.NEW_REC_ID) {
+            if (recToMutate.id != DbEntity.NEW_REC_ID && !AuthContext.isRunAsSystem()) {
                 val recordPerms = getRecordPerms(recToMutate.extId)
                 if (!recordPerms.isCurrentUserHasWritePerms()) {
                     error("Permissions Denied. You can't change record '${record.id}'")

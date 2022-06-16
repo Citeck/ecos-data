@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import ru.citeck.ecos.context.lib.auth.AuthConstants
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.records2.RecordRef
@@ -40,7 +41,8 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
             "user3"
         )
         val usersWithWritePerms = listOf(
-            "user0"
+            "user0",
+            AuthConstants.SYSTEM_USER
         )
 
         usersWithoutWritePerms.forEach {
