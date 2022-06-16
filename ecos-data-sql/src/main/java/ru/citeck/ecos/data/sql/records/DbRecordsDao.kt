@@ -1492,6 +1492,7 @@ class DbRecordsDao(
                     val statusDef = typeInfo.model.statuses.firstOrNull { it.id == statusId } ?: return statusId
                     return StatusValue(statusDef)
                 }
+                "permissions" -> PermissionsValue(entity.extId)
                 else -> additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
             }
         }
@@ -1590,6 +1591,24 @@ class DbRecordsDao(
 
         override fun asText(): String {
             return def.id
+        }
+    }
+
+    private inner class PermissionsValue(private val recordId: String) : AttValue {
+        val recordPerms: DbRecordPerms by lazy { getRecordPerms(recordId) }
+        override fun has(name: String): Boolean {
+            if (name.equals("Write", true)) {
+                return recordPerms.isCurrentUserHasWritePerms()
+            }
+            if (name.equals("Read", true)) {
+                val authoritiesWithReadPermissions = recordPerms.getAuthoritiesWithReadPermission().toSet()
+                if (AuthContext.getCurrentRunAsUserWithAuthorities().any { authoritiesWithReadPermissions.contains(it) }) {
+                    return true
+                }
+                return false
+            }
+
+            return super.has(name)
         }
     }
 }

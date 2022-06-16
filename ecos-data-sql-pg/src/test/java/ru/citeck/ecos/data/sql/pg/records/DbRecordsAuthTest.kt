@@ -95,7 +95,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         }
 
         val refForEveryone = createRef("user-rec-user5-2")
-        setPerms(refForEveryone, RoleConstants.ROLE_EVERYONE)
+        setAuthoritiesWithReadPerms(refForEveryone, RoleConstants.ROLE_EVERYONE)
 
         for (user in users) {
             AuthContext.runAs(user) {
@@ -164,7 +164,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
             }
         }
 
-        setPerms(rec, setOf("user0", "user1"))
+        setAuthoritiesWithReadPerms(rec, setOf("user0", "user1"))
         AuthContext.runAs("user0") {
             updateRecord(rec, "textAtt" to "with perms")
         }
@@ -175,7 +175,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
             assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
         }
 
-        setPerms(rec, (0..10).map { "user$it" }.toSet())
+        setAuthoritiesWithReadPerms(rec, (0..10).map { "user$it" }.toSet())
         AuthContext.runAs("user1") {
             updateRecord(rec, "textAtt" to "update-perms")
         }
@@ -184,13 +184,13 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
             assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("val22")
         }
 
-        setPerms(rec, (0..5).map { "user$it" }.toSet())
+        setAuthoritiesWithReadPerms(rec, (0..5).map { "user$it" }.toSet())
         AuthContext.runAs("user5") {
             updateRecord(rec, "textAtt" to "val33")
             assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("val33")
         }
 
-        setPerms(rec, (0..4).map { "user$it" }.toSet())
+        setAuthoritiesWithReadPerms(rec, (0..4).map { "user$it" }.toSet())
         AuthContext.runAs("user5") {
             assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
         }
@@ -201,7 +201,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
 
         val testId = "test-id"
         val setRecPerms = { perms: List<String> ->
-            setPerms(RecordRef.create(recordsDao.getId(), testId), perms)
+            setAuthoritiesWithReadPerms(RecordRef.create(recordsDao.getId(), testId), perms)
         }
         setRecPerms(listOf("user0", "user1"))
 

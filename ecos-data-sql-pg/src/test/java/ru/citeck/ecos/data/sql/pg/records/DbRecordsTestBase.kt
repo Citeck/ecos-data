@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.EcosContentServiceImpl
 import ru.citeck.ecos.data.sql.content.data.EcosContentDataServiceImpl
 import ru.citeck.ecos.data.sql.content.data.storage.local.DbContentDataEntity
@@ -81,6 +82,7 @@ abstract class DbRecordsTestBase {
     private val typesInfo = mutableMapOf<String, TypeInfo>()
 
     private val recReadPerms = mutableMapOf<RecordRef, Set<String>>()
+    private val recWritePerms = mutableMapOf<RecordRef, Set<String>>()
 
     lateinit var recordsDao: DbRecordsDao
     lateinit var records: RecordsService
@@ -105,17 +107,37 @@ abstract class DbRecordsTestBase {
         dropAllTables()
         typesInfo.clear()
         recReadPerms.clear()
+        recWritePerms.clear()
 
         initServices()
     }
 
-    fun setPerms(rec: RecordRef, perms: Collection<String>) {
-        recReadPerms[rec] = perms.toSet()
+    fun setAuthoritiesWithWritePerms(rec: RecordRef, vararg authorities: String) {
+        setAuthoritiesWithWritePerms(rec, authorities.toString())
+    }
+
+    fun setAuthoritiesWithWritePerms(rec: RecordRef, authorities: Collection<String>) {
+        recWritePerms[rec] = authorities.toSet()
+        addAuthoritiesWithReadPerms(rec, authorities)
+    }
+
+    fun setAuthoritiesWithReadPerms(rec: RecordRef, authorities: Collection<String>) {
+        recReadPerms[rec] = authorities.toSet()
         recordsDao.updatePermissions(listOf(rec.id))
     }
 
-    fun setPerms(rec: RecordRef, vararg perms: String) {
-        setPerms(rec, perms.toSet())
+    fun setAuthoritiesWithReadPerms(rec: RecordRef, vararg authorities: String) {
+        setAuthoritiesWithReadPerms(rec, authorities.toSet())
+    }
+
+    fun addAuthoritiesWithReadPerms(rec: RecordRef, authorities: Collection<String>) {
+        val readPerms = recReadPerms[rec]?.toMutableSet() ?: mutableSetOf()
+        readPerms.addAll(authorities)
+        setAuthoritiesWithReadPerms(rec, readPerms)
+    }
+
+    fun addAuthoritiesWithReadPerms(rec: RecordRef, vararg authorities: String) {
+        addAuthoritiesWithReadPerms(rec, authorities.toSet())
     }
 
     fun initServices(
@@ -173,7 +195,10 @@ abstract class DbRecordsTestBase {
                             .getAuthoritiesWithReadPermission()
                     }
                     override fun isCurrentUserHasWritePerms(): Boolean {
-                        return true
+                        val perms = recWritePerms[recordRef] ?: emptySet()
+                        return perms.isEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
+                            perms.contains(it)
+                        }
                     }
                 }
             }
