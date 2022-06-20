@@ -84,6 +84,9 @@ abstract class DbRecordsTestBase {
     private val recReadPerms = mutableMapOf<RecordRef, Set<String>>()
     private val recWritePerms = mutableMapOf<RecordRef, Set<String>>()
 
+    private val recAttReadPerms = mutableMapOf<Pair<RecordRef, String>, Set<String>>()
+    private val recAttWritePerms = mutableMapOf<Pair<RecordRef, String>, Set<String>>()
+
     lateinit var recordsDao: DbRecordsDao
     lateinit var records: RecordsService
     lateinit var recordsServiceFactory: RecordsServiceFactory
@@ -108,8 +111,18 @@ abstract class DbRecordsTestBase {
         typesInfo.clear()
         recReadPerms.clear()
         recWritePerms.clear()
+        recAttReadPerms.clear()
+        recAttWritePerms.clear()
 
         initServices()
+    }
+
+    fun setAuthoritiesWithAttReadPerms(rec: RecordRef, att: String, vararg authorities: String) {
+        recAttReadPerms[rec to att] = authorities.toSet()
+    }
+
+    fun setAuthoritiesWithAttWritePerms(rec: RecordRef, att: String, vararg authorities: String) {
+        recAttWritePerms[rec to att] = authorities.toSet()
     }
 
     fun setAuthoritiesWithWritePerms(rec: RecordRef, vararg authorities: String) {
@@ -199,6 +212,14 @@ abstract class DbRecordsTestBase {
                         return perms.isEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
                             perms.contains(it)
                         }
+                    }
+                    override fun isCurrentUserHasAttWritePerms(name: String): Boolean {
+                        val writePerms = recAttWritePerms[recordRef to name]
+                        return writePerms == null || writePerms.isEmpty() || writePerms.contains(name)
+                    }
+                    override fun isCurrentUserHasAttReadPerms(name: String): Boolean {
+                        val readPerms = recAttReadPerms[recordRef to name]
+                        return readPerms == null || readPerms.isEmpty() || readPerms.contains(name)
                     }
                 }
             }

@@ -16,11 +16,13 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
     fun createInTxnPermsTest() {
 
         initServices(authEnabled = true)
-        registerAtts(listOf(
-            AttributeDef.create {
-                withId("test")
-            }
-        ))
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("test")
+                }
+            )
+        )
 
         val ref = RecordRef.create(recordsDao.getId(), "test")
         setAuthoritiesWithWritePerms(ref, "user0")
@@ -46,11 +48,13 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
     @Test
     fun test() {
         initServices(authEnabled = true)
-        registerAtts(listOf(
-            AttributeDef.create {
-                withId("test")
-            }
-        ))
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("test")
+                }
+            )
+        )
 
         val ref = RecordRef.create(recordsDao.getId(), "test-rec")
         setAuthoritiesWithWritePerms(ref, listOf("user0"))

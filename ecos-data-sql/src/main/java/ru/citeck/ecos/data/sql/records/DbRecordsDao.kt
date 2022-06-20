@@ -662,7 +662,13 @@ class DbRecordsDao(
             val recordEntityBeforeMutation = recToMutate.copy()
 
             val fullColumns = ArrayList(typesColumns)
-            setMutationAtts(recToMutate, recAttributes, typesColumns)
+            val perms = if (recToMutate.id == DbEntity.NEW_REC_ID) {
+                null
+            } else {
+                getRecordPerms(recToMutate.extId)
+            }
+            setMutationAtts(recToMutate, recAttributes, typesColumns, perms)
+
             val optionalAtts = OPTIONAL_COLUMNS.filter { !typesColumnNames.contains(it.name) }
             if (optionalAtts.isNotEmpty()) {
                 fullColumns.addAll(setMutationAtts(recToMutate, recAttributes, optionalAtts))
@@ -1080,25 +1086,35 @@ class DbRecordsDao(
     private fun setMutationAtts(
         recToMutate: DbEntity,
         atts: ObjectData,
-        columns: List<DbColumnDef>
+        columns: List<DbColumnDef>,
+        perms: DbRecordPerms? = null
     ): List<DbColumnDef> {
 
         if (atts.size() == 0) {
             return emptyList()
         }
+        val currentUser = AuthContext.getCurrentUser()
 
         val notEmptyColumns = ArrayList<DbColumnDef>()
         for (dbColumnDef in columns) {
             if (!atts.has(dbColumnDef.name)) {
                 continue
             }
-            notEmptyColumns.add(dbColumnDef)
-            val value = atts.get(dbColumnDef.name)
-            recToMutate.attributes[dbColumnDef.name] = convert(
-                value,
-                dbColumnDef.multiple,
-                dbColumnDef.type
-            )
+            if (perms?.isCurrentUserHasAttWritePerms(dbColumnDef.name) == false) {
+                log.warn {
+                    "User $currentUser can't change attribute ${dbColumnDef.name} " +
+                        "for record ${getId()}@${recToMutate.extId}"
+                }
+            } else {
+                notEmptyColumns.add(dbColumnDef)
+                val value = atts.get(dbColumnDef.name)
+
+                recToMutate.attributes[dbColumnDef.name] = convert(
+                    value,
+                    dbColumnDef.multiple,
+                    dbColumnDef.type
+                )
+            }
         }
         return notEmptyColumns
     }
@@ -1327,7 +1343,7 @@ class DbRecordsDao(
             }
             return super.getEdge(name)
         }
-        override fun getDisplayName(): Any? {
+        override fun getDisplayName(): Any {
             if (RecordRef.isEmpty(config.typeRef)) {
                 return ""
             }
@@ -1343,10 +1359,13 @@ class DbRecordsDao(
         private val additionalAtts: Map<String, Any?>
         private val assocMapping: Map<Long, RecordRef>
 
+        private val permsValue by lazy { PermissionsValue(entity.extId) }
+        private val attTypes: Map<String, AttributeType>
+
         init {
             val recData = LinkedHashMap(entity.attributes)
 
-            val attTypes = HashMap<String, AttributeType>()
+            attTypes = HashMap()
             ecosTypeService.getTypeInfo(entity.type)?.model?.attributes?.forEach {
                 attTypes[it.id] = it.type
             }
@@ -1496,16 +1515,22 @@ class DbRecordsDao(
                     val statusDef = typeInfo.model.statuses.firstOrNull { it.id == statusId } ?: return statusId
                     return StatusValue(statusDef)
                 }
-                "permissions" -> PermissionsValue(entity.extId)
-                else -> additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
+                "permissions" -> permsValue
+                else -> {
+                    if (!permsValue.recordPerms.isCurrentUserHasAttReadPerms(name)) {
+                        null
+                    } else {
+                        additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
+                    }
+                }
             }
         }
 
-        override fun getEdge(name: String): AttEdge? {
+        override fun getEdge(name: String): AttEdge {
             if (name == StatusConstants.ATT_STATUS) {
                 return StatusEdge(type)
             }
-            return super.getEdge(name)
+            return DbRecordAttEdge(this, name, permsValue.recordPerms)
         }
 
         private fun getAsPersonRef(name: String): RecordRef {
@@ -1533,6 +1558,29 @@ class DbRecordsDao(
             }
             val typeInfo = ecosTypeService.getTypeInfo(type.id) ?: return emptyList()
             return typeInfo.model.statuses.map { StatusValue(it) }
+        }
+    }
+
+    private class DbRecordAttEdge(
+        private val rec: Record,
+        private val name: String,
+        private val perms: DbRecordPerms
+    ) : AttEdge {
+
+        override fun getName(): String {
+            return name
+        }
+
+        override fun getValue(): Any? {
+            return rec.getAtt(name)
+        }
+
+        override fun isProtected(): Boolean {
+            return !perms.isCurrentUserHasAttWritePerms(name)
+        }
+
+        override fun isUnreadable(): Boolean {
+            return !perms.isCurrentUserHasAttReadPerms(name)
         }
     }
 
