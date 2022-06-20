@@ -662,7 +662,7 @@ class DbRecordsDao(
             val recordEntityBeforeMutation = recToMutate.copy()
 
             val fullColumns = ArrayList(typesColumns)
-            val perms = if (recToMutate.id == DbEntity.NEW_REC_ID) {
+            val perms = if (recToMutate.id == DbEntity.NEW_REC_ID || AuthContext.isRunAsSystem()) {
                 null
             } else {
                 getRecordPerms(recToMutate.extId)
@@ -1078,7 +1078,9 @@ class DbRecordsDao(
                 it.withReadOnly(true)
             },
             {
-                permsComponent.getRecordPerms(RecordRef.create(getId(), recordId))
+                AuthContext.runAsSystem {
+                    permsComponent.getRecordPerms(RecordRef.create(getId(), recordId))
+                }
             }
         )
     }
@@ -1517,7 +1519,8 @@ class DbRecordsDao(
                 }
                 "permissions" -> permsValue
                 else -> {
-                    if (!permsValue.recordPerms.isCurrentUserHasAttReadPerms(name)) {
+                    val perms = permsValue.recordPerms
+                    if (perms != null && !perms.isCurrentUserHasAttReadPerms(name)) {
                         null
                     } else {
                         additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
@@ -1564,7 +1567,7 @@ class DbRecordsDao(
     private class DbRecordAttEdge(
         private val rec: Record,
         private val name: String,
-        private val perms: DbRecordPerms
+        private val perms: DbRecordPerms?
     ) : AttEdge {
 
         override fun getName(): String {
@@ -1576,11 +1579,11 @@ class DbRecordsDao(
         }
 
         override fun isProtected(): Boolean {
-            return !perms.isCurrentUserHasAttWritePerms(name)
+            return perms != null && !perms.isCurrentUserHasAttWritePerms(name)
         }
 
         override fun isUnreadable(): Boolean {
-            return !perms.isCurrentUserHasAttReadPerms(name)
+            return perms != null && !perms.isCurrentUserHasAttReadPerms(name)
         }
     }
 
@@ -1647,13 +1650,20 @@ class DbRecordsDao(
     }
 
     private inner class PermissionsValue(private val recordId: String) : AttValue {
-        val recordPerms: DbRecordPerms by lazy { getRecordPerms(recordId) }
+        val recordPerms: DbRecordPerms? by lazy {
+            if (!AuthContext.isRunAsSystem()) {
+                getRecordPerms(recordId)
+            } else {
+                null
+            }
+        }
         override fun has(name: String): Boolean {
+            val perms = recordPerms ?: return true
             if (name.equals("Write", true)) {
-                return recordPerms.isCurrentUserHasWritePerms()
+                return perms.isCurrentUserHasWritePerms()
             }
             if (name.equals("Read", true)) {
-                val authoritiesWithReadPermissions = recordPerms.getAuthoritiesWithReadPermission().toSet()
+                val authoritiesWithReadPermissions = perms.getAuthoritiesWithReadPermission().toSet()
                 if (AuthContext.getCurrentRunAsUserWithAuthorities().any { authoritiesWithReadPermissions.contains(it) }) {
                     return true
                 }
