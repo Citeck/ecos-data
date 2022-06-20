@@ -27,6 +27,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbCommitEntityDto
 import ru.citeck.ecos.data.sql.service.DbDataService
+import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
@@ -529,9 +530,12 @@ class DbRecordsDao(
             }
 
             if (recToMutate.id != DbEntity.NEW_REC_ID && !AuthContext.isRunAsSystem()) {
-                val recordPerms = getRecordPerms(recToMutate.extId)
-                if (!recordPerms.isCurrentUserHasWritePerms()) {
-                    error("Permissions Denied. You can't change record '${record.id}'")
+                val txnId = RequestContext.getCurrentNotNull().ctxData.txnId
+                if (!txnExists || recToMutate.attributes[DbDataServiceImpl.COLUMN_EXT_TXN_ID] != txnId) {
+                    val recordPerms = getRecordPerms(recToMutate.extId)
+                    if (!recordPerms.isCurrentUserHasWritePerms()) {
+                        error("Permissions Denied. You can't change record '${record.id}'")
+                    }
                 }
             }
 

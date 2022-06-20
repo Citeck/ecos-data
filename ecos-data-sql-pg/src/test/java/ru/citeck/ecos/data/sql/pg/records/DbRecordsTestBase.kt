@@ -113,7 +113,7 @@ abstract class DbRecordsTestBase {
     }
 
     fun setAuthoritiesWithWritePerms(rec: RecordRef, vararg authorities: String) {
-        setAuthoritiesWithWritePerms(rec, authorities.toString())
+        setAuthoritiesWithWritePerms(rec, authorities.toList())
     }
 
     fun setAuthoritiesWithWritePerms(rec: RecordRef, authorities: Collection<String>) {
