@@ -273,7 +273,6 @@
     <modules>
         <module>ecos-data-sql</module>
         <module>ecos-data-sql-pg</module>
-        <module>ecos-data-sql-pg-spring</module>
     </modules>
 
     <repositories>
