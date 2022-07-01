@@ -11,6 +11,7 @@ import ru.citeck.ecos.data.sql.records.dao.mutate.operation.RecMutAttOperationsH
 import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.records3.RecordsService
+import ru.citeck.ecos.webapp.api.authority.EcosAuthorityService
 
 class DbRecordsDaoCtx(
     val appName: String,
@@ -20,6 +21,7 @@ class DbRecordsDaoCtx(
     val recordRefService: DbRecordRefService,
     val ecosTypeService: DbEcosTypeService,
     val recordsService: RecordsService,
+    val authorityService: EcosAuthorityService?,
     val listeners: List<DbRecordsListener>
 ) {
     val recContentHandler: DbRecContentHandler by lazy { DbRecContentHandler(this) }

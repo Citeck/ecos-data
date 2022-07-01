@@ -4,6 +4,7 @@ import ru.citeck.ecos.data.sql.content.EcosContentService
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
+ёimport ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -18,7 +19,8 @@ class DbDomainFactory(
     val permsComponent: DbPermsComponent,
     val computedAttsComponent: DbComputedAttsComponent,
     val recordRefServiceSupplier: (DbDataSource, String) -> DbRecordRefService,
-    val ecosContentServiceSupplier: (DbDataSource, String) -> EcosContentService
+    val ecosContentServiceSupplier: (DbDataSource, String) -> EcosContentService,
+    val defaultListeners: List<DbRecordsListener>
 ) {
 
     fun create(domainConfig: DbDomainConfig): Builder {
@@ -31,6 +33,8 @@ class DbDomainFactory(
         var permsComponent: DbPermsComponent? = null
         var computedAttsComponent: DbComputedAttsComponent? = null
         var ecosContentService: EcosContentService? = null
+        var listeners: List<DbRecordsListener>? = null
+        var excludeDefaultListeners: Boolean = false
 
         fun withDataSource(dataSource: DbDataSource): Builder {
             this.dataSource = dataSource
@@ -52,6 +56,16 @@ class DbDomainFactory(
             return this
         }
 
+        fun withListeners(listeners: List<DbRecordsListener>?): Builder {
+            this.listeners = listeners
+            return this
+        }
+
+        fun withExcludeDefaultListeners(excludeDefaultListeners: Boolean?): Builder {
+            this.excludeDefaultListeners = excludeDefaultListeners ?: false
+            return this
+        }
+
         fun build(): DbRecordsDao {
 
             val dataSource = dataSource ?: this@DbDomainFactory.dataSource
@@ -66,7 +80,7 @@ class DbDomainFactory(
 
             val schema = domainConfig.dataService.tableRef.schema
 
-            return DbRecordsDao(
+            val recordsDao = DbRecordsDao(
                 domainConfig.recordsDao,
                 ecosTypeRepo,
                 dataService,
@@ -75,6 +89,16 @@ class DbDomainFactory(
                 computedAttsComponent ?: this@DbDomainFactory.computedAttsComponent,
                 this.ecosContentService ?: ecosContentServiceSupplier.invoke(dataSource, schema)
             )
+
+            if (!excludeDefaultListeners) {
+                this@DbDomainFactory.defaultListeners.forEach {
+                    recordsDao.addListener(it)
+                }
+            }
+            listeners?.forEach {
+                recordsDao.addListener(it)
+            }
+            return recordsDao
         }
     }
 }

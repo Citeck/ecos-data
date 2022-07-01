@@ -3,6 +3,14 @@ package ru.citeck.ecos.data.sql.records.listener
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 
+abstract class DbRecordsListenerAdapter : DbRecordsListener {
+    override fun onChanged(event: DbRecordChangedEvent) {}
+    override fun onCreated(event: DbRecordCreatedEvent) {}
+    override fun onDeleted(event: DbRecordDeletedEvent) {}
+    override fun onDraftStatusChanged(event: DbRecordDraftStatusChangedEvent) {}
+    override fun onStatusChanged(event: DbRecordStatusChangedEvent) {}
+}
+
 interface DbRecordsListener {
 
     fun onChanged(event: DbRecordChangedEvent)

@@ -783,6 +783,7 @@ class DbRecordsDao(
             dbRecordRefService,
             ecosTypeService,
             serviceFactory.recordsServiceV1,
+            serviceFactory.getEcosWebAppContext()?.getAuthorityService(),
             listeners
         )
     }

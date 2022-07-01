@@ -243,11 +243,11 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         return super.getEdge(name)
     }
 
-    private fun getAsPersonRef(name: String): RecordRef {
+    private fun getAsPersonRef(name: String): Any {
         if (name.isBlank()) {
             return RecordRef.EMPTY
         }
-        return RecordRef.create("alfresco", "people", name)
+        return ctx.authorityService?.getAuthorityRef(name) ?: return name
     }
 
     override fun getType(): RecordRef {
