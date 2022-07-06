@@ -31,7 +31,10 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.utils.use
 import ru.citeck.ecos.model.lib.ModelServiceFactory
+import ru.citeck.ecos.model.lib.api.EcosModelAppApi
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
+import ru.citeck.ecos.model.lib.num.repo.NumTemplatesRepo
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
@@ -43,6 +46,7 @@ import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.request.RequestContext
+import java.util.concurrent.atomic.AtomicLong
 import javax.sql.DataSource
 
 abstract class DbRecordsTestBase {
@@ -79,6 +83,7 @@ abstract class DbRecordsTestBase {
     }
 
     private val typesInfo = mutableMapOf<String, TypeInfo>()
+    private val numTemplates = mutableMapOf<String, NumTemplateDef>()
 
     private val recReadPerms = mutableMapOf<RecordRef, Set<String>>()
 
@@ -104,6 +109,7 @@ abstract class DbRecordsTestBase {
 
         dropAllTables()
         typesInfo.clear()
+        numTemplates.clear()
         recReadPerms.clear()
 
         initServices()
@@ -145,12 +151,27 @@ abstract class DbRecordsTestBase {
         )
 
         recordsServiceFactory = RecordsServiceFactory()
+        val numCounters = mutableMapOf<RecordRef, AtomicLong>()
         val modelServiceFactory = object : ModelServiceFactory() {
             override fun createTypesRepo(): TypesRepo {
                 return object : TypesRepo {
                     override fun getChildren(typeRef: RecordRef) = emptyList<RecordRef>()
                     override fun getTypeInfo(typeRef: RecordRef): TypeInfo? {
                         return typesInfo[typeRef.id]
+                    }
+                }
+            }
+            override fun createNumTemplatesRepo(): NumTemplatesRepo {
+                return object : NumTemplatesRepo {
+                    override fun getNumTemplate(templateRef: RecordRef): NumTemplateDef? {
+                        return numTemplates[templateRef.id]
+                    }
+                }
+            }
+            override fun createEcosModelAppApi(): EcosModelAppApi {
+                return object : EcosModelAppApi {
+                    override fun getNextNumberForModel(model: ObjectData, templateRef: RecordRef): Long {
+                        return numCounters.computeIfAbsent(templateRef) { AtomicLong() }.incrementAndGet()
                     }
                 }
             }
@@ -366,6 +387,13 @@ abstract class DbRecordsTestBase {
                 stmt.executeUpdate(sql)
             }
         }
+    }
+
+    fun registerNumTemplate(numTemplate: NumTemplateDef) {
+        if (numTemplate.id.isBlank()) {
+            error("num-template id is blank")
+        }
+        this.numTemplates[numTemplate.id] = numTemplate
     }
 
     fun registerType(type: TypeInfo) {

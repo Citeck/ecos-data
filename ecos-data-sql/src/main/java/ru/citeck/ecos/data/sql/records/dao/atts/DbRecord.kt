@@ -37,11 +37,15 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             RecordConstants.ATT_CONTENT to "content"
         )
 
+        val DOC_NUM_COLUMN = DbColumnDef.create {
+            withName("_docNum")
+            withType(DbColumnType.INT)
+        }
+        val COMPUTABLE_OPTIONAL_COLUMNS = listOf(
+            DOC_NUM_COLUMN
+        )
         val OPTIONAL_COLUMNS = listOf(
-            DbColumnDef.create {
-                withName("_docNum")
-                withType(DbColumnType.INT)
-            },
+            DOC_NUM_COLUMN,
             DbColumnDef.create {
                 withName("_proc")
                 withMultiple(true)

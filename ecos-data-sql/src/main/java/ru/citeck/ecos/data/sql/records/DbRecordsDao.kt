@@ -670,7 +670,13 @@ class DbRecordsDao(
         val typeRef = TypeUtils.getTypeRef(recTypeId)
         val atts = component.computeAttsToStore(DbRecord(daoCtx, entity), isNewRecord, typeRef)
 
-        var changed = setMutationAtts(entity, atts, columns).isNotEmpty()
+        val fullColumns = ArrayList(columns)
+        DbRecord.COMPUTABLE_OPTIONAL_COLUMNS.forEach {
+            if (atts.has(it.name)) {
+                fullColumns.add(it)
+            }
+        }
+        var changed = setMutationAtts(entity, atts, fullColumns).isNotEmpty()
 
         val dispName = component.computeDisplayName(DbRecord(daoCtx, entity), typeRef)
         if (entity.name != dispName) {
