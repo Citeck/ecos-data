@@ -12,13 +12,17 @@ class DbRecordsDisplayNameTest : DbRecordsTestBase() {
     @Test
     fun test() {
 
-        registerType(TypeInfo.create {
-            withId(REC_TEST_TYPE_ID)
-            withNumTemplateRef(RecordRef.create("num-template", "test-template"))
-            withDispNameTemplate(MLText(
-                "App №\${_docNum}"
-            ))
-        })
+        registerType(
+            TypeInfo.create {
+                withId(REC_TEST_TYPE_ID)
+                withNumTemplateRef(RecordRef.create("num-template", "test-template"))
+                withDispNameTemplate(
+                    MLText(
+                        "App №\${_docNum}"
+                    )
+                )
+            }
+        )
 
         registerNumTemplate(NumTemplateDef("test-template", "", "123", emptyList()))
 

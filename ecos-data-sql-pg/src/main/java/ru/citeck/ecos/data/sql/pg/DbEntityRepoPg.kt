@@ -955,12 +955,13 @@ class DbEntityRepoPg<T : Any>(
             }
             is EmptyPredicate -> {
 
-                val columnDef = columnsByName[predicate.getAttribute()]
-                if (columnDef == null || columnDef.multiple) {
-                    return false
-                }
+                val columnDef = columnsByName[predicate.getAttribute()] ?: return false
                 val attribute: String = predicate.getAttribute()
-                if (columnDef.type == DbColumnType.TEXT) {
+                if (columnDef.multiple) {
+                    query.append("array_length(")
+                    appendRecordColumnName(query, attribute)
+                    query.append(",1) IS NULL")
+                } else if (columnDef.type == DbColumnType.TEXT) {
                     query.append("(")
                     appendRecordColumnName(query, attribute)
                     query.append(" IS NULL OR ")
