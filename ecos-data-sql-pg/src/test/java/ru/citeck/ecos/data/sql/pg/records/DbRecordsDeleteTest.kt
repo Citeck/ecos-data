@@ -88,7 +88,7 @@ class DbRecordsDeleteTest : DbRecordsTestBase() {
         }
 
         recordsList.forEach {
-            setPerms(it, "admin")
+            setAuthoritiesWithReadPerms(it, "admin")
         }
 
         val recordsFromDao0 = records.query(baseQuery)

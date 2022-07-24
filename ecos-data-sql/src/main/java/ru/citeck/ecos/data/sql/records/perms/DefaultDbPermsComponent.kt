@@ -22,5 +22,13 @@ class DefaultDbPermsComponent(private val records: RecordsService) : DbPermsComp
         override fun isCurrentUserHasWritePerms(): Boolean {
             return true
         }
+
+        override fun isCurrentUserHasAttWritePerms(name: String): Boolean {
+            return true
+        }
+
+        override fun isCurrentUserHasAttReadPerms(name: String): Boolean {
+            return true
+        }
     }
 }

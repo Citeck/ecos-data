@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.EcosContentServiceImpl
 import ru.citeck.ecos.data.sql.content.data.EcosContentDataServiceImpl
 import ru.citeck.ecos.data.sql.content.data.storage.local.DbContentDataEntity
@@ -86,6 +87,10 @@ abstract class DbRecordsTestBase {
     private val numTemplates = mutableMapOf<String, NumTemplateDef>()
 
     private val recReadPerms = mutableMapOf<RecordRef, Set<String>>()
+    private val recWritePerms = mutableMapOf<RecordRef, Set<String>>()
+
+    private val recAttReadPerms = mutableMapOf<Pair<RecordRef, String>, Set<String>>()
+    private val recAttWritePerms = mutableMapOf<Pair<RecordRef, String>, Set<String>>()
 
     lateinit var recordsDao: DbRecordsDao
     lateinit var records: RecordsService
@@ -111,17 +116,47 @@ abstract class DbRecordsTestBase {
         typesInfo.clear()
         numTemplates.clear()
         recReadPerms.clear()
+        recWritePerms.clear()
+        recAttReadPerms.clear()
+        recAttWritePerms.clear()
 
         initServices()
     }
 
-    fun setPerms(rec: RecordRef, perms: Collection<String>) {
-        recReadPerms[rec] = perms.toSet()
+    fun setAuthoritiesWithAttReadPerms(rec: RecordRef, att: String, vararg authorities: String) {
+        recAttReadPerms[rec to att] = authorities.toSet()
+    }
+
+    fun setAuthoritiesWithAttWritePerms(rec: RecordRef, att: String, vararg authorities: String) {
+        recAttWritePerms[rec to att] = authorities.toSet()
+    }
+
+    fun setAuthoritiesWithWritePerms(rec: RecordRef, vararg authorities: String) {
+        setAuthoritiesWithWritePerms(rec, authorities.toList())
+    }
+
+    fun setAuthoritiesWithWritePerms(rec: RecordRef, authorities: Collection<String>) {
+        recWritePerms[rec] = authorities.toSet()
+        addAuthoritiesWithReadPerms(rec, authorities)
+    }
+
+    fun setAuthoritiesWithReadPerms(rec: RecordRef, authorities: Collection<String>) {
+        recReadPerms[rec] = authorities.toSet()
         recordsDao.updatePermissions(listOf(rec.id))
     }
 
-    fun setPerms(rec: RecordRef, vararg perms: String) {
-        setPerms(rec, perms.toSet())
+    fun setAuthoritiesWithReadPerms(rec: RecordRef, vararg authorities: String) {
+        setAuthoritiesWithReadPerms(rec, authorities.toSet())
+    }
+
+    fun addAuthoritiesWithReadPerms(rec: RecordRef, authorities: Collection<String>) {
+        val readPerms = recReadPerms[rec]?.toMutableSet() ?: mutableSetOf()
+        readPerms.addAll(authorities)
+        setAuthoritiesWithReadPerms(rec, readPerms)
+    }
+
+    fun addAuthoritiesWithReadPerms(rec: RecordRef, vararg authorities: String) {
+        addAuthoritiesWithReadPerms(rec, authorities.toSet())
     }
 
     fun initServices(
@@ -194,7 +229,18 @@ abstract class DbRecordsTestBase {
                             .getAuthoritiesWithReadPermission()
                     }
                     override fun isCurrentUserHasWritePerms(): Boolean {
-                        return true
+                        val perms = recWritePerms[recordRef] ?: emptySet()
+                        return perms.isEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
+                            perms.contains(it)
+                        }
+                    }
+                    override fun isCurrentUserHasAttWritePerms(name: String): Boolean {
+                        val writePerms = recAttWritePerms[recordRef to name]
+                        return writePerms == null || writePerms.isEmpty() || writePerms.contains(name)
+                    }
+                    override fun isCurrentUserHasAttReadPerms(name: String): Boolean {
+                        val readPerms = recAttReadPerms[recordRef to name]
+                        return readPerms == null || readPerms.isEmpty() || readPerms.contains(name)
                     }
                 }
             }

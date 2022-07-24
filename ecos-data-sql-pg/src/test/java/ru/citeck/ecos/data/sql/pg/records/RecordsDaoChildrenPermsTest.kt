@@ -38,12 +38,12 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
         }
 
         val childRecord = AuthContext.runAs("user") { createRecord() }
-        setPerms(childRecord, "user", "parent-user")
+        setAuthoritiesWithReadPerms(childRecord, "user", "parent-user")
 
         val parentRecord = AuthContext.runAsFull("parent-user") {
             createRecord("childAssocs" to childRecord)
         }
-        setPerms(parentRecord, "parent-user", "other-user")
+        setAuthoritiesWithReadPerms(parentRecord, "parent-user", "other-user")
 
         val checkReadPermsForAll = {
             checkReadPerms(childRecord, false)

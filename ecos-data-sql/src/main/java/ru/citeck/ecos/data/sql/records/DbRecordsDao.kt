@@ -26,6 +26,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbCommitEntityDto
 import ru.citeck.ecos.data.sql.service.DbDataService
+import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
@@ -527,10 +528,13 @@ class DbRecordsDao(
             entity
         }
 
-        if (recToMutate.id != DbEntity.NEW_REC_ID) {
-            val recordPerms = getRecordPerms(recToMutate.extId)
-            if (!AuthContext.isRunAsSystem() && !recordPerms.isCurrentUserHasWritePerms()) {
-                error("Permissions Denied. You can't change record '${record.id}'")
+        if (recToMutate.id != DbEntity.NEW_REC_ID && !AuthContext.isRunAsSystem()) {
+            val txnId = RequestContext.getCurrentNotNull().ctxData.txnId
+            if (!txnExists || recToMutate.attributes[DbDataServiceImpl.COLUMN_EXT_TXN_ID] != txnId) {
+                val recordPerms = getRecordPerms(recToMutate.extId)
+                if (!recordPerms.isCurrentUserHasWritePerms()) {
+                    error("Permissions Denied. You can't change record '${record.id}'")
+                }
             }
         }
 
@@ -592,7 +596,12 @@ class DbRecordsDao(
         val recordEntityBeforeMutation = recToMutate.copy()
 
         val fullColumns = ArrayList(typesColumns)
-        setMutationAtts(recToMutate, recAttributes, typesColumns)
+        val perms = if (recToMutate.id == DbEntity.NEW_REC_ID || AuthContext.isRunAsSystem()) {
+            null
+        } else {
+            getRecordPerms(recToMutate.extId)
+        }
+        setMutationAtts(recToMutate, recAttributes, typesColumns, perms)
         val optionalAtts = DbRecord.OPTIONAL_COLUMNS.filter { !typesColumnNames.contains(it.name) }
         if (optionalAtts.isNotEmpty()) {
             fullColumns.addAll(setMutationAtts(recToMutate, recAttributes, optionalAtts))
@@ -708,7 +717,9 @@ class DbRecordsDao(
                 it.withReadOnly(true)
             },
             {
-                permsComponent.getRecordPerms(RecordRef.create(getId(), recordId))
+                AuthContext.runAsSystem {
+                    permsComponent.getRecordPerms(RecordRef.create(getId(), recordId))
+                }
             }
         )
     }
@@ -716,25 +727,34 @@ class DbRecordsDao(
     private fun setMutationAtts(
         recToMutate: DbEntity,
         atts: ObjectData,
-        columns: List<DbColumnDef>
+        columns: List<DbColumnDef>,
+        perms: DbRecordPerms? = null
     ): List<DbColumnDef> {
 
         if (atts.size() == 0) {
             return emptyList()
         }
+        val currentUser = AuthContext.getCurrentUser()
 
         val notEmptyColumns = ArrayList<DbColumnDef>()
         for (dbColumnDef in columns) {
             if (!atts.has(dbColumnDef.name)) {
                 continue
             }
-            notEmptyColumns.add(dbColumnDef)
-            val value = atts.get(dbColumnDef.name)
-            recToMutate.attributes[dbColumnDef.name] = daoCtx.mutConverter.convert(
-                value,
-                dbColumnDef.multiple,
-                dbColumnDef.type
-            )
+            if (perms?.isCurrentUserHasAttWritePerms(dbColumnDef.name) == false) {
+                log.warn {
+                    "User $currentUser can't change attribute ${dbColumnDef.name} " +
+                        "for record ${getId()}@${recToMutate.extId}"
+                }
+            } else {
+                notEmptyColumns.add(dbColumnDef)
+                val value = atts.get(dbColumnDef.name)
+                recToMutate.attributes[dbColumnDef.name] = daoCtx.mutConverter.convert(
+                    value,
+                    dbColumnDef.multiple,
+                    dbColumnDef.type
+                )
+            }
         }
         return notEmptyColumns
     }
@@ -792,5 +812,30 @@ class DbRecordsDao(
             serviceFactory.getEcosWebAppContext()?.getAuthorityService(),
             listeners
         )
+    }
+
+    private inner class PermissionsValue(private val recordId: String) : AttValue {
+        val recordPerms: DbRecordPerms? by lazy {
+            if (!AuthContext.isRunAsSystem()) {
+                getRecordPerms(recordId)
+            } else {
+                null
+            }
+        }
+        override fun has(name: String): Boolean {
+            val perms = recordPerms ?: return true
+            if (name.equals("Write", true)) {
+                return perms.isCurrentUserHasWritePerms()
+            }
+            if (name.equals("Read", true)) {
+                val authoritiesWithReadPermissions = perms.getAuthoritiesWithReadPermission().toSet()
+                if (AuthContext.getCurrentRunAsUserWithAuthorities().any { authoritiesWithReadPermissions.contains(it) }) {
+                    return true
+                }
+                return false
+            }
+
+            return super.has(name)
+        }
     }
 }

@@ -27,7 +27,7 @@
         <slf4j.version>1.7.28</slf4j.version>
         <assertj-core.version>3.23.1</assertj-core.version>
 
-        <kotlin.version>1.7.0</kotlin.version>
+        <kotlin.version>1.7.10</kotlin.version>
         <kotlin.logging.version>1.12.5</kotlin.logging.version>
 
         <ecos.commons.version>2.7.0</ecos.commons.version>
