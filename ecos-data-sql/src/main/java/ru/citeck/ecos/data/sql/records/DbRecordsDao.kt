@@ -709,7 +709,7 @@ class DbRecordsDao(
         )
     }
 
-    private fun getRecordPerms(recordId: String): DbRecordPerms {
+    fun getRecordPerms(recordId: String): DbRecordPerms {
         // Optimization to enable caching
         return RequestContext.doWithCtx(
             serviceFactory,
@@ -810,32 +810,8 @@ class DbRecordsDao(
             ecosTypeService,
             serviceFactory.recordsServiceV1,
             serviceFactory.getEcosWebAppContext()?.getAuthorityService(),
-            listeners
+            listeners,
+            this
         )
-    }
-
-    private inner class PermissionsValue(private val recordId: String) : AttValue {
-        val recordPerms: DbRecordPerms? by lazy {
-            if (!AuthContext.isRunAsSystem()) {
-                getRecordPerms(recordId)
-            } else {
-                null
-            }
-        }
-        override fun has(name: String): Boolean {
-            val perms = recordPerms ?: return true
-            if (name.equals("Write", true)) {
-                return perms.isCurrentUserHasWritePerms()
-            }
-            if (name.equals("Read", true)) {
-                val authoritiesWithReadPermissions = perms.getAuthoritiesWithReadPermission().toSet()
-                if (AuthContext.getCurrentRunAsUserWithAuthorities().any { authoritiesWithReadPermissions.contains(it) }) {
-                    return true
-                }
-                return false
-            }
-
-            return super.has(name)
-        }
     }
 }

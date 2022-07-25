@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao
 
 import ru.citeck.ecos.data.sql.content.EcosContentService
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
+import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.records.dao.content.DbRecContentHandler
 import ru.citeck.ecos.data.sql.records.dao.events.DbRecEventsHandler
@@ -22,7 +23,8 @@ class DbRecordsDaoCtx(
     val ecosTypeService: DbEcosTypeService,
     val recordsService: RecordsService,
     val authorityService: EcosAuthorityService?,
-    val listeners: List<DbRecordsListener>
+    val listeners: List<DbRecordsListener>,
+    val recordsDao: DbRecordsDao
 ) {
     val recContentHandler: DbRecContentHandler by lazy { DbRecContentHandler(this) }
     val mutConverter = RecMutConverter()

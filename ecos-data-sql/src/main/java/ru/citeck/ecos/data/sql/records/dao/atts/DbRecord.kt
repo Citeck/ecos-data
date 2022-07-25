@@ -23,6 +23,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
     companion object {
         const val ATT_NAME = "_name"
+        const val ATT_PERMISSIONS = "permissions"
 
         val ATTS_MAPPING = mapOf(
             "id" to DbEntity.EXT_ID,
@@ -67,6 +68,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         }
     }
 
+    private val permsValue by lazy { DbRecPermsValue(ctx, entity.extId) }
     private val additionalAtts: Map<String, Any?>
     private val assocMapping: Map<Long, RecordRef>
     private val typeInfo: TypeInfo?
@@ -236,7 +238,15 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 val statusDef = typeInfo.model.statuses.firstOrNull { it.id == statusId } ?: return statusId
                 return DbStatusValue(statusDef)
             }
-            else -> additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
+            ATT_PERMISSIONS -> permsValue
+            else -> {
+                val perms = permsValue.getRecordPerms()
+                if (perms != null && !perms.isCurrentUserHasAttReadPerms(name)) {
+                    null
+                } else {
+                    additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
+                }
+            }
         }
     }
 
@@ -244,7 +254,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         if (name == StatusConstants.ATT_STATUS) {
             return DbStatusEdge(ctx, type)
         }
-        return super.getEdge(name)
+        return DbRecordAttEdge(this, name, permsValue.getRecordPerms())
     }
 
     private fun getAsPersonRef(name: String): Any {
