@@ -74,7 +74,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 return DataValue.createStr(existingRef.toString())
             }
 
-            val type = value.get("fileType")
+            val type = value["fileType"]
             if (type.isNull() || type.asText().isBlank()) {
                 return value
             }
@@ -83,18 +83,18 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             val typeInfo = ctx.ecosTypeService.getTypeInfo(typeId) ?: error("Type doesn't found for id '$typeId'")
 
             val childAttributes = ObjectData.create()
-            childAttributes.set("_type", TypeUtils.getTypeRef(typeId))
-            childAttributes.set("_content", listOf(value))
+            childAttributes["_type"] = TypeUtils.getTypeRef(typeId)
+            childAttributes["_content"] = listOf(value)
 
             val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
             val sourceId = sourceIdMapping.getOrDefault(ctx.sourceId, ctx.sourceId)
 
-            childAttributes.set("_parent", RecordRef.create(ctx.appName, sourceId, recordId))
+            childAttributes["_parent"] = RecordRef.create(ctx.appName, sourceId, recordId)
 
-            val name = value.get("originalName")
+            val name = value["originalName"]
             if (name.isNotNull()) {
                 // todo: should be _name
-                childAttributes.set("_disp", name)
+                childAttributes["_disp"] = name
             }
 
             val childRef = ctx.recordsService.create(typeInfo.sourceId, childAttributes)

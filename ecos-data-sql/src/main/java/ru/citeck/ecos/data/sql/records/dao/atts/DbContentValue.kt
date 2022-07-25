@@ -31,6 +31,9 @@ class DbContentValue(
             "mimeType" -> meta.mimeType
             "encoding" -> meta.encoding
             "created" -> meta.created
+            "bytes" -> ctx.contentService?.readContent(contentId) { _, input ->
+                input.readBytes()
+            }
             else -> null
         }
     }
