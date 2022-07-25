@@ -4,9 +4,11 @@ import mu.KotlinLogging
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.DataValue
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.utils.io.IOUtils
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.records3.record.dao.atts.RecordAttsDao
 import java.util.*
 
 class DbRecordsContentAttTest : DbRecordsTestBase() {
@@ -94,5 +96,61 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
                 throw e
             }
         }
+    }
+
+    @Test
+    fun alfContentTest() {
+
+        val textContent = "text-file-sample content\n"
+        val contentAttName0 = "contentAtt0"
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId(contentAttName0)
+                    withType(AttributeType.CONTENT)
+                }
+            )
+        )
+
+        records.register(object : RecordAttsDao {
+            override fun getId() = "alfresco/"
+            override fun getRecordAtts(recordId: String): Any? {
+                if (recordId != "workspace://SpacesStore/d3f2fdb0-0769-488a-bdfd-95a0be0ad100") {
+                    return null
+                }
+                val res = ObjectData.create()
+                res["_content"] = ObjectData.create()
+                    .set("bytes", textContent.toByteArray(Charsets.UTF_8))
+                    .set("mimetype", "image/jpeg")
+                return res
+            }
+        })
+
+        val contentAttValue = DataValue.create(
+            """
+            [
+              {
+                "size": 9668,
+                "name": "photo.jpeg",
+                "data": {
+                  "nodeRef": "workspace://SpacesStore/d3f2fdb0-0769-488a-bdfd-95a0be0ad100"
+                }
+              }
+            ]
+            """.trimIndent()
+        )
+
+        val ref = createRecord(contentAttName0 to contentAttValue)
+
+        val (utf8String, meta) = recordsDao.readContent(ref.id, contentAttName0) { meta, input ->
+            IOUtils.readAsString(input) to meta
+        }
+        assertThat(utf8String).isEqualTo(textContent)
+        assertThat(meta.name).isEqualTo("photo.jpeg")
+
+        val bytesFromAttBase64 = records.getAtt(ref, "$contentAttName0.bytes").asText()
+        val bytesFromAtt = Base64.getDecoder().decode(bytesFromAttBase64)
+        assertThat(String(bytesFromAtt, Charsets.UTF_8)).isEqualTo(textContent)
     }
 }

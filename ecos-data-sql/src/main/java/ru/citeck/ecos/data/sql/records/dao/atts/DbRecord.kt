@@ -16,7 +16,6 @@ import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
-import ru.citeck.ecos.records3.record.request.RequestContext
 import kotlin.collections.LinkedHashMap
 
 class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValue {

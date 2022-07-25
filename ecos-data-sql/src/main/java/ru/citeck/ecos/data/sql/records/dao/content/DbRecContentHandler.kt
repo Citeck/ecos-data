@@ -7,6 +7,8 @@ import ru.citeck.ecos.data.sql.content.data.storage.local.EcosContentLocalStorag
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -86,26 +88,59 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
             return null
         }
         val urlData = contentData["url"]
-        if (!urlData.isTextual()) {
+        val dataBytes: ByteArray?
+        val contentMeta: EcosContentMeta
+
+        if (urlData.isTextual() && urlData.isNotEmpty()) {
+
+            val recordContentUrl = createContentUrl(record.extId, attribute)
+
+            if (urlData.asText() == recordContentUrl) {
+                return record.attributes[attribute]
+            }
+
+            val data = DataUriUtil.parseData(urlData.asText())
+            dataBytes = data.data
+            if (dataBytes == null || dataBytes.isEmpty()) {
+                return null
+            }
+            contentMeta = EcosContentMeta.create {
+                withMimeType(data.mimeType)
+                withName(contentData["originalName"].asText())
+            }
+        } else if (contentData.has("data")) {
+            val data = contentData["data"]
+            if (!data.isObject()) {
+                return null
+            }
+            val name = contentData["originalName"].asText().ifBlank { contentData["name"].asText() }
+            val nodeRef = data["nodeRef"].asText()
+            if (nodeRef.isNotBlank()) {
+                val ref = EntityRef.create("alfresco", "", nodeRef)
+                val content = ctx.recordsService.getAtts(ref, AlfContentAtts::class.java)
+                dataBytes = content.bytes
+                contentMeta = EcosContentMeta.create {
+                    withMimeType(content.mimetype ?: "application/octet-stream")
+                    withName(name.ifBlank { content.name ?: "" })
+                }
+            } else {
+                return null
+            }
+        } else {
             return null
         }
-        val recordContentUrl = createContentUrl(record.extId, attribute)
-
-        if (urlData.asText() == recordContentUrl) {
-            return record.attributes[attribute]
-        }
-
-        val data = DataUriUtil.parseData(urlData.asText())
-        val dataBytes = data.data
-        if (dataBytes == null || dataBytes.isEmpty()) {
+        if (dataBytes == null) {
             return null
         }
-
-        val contentMeta = EcosContentMeta.create {
-            withMimeType(data.mimeType)
-            withName(contentData["originalName"].asText())
-        }
-
         return contentService.writeContent(EcosContentLocalStorage.TYPE, contentMeta, dataBytes).id
     }
+
+    private class AlfContentAtts(
+        @AttName("?disp")
+        val name: String?,
+        @AttName("_content.bytes")
+        val bytes: ByteArray?,
+        @AttName("_content.mimetype")
+        val mimetype: String?
+    )
 }
