@@ -111,10 +111,15 @@ class DbSchemaDaoPg(
         if (!column.index.enabled || !INDEXED_COLUMN_TYPES.contains(column.type)) {
             return
         }
-        val query = if (column.multiple) {
-            "CREATE INDEX ON ${tableRef.fullName} USING GIN (\"${column.name}\");"
+        val columnToIndex = if (!column.multiple && column.type == DbColumnType.TEXT) {
+            "LOWER(\"${column.name}\")"
         } else {
-            "CREATE INDEX ON ${tableRef.fullName} (\"${column.name}\");"
+            "\"${column.name}\""
+        }
+        val query = if (column.multiple) {
+            "CREATE INDEX ON ${tableRef.fullName} USING GIN ($columnToIndex);"
+        } else {
+            "CREATE INDEX ON ${tableRef.fullName} ($columnToIndex);"
         }
         dataSource.updateSchema(query)
     }
@@ -241,7 +246,15 @@ class DbSchemaDaoPg(
                     .append("\" ")
             }
             query.append("ON ${tableRef.fullName} (")
-            query.append(index.columns.joinToString(",") { '"' + it + '"' })
+            query.append(
+                index.columns.joinToString(",") {
+                    if (!index.caseInsensitive) {
+                        "\"$it\""
+                    } else {
+                        "LOWER(\"$it\")"
+                    }
+                }
+            )
             query.append(")")
 
             dataSource.updateSchema(query.toString())

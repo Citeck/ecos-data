@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.context.lib.auth.AuthGroup
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
@@ -55,6 +56,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
                 // New record in txn table, and we can't find it. Maybe in future this will be changed.
                 emptyQueryResAssert()
             }
+            setAuthoritiesWithReadPerms(rec, "user0")
             assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
             queryRecAssert()
         }
@@ -81,6 +83,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
                         "textAtt" to "123-$user-$num"
                     )
                     assertThat(rec.id).isEqualTo(recId)
+                    setAuthoritiesWithReadPerms(rec, user)
                     recs.add(rec)
                 }
             }
@@ -95,14 +98,18 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         }
 
         val refForEveryone = createRef("user-rec-user5-2")
-        setAuthoritiesWithReadPerms(refForEveryone, RoleConstants.ROLE_EVERYONE)
 
-        for (user in users) {
-            AuthContext.runAs(user) {
-                val records = records.query(baseQuery).getRecords()
-                val recsWithPublicRef = recsByUser[user]!!.toMutableSet()
-                recsWithPublicRef.add(refForEveryone)
-                assertThat(records).containsExactlyInAnyOrderElementsOf(recsWithPublicRef)
+        listOf(RoleConstants.ROLE_EVERYONE, AuthGroup.EVERYONE).forEach { allUsersAuthority ->
+            setAuthoritiesWithReadPerms(refForEveryone, allUsersAuthority)
+            for (user in users) {
+                AuthContext.runAs(user) {
+                    val records = records.query(baseQuery).getRecords()
+                    val recsWithPublicRef = recsByUser[user]!!.toMutableSet()
+                    recsWithPublicRef.add(refForEveryone)
+                    assertThat(records)
+                        .describedAs(allUsersAuthority)
+                        .containsExactlyInAnyOrderElementsOf(recsWithPublicRef)
+                }
             }
         }
 
@@ -148,6 +155,9 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
             rec = createRecord("textAtt" to "123")
             assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("123")
         }
+
+        setAuthoritiesWithReadPerms(rec, "user0")
+
         assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
         AuthContext.runAs("user1") {
             assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")

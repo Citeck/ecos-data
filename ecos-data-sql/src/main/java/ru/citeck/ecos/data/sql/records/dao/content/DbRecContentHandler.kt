@@ -79,13 +79,13 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
                 }
                 newArray
             } else {
-                uploadContent(record, attribute, contentData.get(0), false)
+                uploadContent(record, attribute, contentData[0], false)
             }
         }
         if (!contentData.isObject()) {
             return null
         }
-        val urlData = contentData.get("url")
+        val urlData = contentData["url"]
         if (!urlData.isTextual()) {
             return null
         }
@@ -103,7 +103,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
 
         val contentMeta = EcosContentMeta.create {
             withMimeType(data.mimeType)
-            withName(contentData.get("originalName").asText())
+            withName(contentData["originalName"].asText())
         }
 
         return contentService.writeContent(EcosContentLocalStorage.TYPE, contentMeta, dataBytes).id

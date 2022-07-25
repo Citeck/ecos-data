@@ -3,6 +3,8 @@ package ru.citeck.ecos.data.sql.pg.records
 import mu.KotlinLogging
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.DataValue
+import ru.citeck.ecos.model.lib.attributes.dto.AttIndexDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
@@ -12,6 +14,7 @@ import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import java.time.Instant
@@ -267,5 +270,55 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
             }
         )
         assertThat(result10.getRecords()).containsExactly(recWithDate0, recWithDate1, recWithDate2)
+    }
+
+    @Test
+    fun test3() {
+
+        val attName = "textAtt"
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId(attName)
+                    withIndex(
+                        AttIndexDef.create()
+                            .withEnabled(true)
+                            .build()
+                    )
+                }
+            )
+        )
+
+        val ref = createRecord(attName to "Abcdefg")
+
+        val predicatesWhichShouldMatch = listOf(
+            Predicates.eq(attName, "Abcdefg"),
+            Predicates.contains(attName, "Abcdefg"),
+            Predicates.contains(attName, "abcdefg"),
+            Predicates.contains(attName, "cdefg"),
+            Predicates.contains(attName, "abcde"),
+            Predicates.contains(attName, "cde"),
+            ValuePredicate.like(attName, "Abcd%"),
+            ValuePredicate.like(attName, "Abcdefg"),
+            ValuePredicate.like(attName, "abcdefg"),
+            ValuePredicate.like(attName, "abcd%"),
+            ValuePredicate.like(attName, "%bcdefg"),
+            ValuePredicate.like(attName, "_bcdefg"),
+        )
+
+        predicatesWhichShouldMatch.forEach { pred ->
+            val queryRes = records.query(baseQuery.withQuery(DataValue.create(pred)))
+            assertThat(queryRes.getRecords()).describedAs(pred.toString()).containsExactly(ref)
+        }
+
+        val predicatesWhichShouldNotMatch = listOf(
+            ValuePredicate.contains(attName, "AAcdefg"),
+            ValuePredicate.like(attName, "Abcdee%"),
+        )
+
+        predicatesWhichShouldNotMatch.forEach { pred ->
+            val queryRes = records.query(baseQuery.withQuery(DataValue.create(pred)))
+            assertThat(queryRes.getRecords()).describedAs(pred.toString()).isEmpty()
+        }
     }
 }

@@ -6,7 +6,8 @@ import ecos.com.fasterxml.jackson210.databind.annotation.JsonDeserialize
 data class DbIndexDef(
     val name: String,
     val columns: List<String>,
-    val unique: Boolean
+    val unique: Boolean,
+    val caseInsensitive: Boolean
 ) {
 
     companion object {
@@ -32,10 +33,13 @@ data class DbIndexDef(
         var name: String = ""
         var columns: List<String> = emptyList()
         var unique: Boolean = false
+        var caseInsensitive: Boolean = false
 
         constructor(base: DbIndexDef) : this() {
+            name = base.name
             columns = base.columns
             unique = base.unique
+            caseInsensitive = base.caseInsensitive
         }
 
         fun withName(name: String): Builder {
@@ -53,8 +57,13 @@ data class DbIndexDef(
             return this
         }
 
+        fun withCaseInsensitive(caseInsensitive: Boolean?): Builder {
+            this.caseInsensitive = caseInsensitive ?: false
+            return this
+        }
+
         fun build(): DbIndexDef {
-            return DbIndexDef(name, columns, unique)
+            return DbIndexDef(name, columns, unique, caseInsensitive)
         }
     }
 }

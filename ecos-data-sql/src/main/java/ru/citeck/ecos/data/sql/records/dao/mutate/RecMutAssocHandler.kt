@@ -23,27 +23,29 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
 
     fun preProcessContentAtts(recAttributes: ObjectData, recToMutate: DbEntity, columns: List<EcosAttColumnDef>) {
 
-        columns.forEach {
-            if (it.attribute.type == AttributeType.CONTENT) {
-                val contentData = recAttributes.get(it.attribute.id)
-                recAttributes.set(
-                    it.column.name,
-                    ctx.recContentHandler.uploadContent(
-                        recToMutate,
-                        it.attribute.id,
-                        contentData,
-                        it.column.multiple
-                    )
+        for (column in columns) {
+
+            if (!recAttributes.has(column.attribute.id)) {
+                continue
+            }
+
+            if (column.attribute.type == AttributeType.CONTENT) {
+                val contentData = recAttributes[column.attribute.id]
+                recAttributes[column.column.name] = ctx.recContentHandler.uploadContent(
+                    recToMutate,
+                    column.attribute.id,
+                    contentData,
+                    column.column.multiple
                 )
-            } else if (DbRecordsUtils.isAssocLikeAttribute(it.attribute)) {
-                val assocValue = recAttributes.get(it.attribute.id)
+            } else if (DbRecordsUtils.isAssocLikeAttribute(column.attribute)) {
+                val assocValue = recAttributes[column.attribute.id]
                 val convertedValue = preProcessContentAssocBeforeMutate(
                     recToMutate.extId,
-                    it.attribute.id,
+                    column.attribute.id,
                     assocValue
                 )
                 if (convertedValue !== assocValue) {
-                    recAttributes.set(it.attribute.id, convertedValue)
+                    recAttributes[column.attribute.id] = convertedValue
                 }
             }
         }

@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.pg
 
 import mu.KotlinLogging
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.context.lib.auth.AuthGroup
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
@@ -775,7 +776,9 @@ class DbEntityRepoPg<T : Any>(
     private fun getCurrentUserAuthoritiesCondition(): String {
 
         val userAuthorities = AuthContext.getCurrentUserWithAuthorities().toMutableSet()
+        // legacy "everyone" authority
         userAuthorities.add(RoleConstants.ROLE_EVERYONE)
+        userAuthorities.add(AuthGroup.EVERYONE)
 
         val query = StringBuilder()
         query.append("\"$AUTHORITIES_TABLE_ALIAS\".\"${DbAuthorityEntity.EXT_ID}\" IN (")
@@ -905,40 +908,58 @@ class DbEntityRepoPg<T : Any>(
                     ValuePredicate.Type.LT,
                     ValuePredicate.Type.LE,
                     ValuePredicate.Type.CONTAINS -> {
-
-                        appendRecordColumnName(query, attribute)
-                        query.append(' ')
-                            .append(operator)
-                            .append(" ?")
-
-                        if (value.isTextual() && type == ValuePredicate.Type.CONTAINS) {
-                            queryParams.add("%" + value.asText() + "%")
-                        } else if (columnDef.type == DbColumnType.BOOLEAN) {
-                            queryParams.add(value.asBoolean())
-                        } else if (value.isTextual() && columnDef.type == DbColumnType.UUID) {
-                            queryParams.add(UUID.fromString(value.asText()))
-                        } else if (columnDef.type == DbColumnType.DATETIME || columnDef.type == DbColumnType.DATE) {
-                            val offsetDateTime: OffsetDateTime = if (value.isTextual()) {
-                                val txt = value.asText()
-                                OffsetDateTime.parse(
-                                    if (!txt.contains('T')) {
-                                        "${txt}T00:00:00Z"
-                                    } else {
-                                        txt
-                                    }
-                                )
-                            } else if (value.isNumber()) {
-                                OffsetDateTime.ofInstant(Instant.ofEpochMilli(value.asLong()), ZoneOffset.UTC)
+                        if (columnDef.type == DbColumnType.TEXT) {
+                            if (type == ValuePredicate.Type.LIKE || type == ValuePredicate.Type.CONTAINS) {
+                                query.append("LOWER(")
+                                appendRecordColumnName(query, attribute)
+                                query.append(") ")
+                                    .append(operator)
+                                    .append(" LOWER(?)")
                             } else {
-                                error("Unknown datetime value: '$value'")
+                                appendRecordColumnName(query, attribute)
+                                query.append(' ')
+                                    .append(operator)
+                                    .append(" ?")
                             }
-                            if (columnDef.type == DbColumnType.DATE) {
-                                queryParams.add(offsetDateTime.toLocalDate())
+                            if (type == ValuePredicate.Type.CONTAINS) {
+                                queryParams.add("%" + value.asText() + "%")
                             } else {
-                                queryParams.add(offsetDateTime)
+                                queryParams.add(value.asText())
                             }
                         } else {
-                            queryParams.add(value.asJavaObj())
+
+                            appendRecordColumnName(query, attribute)
+                            query.append(' ')
+                                .append(operator)
+                                .append(" ?")
+
+                            if (columnDef.type == DbColumnType.BOOLEAN) {
+                                queryParams.add(value.asBoolean())
+                            } else if (value.isTextual() && columnDef.type == DbColumnType.UUID) {
+                                queryParams.add(UUID.fromString(value.asText()))
+                            } else if (columnDef.type == DbColumnType.DATETIME || columnDef.type == DbColumnType.DATE) {
+                                val offsetDateTime: OffsetDateTime = if (value.isTextual()) {
+                                    val txt = value.asText()
+                                    OffsetDateTime.parse(
+                                        if (!txt.contains('T')) {
+                                            "${txt}T00:00:00Z"
+                                        } else {
+                                            txt
+                                        }
+                                    )
+                                } else if (value.isNumber()) {
+                                    OffsetDateTime.ofInstant(Instant.ofEpochMilli(value.asLong()), ZoneOffset.UTC)
+                                } else {
+                                    error("Unknown datetime value: '$value'")
+                                }
+                                if (columnDef.type == DbColumnType.DATE) {
+                                    queryParams.add(offsetDateTime.toLocalDate())
+                                } else {
+                                    queryParams.add(offsetDateTime)
+                                }
+                            } else {
+                                queryParams.add(value.asJavaObj())
+                            }
                         }
                     }
                 }

@@ -1,22 +1,22 @@
 package ru.citeck.ecos.data.sql.records.perms
 
+import ru.citeck.ecos.context.lib.auth.AuthGroup
 import ru.citeck.ecos.records2.RecordRef
-import ru.citeck.ecos.records3.RecordsService
 
-class DefaultDbPermsComponent(private val records: RecordsService) : DbPermsComponent {
+class DefaultDbPermsComponent : DbPermsComponent {
 
-    override fun getRecordPerms(recordRef: RecordRef): DbRecordPerms {
-        return CreatorRecPerms(recordRef)
+    companion object {
+        private val AUTHORITIES_WITH_READ_PERMS = setOf(AuthGroup.EVERYONE)
     }
 
-    inner class CreatorRecPerms(val recordRef: RecordRef) : DbRecordPerms {
+    override fun getRecordPerms(recordRef: RecordRef): DbRecordPerms {
+        return DefaultRecPerms()
+    }
+
+    inner class DefaultRecPerms : DbRecordPerms {
 
         override fun getAuthoritiesWithReadPermission(): Set<String> {
-            val creator = records.getAtt(recordRef, "_creator?localId").asText()
-            if (creator.isNotBlank()) {
-                return setOf(creator)
-            }
-            return emptySet()
+            return AUTHORITIES_WITH_READ_PERMS
         }
 
         override fun isCurrentUserHasWritePerms(): Boolean {

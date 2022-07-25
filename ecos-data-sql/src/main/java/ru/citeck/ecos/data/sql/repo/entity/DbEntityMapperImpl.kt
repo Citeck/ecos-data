@@ -178,6 +178,7 @@ class DbEntityMapperImpl<T : Any>(
             DbIndexDef.create()
                 .withColumns(it.columns.toList())
                 .withUnique(it.unique)
+                .withCaseInsensitive(it.caseInsensitive)
                 .build()
         }
     }

@@ -217,7 +217,7 @@ abstract class DbRecordsTestBase {
         records = recordsServiceFactory.recordsServiceV1
         RequestContext.setDefaultServices(recordsServiceFactory)
 
-        val defaultPermsComponent = DefaultDbPermsComponent(records)
+        val defaultPermsComponent = DefaultDbPermsComponent()
         val permsComponent = object : DbPermsComponent {
             override fun getRecordPerms(recordRef: RecordRef): DbRecordPerms {
                 return object : DbRecordPerms {

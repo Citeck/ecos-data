@@ -66,7 +66,6 @@ import ru.citeck.ecos.records3.utils.RecordRefUtils
 import java.io.InputStream
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.function.Function
 import java.util.regex.Pattern
 import kotlin.collections.ArrayList
 import kotlin.math.min
@@ -252,12 +251,9 @@ class DbRecordsDao(
         }
         val originalPredicate = recsQuery.getQuery(Predicate::class.java)
 
-        val queryTypePred = PredicateUtils.filterValuePredicates(
-            originalPredicate,
-            Function {
-                it.getAttribute() == "_type" && it.getValue().asText().isNotBlank()
-            }
-        ).orElse(null)
+        val queryTypePred = PredicateUtils.filterValuePredicates(originalPredicate) {
+            it.getAttribute() == "_type" && it.getValue().asText().isNotBlank()
+        }.orElse(null)
 
         val ecosTypeRef = if (queryTypePred is ValuePredicate) {
             RecordRef.valueOf(queryTypePred.getValue().asText())
@@ -482,14 +478,14 @@ class DbRecordsDao(
         txnExists: Boolean
     ): String {
 
-        if (record.attributes.get("__updatePermissions").asBoolean()) {
+        if (record.attributes["__updatePermissions"].asBoolean()) {
             if (!AuthContext.getCurrentAuthorities().contains(AuthRole.ADMIN)) {
                 error("Permissions update allowed only for admin. Record: $record sourceId: '${getId()}'")
             }
             updatePermissions(listOf(record.id))
             return record.id
         }
-        if (record.attributes.get("__runAssocsMigration").asBoolean()) {
+        if (record.attributes["__runAssocsMigration"].asBoolean()) {
             if (!AuthContext.getCurrentAuthorities().contains(AuthRole.ADMIN)) {
                 error("Assocs migration allowed only for admin")
             }
@@ -538,9 +534,9 @@ class DbRecordsDao(
             }
         }
 
-        var customExtId = record.attributes.get("id").asText()
+        var customExtId = record.attributes["id"].asText()
         if (customExtId.isBlank()) {
-            customExtId = record.attributes.get(ScalarType.LOCAL_ID.mirrorAtt).asText()
+            customExtId = record.attributes[ScalarType.LOCAL_ID.mirrorAtt].asText()
         }
         if (customExtId.isNotBlank()) {
             if (recToMutate.extId != customExtId) {
@@ -573,11 +569,11 @@ class DbRecordsDao(
         val recAttributes = record.attributes.deepCopy()
         if (record.attributes.has(DbRecord.ATT_NAME) || record.attributes.has(ScalarType.DISP.mirrorAtt)) {
             val newName = if (record.attributes.has(DbRecord.ATT_NAME)) {
-                record.attributes.get(DbRecord.ATT_NAME)
+                record.attributes[DbRecord.ATT_NAME]
             } else {
-                record.attributes.get(ScalarType.DISP.mirrorAtt)
+                record.attributes[ScalarType.DISP.mirrorAtt]
             }
-            recAttributes.set(ATT_CUSTOM_NAME, newName)
+            recAttributes[ATT_CUSTOM_NAME] = newName
             recAttributes.remove(DbRecord.ATT_NAME)
             recAttributes.remove(ScalarType.DISP.mirrorAtt)
         }
@@ -589,7 +585,7 @@ class DbRecordsDao(
         operations.forEach {
             if (!recAttributes.has(it.getAttName())) {
                 val value = it.invoke(recToMutate.attributes[it.getAttName()])
-                recAttributes.set(it.getAttName(), value)
+                recAttributes[it.getAttName()] = value
             }
         }
 
@@ -608,7 +604,7 @@ class DbRecordsDao(
         }
 
         if (recAttributes.has(ATT_STATE)) {
-            val state = recAttributes.get(ATT_STATE).asText()
+            val state = recAttributes[ATT_STATE].asText()
             recToMutate.attributes[DbRecord.COLUMN_IS_DRAFT.name] = state == "draft"
             fullColumns.add(DbRecord.COLUMN_IS_DRAFT)
         }
@@ -616,7 +612,7 @@ class DbRecordsDao(
         recToMutate.type = typeDef.id
 
         if (recAttributes.has(StatusConstants.ATT_STATUS)) {
-            val newStatus = recAttributes.get(StatusConstants.ATT_STATUS).asText()
+            val newStatus = recAttributes[StatusConstants.ATT_STATUS].asText()
             if (newStatus.isNotBlank()) {
                 if (typeDef.model.statuses.any { it.id == newStatus }) {
                     recToMutate.status = newStatus
@@ -748,7 +744,7 @@ class DbRecordsDao(
                 }
             } else {
                 notEmptyColumns.add(dbColumnDef)
-                val value = atts.get(dbColumnDef.name)
+                val value = atts[dbColumnDef.name]
                 recToMutate.attributes[dbColumnDef.name] = daoCtx.mutConverter.convert(
                     value,
                     dbColumnDef.multiple,

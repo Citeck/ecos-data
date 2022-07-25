@@ -12,7 +12,7 @@ import java.time.Instant
     Index(columns = [DbEntity.DELETED]),
     Index(columns = [DbEntity.MODIFIED]),
     Index(columns = [DbEntity.CREATED]),
-    Index(columns = [DbEntity.NAME])
+    Index(columns = [DbEntity.NAME], caseInsensitive = true)
 )
 class DbEntity {
 

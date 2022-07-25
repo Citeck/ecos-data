@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.pg.records
 
+import mu.KotlinLogging
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.DataValue
@@ -10,8 +11,15 @@ import java.util.*
 
 class DbRecordsContentAttTest : DbRecordsTestBase() {
 
+    companion object {
+        private val log = KotlinLogging.logger {}
+    }
+
     @Test
     fun test() {
+
+        val contentAttName0 = "contentAtt0"
+        val contentAttName1 = "contentAtt1"
 
         registerAtts(
             listOf(
@@ -19,7 +27,11 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
                     withId("textAtt")
                 },
                 AttributeDef.create {
-                    withId("contentAtt")
+                    withId(contentAttName0)
+                    withType(AttributeType.CONTENT)
+                },
+                AttributeDef.create {
+                    withId(contentAttName1)
                     withType(AttributeType.CONTENT)
                 }
             )
@@ -45,34 +57,42 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
             """.trimIndent()
         )
 
-        val ref = createRecord("contentAtt" to contentAttValue)
+        val ref = createRecord(
+            contentAttName0 to contentAttValue,
+            contentAttName1 to contentAttValue[0]
+        )
 
-        val checkContent = {
+        val checkContent = { contentAttName: String ->
 
-            val (utf8String, meta) = recordsDao.readContent(ref.id, "contentAtt") { meta, input ->
+            val (utf8String, meta) = recordsDao.readContent(ref.id, contentAttName) { meta, input ->
                 IOUtils.readAsString(input) to meta
             }
 
             assertThat(utf8String).isEqualTo(textContent)
             assertThat(meta.mimeType).isEqualTo(contentMimeType)
 
-            val contentDataJson = records.getAtt(ref, "contentAtt._as.content-data?json")
+            val contentDataJson = records.getAtt(ref, "$contentAttName._as.content-data?json")
 
             val expectedContentSize = textContent.toByteArray(Charsets.UTF_8).size
 
             assertThat(contentDataJson.size()).isEqualTo(3)
-            assertThat(contentDataJson.get("name").asText()).isEqualTo(records.getAtt(ref, "?disp").asText())
-            assertThat(contentDataJson.get("size").asInt()).isEqualTo(expectedContentSize)
-            assertThat(contentDataJson.get("url").asText()).isNotBlank
+            assertThat(contentDataJson["name"].asText()).isEqualTo(records.getAtt(ref, "?disp").asText())
+            assertThat(contentDataJson["size"].asInt()).isEqualTo(expectedContentSize)
+            assertThat(contentDataJson["url"].asText()).isNotBlank
 
-            assertThat(records.getAtt(ref, "contentAtt.size").asInt()).isEqualTo(expectedContentSize)
+            assertThat(records.getAtt(ref, "$contentAttName.size").asInt()).isEqualTo(expectedContentSize)
         }
 
-        checkContent()
-
-        val json = records.getAtt(ref, "contentAtt._as.content-data?json")
-        updateRecord(ref, "contentAtt" to json)
-
-        checkContent()
+        listOf(contentAttName0, contentAttName1).forEach {
+            try {
+                checkContent(it)
+                val json = records.getAtt(ref, "$it._as.content-data?json")
+                updateRecord(ref, it to json)
+                checkContent(it)
+            } catch (e: Throwable) {
+                log.error { "Attribute: $it" }
+                throw e
+            }
+        }
     }
 }
