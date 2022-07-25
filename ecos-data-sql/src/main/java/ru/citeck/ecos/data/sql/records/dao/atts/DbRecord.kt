@@ -187,11 +187,11 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     }
 
     override fun getId(): Any {
-        return RecordRef.create(ctx.sourceId, entity.extId)
+        return RecordRef.create(ctx.appName, ctx.sourceId, entity.extId)
     }
 
     override fun asText(): String {
-        return entity.name.getClosest(RequestContext.getLocale()).ifBlank { "No name" }
+        return id.toString()
     }
 
     override fun getDisplayName(): Any {
