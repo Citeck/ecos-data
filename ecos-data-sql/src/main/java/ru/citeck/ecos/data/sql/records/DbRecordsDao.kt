@@ -508,7 +508,7 @@ class DbRecordsDao(
             }
         }
 
-        val extId = record.id.ifEmpty { record.attributes.get("id").asText() }
+        val extId = record.id.ifEmpty { record.attributes["id"].asText() }
 
         val recToMutate: DbEntity = if (extId.isEmpty()) {
             DbEntity()
@@ -656,7 +656,13 @@ class DbRecordsDao(
         daoCtx.mutAssocHandler.processChildrenAfterMutation(
             recordEntityBeforeMutation,
             recAfterSave,
+            record.attributes,
             typesAttColumns
+        )
+        daoCtx.mutAssocHandler.processParentAfterMutation(
+            recordEntityBeforeMutation,
+            recAfterSave,
+            record.attributes
         )
 
         daoCtx.recEventsHandler.emitEventsAfterMutation(recordEntityBeforeMutation, recAfterSave, isNewRecord)

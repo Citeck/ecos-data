@@ -58,6 +58,10 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             DbColumnDef.create {
                 withName("_parent")
                 withType(DbColumnType.LONG)
+            },
+            DbColumnDef.create {
+                withName("_parentAtt")
+                withType(DbColumnType.TEXT)
             }
         )
 

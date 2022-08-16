@@ -50,6 +50,10 @@ class DbEntityRepoPg<T : Any>(
         private const val AUTHORITIES_TABLE_ALIAS = "a"
         private const val PERMS_TABLE_ALIAS = "p"
 
+        private const val IS_TRUE = "IS TRUE"
+        private const val IS_FALSE = "IS FALSE"
+        private const val IS_NULL = "IS NULL"
+
         private const val COUNT_COLUMN = "COUNT(*)"
     }
 
@@ -300,8 +304,13 @@ class DbEntityRepoPg<T : Any>(
                 )
             }
 
-            allowedAuth.removeAll(currentPerms.filter { it.allowed }.map { it.authorityId })
-            deniedAuth.removeAll(currentPerms.filter { !it.allowed }.map { it.authorityId })
+            for (perms in currentPerms) {
+                if (perms.allowed) {
+                    allowedAuth.remove(perms.authorityId)
+                } else {
+                    deniedAuth.remove(perms.authorityId)
+                }
+            }
 
             if (allowedAuth.isEmpty() && deniedAuth.isEmpty()) {
                 return
@@ -724,7 +733,7 @@ class DbEntityRepoPg<T : Any>(
                 }
                 var value = entity[column.name]
                 value = if (value == null) {
-                    value
+                    null
                 } else {
                     val multiple = column.multiple && column.type != DbColumnType.JSON
                     val targetType = getParamTypeForColumn(column.type, multiple)
@@ -908,7 +917,10 @@ class DbEntityRepoPg<T : Any>(
                     ValuePredicate.Type.LT,
                     ValuePredicate.Type.LE,
                     ValuePredicate.Type.CONTAINS -> {
-                        if (columnDef.type == DbColumnType.TEXT) {
+                        if (type == ValuePredicate.Type.EQ && value.isNull()) {
+                            appendRecordColumnName(query, attribute)
+                            query.append(" ").append(IS_NULL)
+                        } else if (columnDef.type == DbColumnType.TEXT) {
                             if (type == ValuePredicate.Type.LIKE || type == ValuePredicate.Type.CONTAINS) {
                                 query.append("LOWER(")
                                 appendRecordColumnName(query, attribute)
@@ -926,6 +938,13 @@ class DbEntityRepoPg<T : Any>(
                             } else {
                                 queryParams.add(value.asText())
                             }
+                        } else if (columnDef.type == DbColumnType.BOOLEAN) {
+                            appendRecordColumnName(query, attribute)
+                            if (value.asBoolean()) {
+                                query.append(IS_TRUE)
+                            } else {
+                                query.append(IS_FALSE)
+                            }
                         } else {
 
                             appendRecordColumnName(query, attribute)
@@ -933,9 +952,7 @@ class DbEntityRepoPg<T : Any>(
                                 .append(operator)
                                 .append(" ?")
 
-                            if (columnDef.type == DbColumnType.BOOLEAN) {
-                                queryParams.add(value.asBoolean())
-                            } else if (value.isTextual() && columnDef.type == DbColumnType.UUID) {
+                            if (value.isTextual() && columnDef.type == DbColumnType.UUID) {
                                 queryParams.add(UUID.fromString(value.asText()))
                             } else if (columnDef.type == DbColumnType.DATETIME || columnDef.type == DbColumnType.DATE) {
                                 val offsetDateTime: OffsetDateTime = if (value.isTextual()) {
@@ -981,16 +998,16 @@ class DbEntityRepoPg<T : Any>(
                 if (columnDef.multiple) {
                     query.append("array_length(")
                     appendRecordColumnName(query, attribute)
-                    query.append(",1) IS NULL")
+                    query.append(",1) ").append(IS_NULL)
                 } else if (columnDef.type == DbColumnType.TEXT) {
                     query.append("(")
                     appendRecordColumnName(query, attribute)
-                    query.append(" IS NULL OR ")
+                    query.append(" ").append(IS_NULL).append(" OR ")
                     appendRecordColumnName(query, attribute)
                     query.append("='')")
                 } else {
                     appendRecordColumnName(query, attribute)
-                    query.append(" IS NULL")
+                    query.append(" ").append(IS_NULL)
                 }
                 return true
             }

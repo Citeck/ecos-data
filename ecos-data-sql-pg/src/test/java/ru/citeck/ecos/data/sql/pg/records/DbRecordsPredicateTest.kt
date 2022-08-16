@@ -2,12 +2,61 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import java.time.Instant
 
 class DbRecordsPredicateTest : DbRecordsTestBase() {
+
+    @Test
+    fun testWithBoolean() {
+
+        val att0 = "attBool0"
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId(att0)
+                    withType(AttributeType.BOOLEAN)
+                }
+            )
+        )
+
+        val falseRef = createRecord(att0 to false)
+        val nullRef = createRecord(att0 to null)
+        val trueRef = createRecord(att0 to true)
+        val refToValue = mapOf(
+            falseRef to false,
+            trueRef to true,
+            nullRef to null
+        )
+
+        val queryTest = { predicate: Predicate, expected: List<RecordRef> ->
+            val queryRes = records.query(
+                baseQuery.withQuery(DataValue.create(predicate)),
+            )
+            val expectedBools = expected.map { refToValue[it] }
+            val actualBools = queryRes.getRecords().map { refToValue[it] }
+            assertThat(queryRes.getRecords())
+                .describedAs("predicate: $predicate expected: $expectedBools actual: $actualBools")
+                .containsExactlyInAnyOrderElementsOf(expected)
+        }
+
+        queryTest(Predicates.not(Predicates.eq(att0, false)), listOf(trueRef, nullRef))
+        queryTest(Predicates.eq(att0, null), listOf(nullRef))
+        queryTest(Predicates.eq(att0, false), listOf(falseRef))
+        queryTest(Predicates.eq(att0, true), listOf(trueRef))
+        queryTest(Predicates.empty(att0), listOf(nullRef))
+        queryTest(Predicates.notEmpty(att0), listOf(trueRef, falseRef))
+        queryTest(Predicates.not(Predicates.eq(att0, true)), listOf(falseRef, nullRef))
+        queryTest(Predicates.not(Predicates.eq(att0, null)), listOf(falseRef, trueRef))
+        queryTest(Predicates.empty(att0), listOf(nullRef))
+        queryTest(Predicates.not(Predicates.empty(att0)), listOf(falseRef, trueRef))
+    }
 
     @Test
     fun testWithComplexCondition() {

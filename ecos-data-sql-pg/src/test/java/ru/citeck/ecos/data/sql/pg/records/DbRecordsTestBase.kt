@@ -1,10 +1,13 @@
 package ru.citeck.ecos.data.sql.pg.records
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
+import mu.KotlinLogging
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.commons.test.EcosWebAppContextMock
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.EcosContentServiceImpl
 import ru.citeck.ecos.data.sql.content.data.EcosContentDataServiceImpl
@@ -47,6 +50,7 @@ import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.webapp.api.context.EcosWebAppContext
 import java.util.concurrent.atomic.AtomicLong
 import javax.sql.DataSource
 
@@ -103,6 +107,8 @@ abstract class DbRecordsTestBase {
     lateinit var dbRecordRefDataService: DbDataService<DbRecordRefEntity>
     lateinit var dbRecordRefService: DbRecordRefService
 
+    val log = KotlinLogging.logger {}
+
     val baseQuery = RecordsQuery.create {
         withSourceId(RECS_DAO_ID)
         withLanguage(PredicateService.LANGUAGE_PREDICATE)
@@ -121,6 +127,11 @@ abstract class DbRecordsTestBase {
         recAttWritePerms.clear()
 
         initServices()
+    }
+
+    @AfterEach
+    fun afterEachBase() {
+        RequestContext.setDefaultServices(null)
     }
 
     fun setAuthoritiesWithAttReadPerms(rec: RecordRef, att: String, vararg authorities: String) {
@@ -185,7 +196,12 @@ abstract class DbRecordsTestBase {
             pgDataServiceFactory
         )
 
-        recordsServiceFactory = RecordsServiceFactory()
+        val webAppContext = EcosWebAppContextMock(appName)
+        recordsServiceFactory = object : RecordsServiceFactory() {
+            override fun getEcosWebAppContext(): EcosWebAppContext {
+                return webAppContext
+            }
+        }
         val numCounters = mutableMapOf<RecordRef, AtomicLong>()
         val modelServiceFactory = object : ModelServiceFactory() {
             override fun createTypesRepo(): TypesRepo {
@@ -196,6 +212,7 @@ abstract class DbRecordsTestBase {
                     }
                 }
             }
+
             override fun createNumTemplatesRepo(): NumTemplatesRepo {
                 return object : NumTemplatesRepo {
                     override fun getNumTemplate(templateRef: RecordRef): NumTemplateDef? {
@@ -203,12 +220,17 @@ abstract class DbRecordsTestBase {
                     }
                 }
             }
+
             override fun createEcosModelAppApi(): EcosModelAppApi {
                 return object : EcosModelAppApi {
                     override fun getNextNumberForModel(model: ObjectData, templateRef: RecordRef): Long {
                         return numCounters.computeIfAbsent(templateRef) { AtomicLong() }.incrementAndGet()
                     }
                 }
+            }
+
+            override fun getEcosWebAppContext(): EcosWebAppContext {
+                return webAppContext
             }
         }
         modelServiceFactory.setRecordsServices(recordsServiceFactory)
@@ -228,19 +250,22 @@ abstract class DbRecordsTestBase {
                         return defaultPermsComponent.getRecordPerms(recordRef)
                             .getAuthoritiesWithReadPermission()
                     }
+
                     override fun isCurrentUserHasWritePerms(): Boolean {
                         val perms = recWritePerms[recordRef] ?: emptySet()
                         return perms.isEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
                             perms.contains(it)
                         }
                     }
+
                     override fun isCurrentUserHasAttWritePerms(name: String): Boolean {
                         val writePerms = recAttWritePerms[recordRef to name]
-                        return writePerms == null || writePerms.isEmpty() || writePerms.contains(name)
+                        return writePerms.isNullOrEmpty() || writePerms.contains(name)
                     }
+
                     override fun isCurrentUserHasAttReadPerms(name: String): Boolean {
                         val readPerms = recAttReadPerms[recordRef to name]
-                        return readPerms == null || readPerms.isEmpty() || readPerms.contains(name)
+                        return readPerms.isNullOrEmpty() || readPerms.contains(name)
                     }
                 }
             }
@@ -297,6 +322,7 @@ abstract class DbRecordsTestBase {
                 override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: RecordRef): ObjectData {
                     return modelServiceFactory.computedAttsService.computeAttsToStore(value, isNewRecord, typeRef)
                 }
+
                 override fun computeDisplayName(value: Any, typeRef: RecordRef): MLText {
                     return modelServiceFactory.computedAttsService.computeDisplayName(value, typeRef)
                 }
@@ -328,7 +354,9 @@ abstract class DbRecordsTestBase {
         if (!map.containsKey("_type")) {
             map["_type"] = REC_TEST_TYPE_REF
         }
-        return records.create(RECS_DAO_ID, map)
+        val rec = records.create(RECS_DAO_ID, map)
+        log.info { "RECORD CREATED: $rec" }
+        return rec
     }
 
     fun selectRecFromDb(rec: RecordRef, field: String): Any? {
