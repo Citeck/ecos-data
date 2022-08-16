@@ -12,7 +12,7 @@
 
     <properties>
 
-        <revision>1.18.3</revision>
+        <revision>1.18.4</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
@@ -297,14 +297,14 @@
     <repositories>
         <repository>
             <id>citeck-public</id>
-            <url>http://nexus.citeck.ru/repository/maven-public</url>
+            <url>https://nexus.citeck.ru/repository/maven-public</url>
         </repository>
     </repositories>
 
     <pluginRepositories>
         <pluginRepository>
             <id>citeck-plugin-public</id>
-            <url>http://nexus.citeck.ru/repository/maven-public</url>
+            <url>https://nexus.citeck.ru/repository/maven-public</url>
         </pluginRepository>
     </pluginRepositories>
 
