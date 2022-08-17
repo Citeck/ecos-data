@@ -16,3 +16,6 @@ insert_final_newline = true
 
 [*.md]
 trim_trailing_whitespace = false
+
+[*.{kt,kts}]
+disabled_rules = no-empty-first-line-in-method-block,trailing-comma

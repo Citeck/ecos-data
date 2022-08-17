@@ -64,7 +64,8 @@ class DbSchemaDaoPg(
 
         if (tableRef.schema.isNotBlank()) {
             dataSource.query(
-                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = '${tableRef.schema}')", emptyList()
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = '${tableRef.schema}')",
+                emptyList()
             ) {
                 if (!it.next() || !it.getBoolean(1)) {
                     dataSource.updateSchema("CREATE SCHEMA IF NOT EXISTS \"${tableRef.schema}\"")

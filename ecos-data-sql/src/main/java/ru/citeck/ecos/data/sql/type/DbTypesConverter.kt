@@ -77,6 +77,7 @@ class DbTypesConverter {
                 ?: error("Can't convert ${value::class} to $targetClass")
             conv.invoke(value)
         }
+
         @Suppress("UNCHECKED_CAST")
         val castedResult = result as T?
 

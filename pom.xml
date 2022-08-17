@@ -12,7 +12,7 @@
 
     <properties>
 
-        <revision>1.18.4</revision>
+        <revision>1.18.5</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
@@ -116,6 +116,13 @@
         </dependency>
 
         <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-reflect</artifactId>
+            <version>${kotlin.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
             <groupId>io.github.microutils</groupId>
             <artifactId>kotlin-logging</artifactId>
             <version>${kotlin.logging.version}</version>
@@ -126,13 +133,6 @@
             <groupId>ru.citeck.ecos</groupId>
             <artifactId>ecos-snakeyaml</artifactId>
             <version>${ecos.snakeyaml.version}</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-reflect</artifactId>
-            <version>${kotlin.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -171,6 +171,12 @@
             <scope>test</scope>
         </dependency>
 
+        <dependency>
+            <groupId>com.github.gantsign.maven</groupId>
+            <artifactId>ktlint-maven-plugin</artifactId>
+            <version>1.14.0</version>
+        </dependency>
+
     </dependencies>
 
     <build>
@@ -182,7 +188,7 @@
                 <plugin>
                     <groupId>com.github.gantsign.maven</groupId>
                     <artifactId>ktlint-maven-plugin</artifactId>
-                    <version>1.13.1</version>
+                    <version>1.14.0</version>
                     <executions>
                         <execution>
                             <id>format</id>
@@ -300,13 +306,6 @@
             <url>https://nexus.citeck.ru/repository/maven-public</url>
         </repository>
     </repositories>
-
-    <pluginRepositories>
-        <pluginRepository>
-            <id>citeck-plugin-public</id>
-            <url>https://nexus.citeck.ru/repository/maven-public</url>
-        </pluginRepository>
-    </pluginRepositories>
 
     <distributionManagement>
         <repository>

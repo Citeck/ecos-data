@@ -842,7 +842,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
                     pred
                 }
             },
-            onlyAnd = false, optimize = true
+            onlyAnd = false,
+            optimize = true
         ) ?: Predicates.alwaysTrue()
 
         return PredicateUtils.optimize(columnsPred)

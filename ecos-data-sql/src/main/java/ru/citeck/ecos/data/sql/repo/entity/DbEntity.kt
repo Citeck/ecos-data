@@ -47,11 +47,13 @@ class DbEntity {
 
     @Constraints(NOT_NULL)
     var modified: Instant = Instant.EPOCH
+
     @Constraints(NOT_NULL)
     var modifier: String = ""
 
     @Constraints(NOT_NULL)
     var created: Instant = Instant.EPOCH
+
     @Constraints(NOT_NULL)
     var creator: String = ""
 
@@ -60,8 +62,10 @@ class DbEntity {
 
     @Constraints(NOT_NULL)
     var type: String = ""
+
     @Constraints(NOT_NULL)
     var status: String = ""
+
     @Constraints(NOT_NULL)
     var name: MLText = MLText.EMPTY
 
