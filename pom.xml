@@ -171,12 +171,6 @@
             <scope>test</scope>
         </dependency>
 
-        <dependency>
-            <groupId>com.github.gantsign.maven</groupId>
-            <artifactId>ktlint-maven-plugin</artifactId>
-            <version>1.14.0</version>
-        </dependency>
-
     </dependencies>
 
     <build>
