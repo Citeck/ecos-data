@@ -36,7 +36,6 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 import ru.citeck.ecos.records2.RecordConstants
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.EmptyPredicate
@@ -63,6 +62,7 @@ import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.records3.utils.RecordRefUtils
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.io.InputStream
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
@@ -123,7 +123,7 @@ class DbRecordsDao(
 
     fun runMigrationByType(
         type: String,
-        typeRef: RecordRef,
+        typeRef: EntityRef,
         mock: Boolean,
         config: ObjectData
     ) {
@@ -141,7 +141,7 @@ class DbRecordsDao(
         dbDataService.runMigrationByType(type, mock, newConfig)
     }
 
-    fun runMigrations(typeRef: RecordRef, mock: Boolean = true, diff: Boolean = true): List<String> {
+    fun runMigrations(typeRef: EntityRef, mock: Boolean = true, diff: Boolean = true): List<String> {
         val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
         val columns = ecosTypeService.getColumnsForTypes(listOf(typeInfo)).map { it.column }
         dbDataService.resetColumnsCache()
@@ -163,17 +163,17 @@ class DbRecordsDao(
         return dbDataService.getTableMeta()
     }
 
-    private fun getRecordsTypeInfo(typeRef: RecordRef): TypeInfo? {
+    private fun getRecordsTypeInfo(typeRef: EntityRef): TypeInfo? {
         val type = getRecordsTypeRef(typeRef)
-        if (RecordRef.isEmpty(type)) {
+        if (EntityRef.isEmpty(type)) {
             log.warn { "Type is not defined for Records DAO" }
             return null
         }
-        return ecosTypeService.getTypeInfo(type.id)
+        return ecosTypeService.getTypeInfo(type.getLocalId())
     }
 
-    private fun getRecordsTypeRef(typeRef: RecordRef): RecordRef {
-        return if (RecordRef.isEmpty(typeRef)) {
+    private fun getRecordsTypeRef(typeRef: EntityRef): EntityRef {
+        return if (EntityRef.isEmpty(typeRef)) {
             config.typeRef
         } else {
             typeRef
@@ -256,13 +256,13 @@ class DbRecordsDao(
         }.orElse(null)
 
         val ecosTypeRef = if (queryTypePred is ValuePredicate) {
-            RecordRef.valueOf(queryTypePred.getValue().asText())
+            EntityRef.valueOf(queryTypePred.getValue().asText())
         } else {
             config.typeRef
         }
 
-        val attributesById = if (RecordRef.isNotEmpty(ecosTypeRef)) {
-            val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.id)
+        val attributesById = if (EntityRef.isNotEmpty(ecosTypeRef)) {
+            val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.getLocalId())
             typeInfo?.model?.getAllAttributes()?.associateBy { it.id } ?: emptyMap()
         } else {
             emptyMap()
@@ -273,7 +273,7 @@ class DbRecordsDao(
             if (it is ValuePredicate) {
                 when (attribute) {
                     "_type" -> {
-                        val typeLocalId = RecordRef.valueOf(it.getValue().asText()).id
+                        val typeLocalId = EntityRef.valueOf(it.getValue().asText()).getLocalId()
                         ValuePredicate(DbEntity.TYPE, it.getType(), typeLocalId)
                     }
                     else -> {
@@ -300,7 +300,7 @@ class DbRecordsDao(
                             if (txtValue.isNotBlank()) {
                                 val refs = dbRecordRefService.getIdByRecordRefs(
                                     listOf(
-                                        RecordRef.valueOf(txtValue)
+                                        EntityRef.valueOf(txtValue)
                                     )
                                 )
                                 newPred = ValuePredicate(
@@ -405,13 +405,13 @@ class DbRecordsDao(
 
     private fun getTypeIdForRecord(record: LocalRecordAtts): String {
 
-        val typeRefStr = record.attributes.get(RecordConstants.ATT_TYPE).asText()
-        val typeRefFromAtts = RecordRef.valueOf(typeRefStr).id
+        val typeRefStr = record.attributes[RecordConstants.ATT_TYPE].asText()
+        val typeRefFromAtts = EntityRef.valueOf(typeRefStr).getLocalId()
         if (typeRefFromAtts.isNotBlank()) {
             return typeRefFromAtts
         }
 
-        val extId = record.id.ifBlank { record.attributes.get("id").asText() }
+        val extId = record.id.ifBlank { record.attributes["id"].asText() }
         if (extId.isNotBlank()) {
             val typeFromRecord = AuthContext.runAsSystem {
                 dbDataService.findByExtId(extId)?.type
@@ -421,7 +421,7 @@ class DbRecordsDao(
             }
         }
 
-        if (RecordRef.isNotEmpty(config.typeRef)) {
+        if (EntityRef.isNotEmpty(config.typeRef)) {
             return config.typeRef.id
         }
 
@@ -491,7 +491,7 @@ class DbRecordsDao(
             }
             ExtTxnContext.withoutModifiedMeta {
                 ExtTxnContext.withoutExtTxn {
-                    runMigrationByType(AssocsDbMigration.TYPE, RecordRef.EMPTY, false, ObjectData.create())
+                    runMigrationByType(AssocsDbMigration.TYPE, EntityRef.EMPTY, false, ObjectData.create())
                 }
             }
             return record.id
@@ -629,7 +629,7 @@ class DbRecordsDao(
         if (isNewRecord) {
             val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
             val currentAppName = serviceFactory.webappProps.appName
-            val currentRef = RecordRef.create(currentAppName, getId(), recToMutate.extId)
+            val currentRef = EntityRef.create(currentAppName, getId(), recToMutate.extId)
             val newRecordRef = RecordRefUtils.mapAppIdAndSourceId(currentRef, currentAppName, sourceIdMapping)
             recToMutate.refId = dbRecordRefService.getOrCreateIdByRecordRefs(listOf(newRecordRef))[0]
         }
@@ -720,7 +720,7 @@ class DbRecordsDao(
             },
             {
                 AuthContext.runAsSystem {
-                    permsComponent.getRecordPerms(RecordRef.create(getId(), recordId))
+                    permsComponent.getRecordPerms(EntityRef.create(getId(), recordId))
                 }
             }
         )

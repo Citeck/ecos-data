@@ -51,6 +51,7 @@ import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.webapp.api.context.EcosWebAppContext
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.util.concurrent.atomic.AtomicLong
 import javax.sql.DataSource
 
@@ -202,28 +203,28 @@ abstract class DbRecordsTestBase {
                 return webAppContext
             }
         }
-        val numCounters = mutableMapOf<RecordRef, AtomicLong>()
+        val numCounters = mutableMapOf<EntityRef, AtomicLong>()
         val modelServiceFactory = object : ModelServiceFactory() {
             override fun createTypesRepo(): TypesRepo {
                 return object : TypesRepo {
-                    override fun getChildren(typeRef: RecordRef) = emptyList<RecordRef>()
-                    override fun getTypeInfo(typeRef: RecordRef): TypeInfo? {
-                        return typesInfo[typeRef.id]
+                    override fun getChildren(typeRef: EntityRef) = emptyList<RecordRef>()
+                    override fun getTypeInfo(typeRef: EntityRef): TypeInfo? {
+                        return typesInfo[typeRef.getLocalId()]
                     }
                 }
             }
 
             override fun createNumTemplatesRepo(): NumTemplatesRepo {
                 return object : NumTemplatesRepo {
-                    override fun getNumTemplate(templateRef: RecordRef): NumTemplateDef? {
-                        return numTemplates[templateRef.id]
+                    override fun getNumTemplate(templateRef: EntityRef): NumTemplateDef? {
+                        return numTemplates[templateRef.getLocalId()]
                     }
                 }
             }
 
             override fun createEcosModelAppApi(): EcosModelAppApi {
                 return object : EcosModelAppApi {
-                    override fun getNextNumberForModel(model: ObjectData, templateRef: RecordRef): Long {
+                    override fun getNextNumberForModel(model: ObjectData, templateRef: EntityRef): Long {
                         return numCounters.computeIfAbsent(templateRef) { AtomicLong() }.incrementAndGet()
                     }
                 }
@@ -241,7 +242,7 @@ abstract class DbRecordsTestBase {
 
         val defaultPermsComponent = DefaultDbPermsComponent()
         val permsComponent = object : DbPermsComponent {
-            override fun getRecordPerms(recordRef: RecordRef): DbRecordPerms {
+            override fun getRecordPerms(recordRef: EntityRef): DbRecordPerms {
                 return object : DbRecordPerms {
                     override fun getAuthoritiesWithReadPermission(): Set<String> {
                         if (recReadPerms.containsKey(recordRef)) {

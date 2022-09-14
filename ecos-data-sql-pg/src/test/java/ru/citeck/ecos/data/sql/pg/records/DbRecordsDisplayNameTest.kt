@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsDisplayNameTest : DbRecordsTestBase() {
 
@@ -15,7 +15,7 @@ class DbRecordsDisplayNameTest : DbRecordsTestBase() {
         registerType(
             TypeInfo.create {
                 withId(REC_TEST_TYPE_ID)
-                withNumTemplateRef(RecordRef.create("num-template", "test-template"))
+                withNumTemplateRef(EntityRef.create("num-template", "test-template"))
                 withDispNameTemplate(
                     MLText(
                         "App №\${_docNum}"

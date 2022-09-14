@@ -6,7 +6,6 @@ import ru.citeck.ecos.data.sql.content.EcosContentMeta
 import ru.citeck.ecos.data.sql.content.data.storage.local.EcosContentLocalStorage
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.net.URLDecoder
@@ -23,9 +22,9 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         return "/gateway/${ctx.appName}/api/record-content/$recordsDaoIdEnc/$recordIdEnc/$attributeEnc"
     }
 
-    fun getRecordRefFromContentUrl(url: String): RecordRef {
+    fun getRecordRefFromContentUrl(url: String): EntityRef {
         if (url.isBlank()) {
-            return RecordRef.EMPTY
+            return EntityRef.EMPTY
         }
         val parts = url.split("/")
         if (parts.size != 7) {
@@ -36,26 +35,26 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         val recId = URLDecoder.decode(parts[6], Charsets.UTF_8.name())
 
         if (recId.isNotBlank()) {
-            return RecordRef.create(appName, recordsDaoId, recId)
+            return EntityRef.create(appName, recordsDaoId, recId)
         }
-        return RecordRef.EMPTY
+        return EntityRef.EMPTY
     }
 
-    fun getRefForContentData(value: DataValue): RecordRef {
+    fun getRefForContentData(value: DataValue): EntityRef {
 
-        val url = value.get("url").asText()
+        val url = value["url"].asText()
         if (url.isBlank()) {
-            return RecordRef.EMPTY
+            return EntityRef.EMPTY
         }
         if (url.startsWith("/share/page/card-details")) {
-            val nodeRef = value.get("data").get("nodeRef").asText()
+            val nodeRef = value["data"]["nodeRef"].asText()
             if (nodeRef.isNotBlank()) {
-                return RecordRef.create("alfresco", "", nodeRef)
+                return EntityRef.create("alfresco", "", nodeRef)
             }
         } else if (url.startsWith("/gateway")) {
             return getRecordRefFromContentUrl(url)
         }
-        return RecordRef.EMPTY
+        return EntityRef.EMPTY
     }
 
     fun uploadContent(

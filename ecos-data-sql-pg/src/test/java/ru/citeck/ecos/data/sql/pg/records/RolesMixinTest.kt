@@ -11,7 +11,7 @@ import ru.citeck.ecos.model.lib.role.dto.RoleDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class RolesMixinTest : DbRecordsTestBase() {
 
@@ -46,9 +46,9 @@ class RolesMixinTest : DbRecordsTestBase() {
         val modelServiceFactory = object : ModelServiceFactory() {
             override fun createTypesRepo(): TypesRepo {
                 return object : TypesRepo {
-                    override fun getTypeInfo(typeRef: RecordRef): TypeInfo {
+                    override fun getTypeInfo(typeRef: EntityRef): TypeInfo {
                         return TypeInfo.create {
-                            withId(typeRef.id)
+                            withId(typeRef.getLocalId())
                             withModel(
                                 TypeModelDef.create {
                                     withRoles(roles)
@@ -56,7 +56,7 @@ class RolesMixinTest : DbRecordsTestBase() {
                             )
                         }
                     }
-                    override fun getChildren(typeRef: RecordRef): List<RecordRef> {
+                    override fun getChildren(typeRef: EntityRef): List<EntityRef> {
                         return emptyList()
                     }
                 }

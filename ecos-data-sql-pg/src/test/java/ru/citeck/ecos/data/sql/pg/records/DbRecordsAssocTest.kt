@@ -11,6 +11,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records3.record.dao.atts.RecordAttsDao
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsAssocTest : DbRecordsTestBase() {
 
@@ -78,12 +79,12 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
         val multiAssocTxtValue = records.getAtt(rec1, "multiAssocAtt[].textAtt").asStrList()
         assertThat(multiAssocTxtValue).containsExactly(rec2TxtVal, rec3TxtVal, rec4TxtVal)
 
-        val extIdRef = RecordRef.create("ext-src-id", "ext-record-id")
+        val extIdRef = EntityRef.create("ext-src-id", "ext-record-id")
         val extRefRecValue = ObjectData.create("""{"aa":"bb"}""")
         records.register(object : RecordAttsDao {
-            override fun getId() = extIdRef.sourceId
+            override fun getId() = extIdRef.getSourceId()
             override fun getRecordAtts(recordId: String): Any? {
-                if (recordId == extIdRef.id) {
+                if (recordId == extIdRef.getLocalId()) {
                     return extRefRecValue
                 }
                 return null
@@ -117,9 +118,9 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
             val ref1 = createRecord("assoc" to ref)
 
             val recRef = if (alfresco) {
-                RecordRef.create("alfresco", "", ref).toString()
+                EntityRef.create("alfresco", "", ref).toString()
             } else {
-                RecordRef.create("integrations", "", ref).toString()
+                EntityRef.create("integrations", "", ref).toString()
             }
 
             assertThat(records.getAtt(ref0, "assoc?id").asText()).isEqualTo(recRef)

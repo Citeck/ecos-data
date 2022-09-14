@@ -1,7 +1,7 @@
 package ru.citeck.ecos.data.sql.records.perms
 
 import ru.citeck.ecos.context.lib.auth.AuthGroup
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DefaultDbPermsComponent : DbPermsComponent {
 
@@ -9,7 +9,7 @@ class DefaultDbPermsComponent : DbPermsComponent {
         private val AUTHORITIES_WITH_READ_PERMS = setOf(AuthGroup.EVERYONE)
     }
 
-    override fun getRecordPerms(recordRef: RecordRef): DbRecordPerms {
+    override fun getRecordPerms(recordRef: EntityRef): DbRecordPerms {
         return DefaultRecPerms()
     }
 
