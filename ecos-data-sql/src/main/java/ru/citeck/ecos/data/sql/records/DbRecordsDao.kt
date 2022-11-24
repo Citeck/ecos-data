@@ -30,6 +30,7 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.txn.ExtTxnContext
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
@@ -95,6 +96,13 @@ class DbRecordsDao(
         private val AGG_FUNC_PATTERN = Pattern.compile("^(\\w+)\\((\\w+|\\*)\\)$")
 
         private val log = KotlinLogging.logger {}
+
+        private val GLOBAL_ATTS = listOf(
+            AttributeDef.create()
+                .withId(RecordConstants.ATT_PARENT)
+                .withType(AttributeType.ASSOC)
+                .build()
+        ).associateBy { it.id }
     }
 
     private lateinit var ecosTypeService: DbEcosTypeService
@@ -283,6 +291,8 @@ class DbRecordsDao(
                             it
                         }
                         val attDef = attributesById[newPred.getAttribute()]
+                            ?: GLOBAL_ATTS[newPred.getAttribute()]
+
                         if (newPred.getType() == ValuePredicate.Type.EQ) {
                             if (newPred.getAttribute() == DbEntity.NAME || attDef?.type == AttributeType.MLTEXT) {
                                 // MLText fields stored as json text like '{"en":"value"}'
