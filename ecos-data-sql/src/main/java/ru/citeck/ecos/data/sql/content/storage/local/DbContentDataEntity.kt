@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql.content.data.storage.local
+package ru.citeck.ecos.data.sql.content.storage.local
 
 import ru.citeck.ecos.data.sql.dto.DbColumnConstraint.*
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints

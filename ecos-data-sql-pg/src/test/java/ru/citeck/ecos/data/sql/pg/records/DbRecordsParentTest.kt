@@ -20,10 +20,11 @@ class DbRecordsParentTest : DbRecordsTestBase() {
             "_parent" to "alfresco/@abc"
         )
 
-        val result = records.query(baseQuery.copy()
-            .withQuery(
-                Predicates.eq("_parent", "alfresco/@abc")
-            ).build()
+        val result = records.query(
+            baseQuery.copy()
+                .withQuery(
+                    Predicates.eq("_parent", "alfresco/@abc")
+                ).build()
         )
         Assertions.assertThat(result.getRecords()).hasSize(1)
         Assertions.assertThat(result.getRecords()[0]).isEqualTo(ref)

@@ -5,7 +5,6 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthRole
-import ru.citeck.ecos.data.sql.content.EcosContentMeta
 import ru.citeck.ecos.data.sql.content.EcosContentService
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
@@ -14,8 +13,10 @@ import ru.citeck.ecos.data.sql.job.DbJobsProvider
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
+import ru.citeck.ecos.data.sql.records.dao.atts.DbContentValue
 import ru.citeck.ecos.data.sql.records.dao.atts.DbEmptyRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
+import ru.citeck.ecos.data.sql.records.dao.content.RecordFileUploadData
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.migration.AssocsDbMigration
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
@@ -50,12 +51,13 @@ import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.schema.resolver.AttContext
+import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.records3.record.dao.AbstractRecordsDao
 import ru.citeck.ecos.records3.record.dao.atts.RecordsAttsDao
 import ru.citeck.ecos.records3.record.dao.delete.DelStatus
 import ru.citeck.ecos.records3.record.dao.delete.RecordsDeleteDao
-import ru.citeck.ecos.records3.record.dao.mutate.RecordsMutateDao
+import ru.citeck.ecos.records3.record.dao.mutate.RecordMutateDao
 import ru.citeck.ecos.records3.record.dao.query.RecordsQueryDao
 import ru.citeck.ecos.records3.record.dao.query.RecsGroupQueryDao
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
@@ -63,8 +65,8 @@ import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.records3.utils.RecordRefUtils
+import ru.citeck.ecos.webapp.api.content.EcosContentData
 import ru.citeck.ecos.webapp.api.entity.EntityRef
-import java.io.InputStream
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.regex.Pattern
@@ -82,7 +84,7 @@ class DbRecordsDao(
 ) : AbstractRecordsDao(),
     RecordsAttsDao,
     RecordsQueryDao,
-    RecordsMutateDao,
+    RecordMutateDao,
     RecordsDeleteDao,
     TxnRecordsDao,
     JobsProvider,
@@ -116,17 +118,76 @@ class DbRecordsDao(
         dbDataService.registerMigration(AssocsDbMigration(dbRecordRefService))
     }
 
-    fun <T> readContent(recordId: String, attribute: String, action: (EcosContentMeta, InputStream) -> T): T {
+    fun uploadFile(data: RecordFileUploadData): EntityRef {
+
+        if (contentService == null) {
+            error("RecordsDao doesn't support content attributes")
+        }
+        val typeId = data.ecosType.ifBlank { config.typeRef.id }
+        if (typeId.isBlank()) {
+            error("Type is blank. Uploading is impossible")
+        }
+        val typeDef = daoCtx.ecosTypeService.getTypeInfo(typeId)
+            ?: error("type '${data.ecosType}' is not found")
+
+        val contentAttribute = typeDef.contentConfig.path.ifBlank { "content" }
+        if (contentAttribute.contains(".")) {
+            error("You can't upload file with content as complex path")
+        }
+        if (typeDef.model.attributes.all { it.id != contentAttribute } &&
+            typeDef.model.systemAttributes.all { it.id != contentAttribute }
+        ) {
+
+            error("Content attribute is not found: $contentAttribute")
+        }
+        val storageType = typeDef.contentConfig.storageType
+        val contentId = daoCtx.recContentHandler.uploadContent(data, storageType) ?: error("File uploading failed")
+
+        val recordToMutate = LocalRecordAtts()
+        recordToMutate.setAtt(contentAttribute, contentId)
+        recordToMutate.setAtt("name", data.name)
+        recordToMutate.setAtt(RecordConstants.ATT_TYPE, TypeUtils.getTypeRef(data.ecosType))
+        data.attributes.forEach { key, value ->
+            recordToMutate.setAtt(key, value)
+        }
+        return daoCtx.recContentHandler.withContentDbDataAware {
+            EntityRef.create(daoCtx.appName, daoCtx.sourceId, mutate(recordToMutate))
+        }
+    }
+
+    @JvmOverloads
+    fun getContent(recordId: String, attribute: String = "", index: Int = 0): EcosContentData? {
         if (contentService == null) {
             error("RecordsDao doesn't support content attributes")
         }
         val entity = dbDataService.findByExtId(recordId) ?: error("Entity doesn't found with id '$recordId'")
+        val notBlankAttribute = attribute.ifBlank { RecordConstants.ATT_CONTENT }
+        val dotIdx = notBlankAttribute.indexOf('.')
 
-        val attValue = entity.attributes[attribute]
-        if (attValue !is Long) {
-            error("Attribute doesn't have content id. Record: '$recordId' Attribute: $attValue")
+        if (dotIdx > 0) {
+            val contentApi = daoCtx.contentApi ?: error("ContentAPI is null")
+            val pathBeforeDot = notBlankAttribute.substring(0, dotIdx)
+            val pathAfterDot = notBlankAttribute.substring(dotIdx + 1)
+            var linkedRefId = entity.attributes[pathBeforeDot]
+            if (linkedRefId is Collection<*>) {
+                linkedRefId = linkedRefId.firstOrNull()
+            }
+            return if (linkedRefId !is Long) {
+                null
+            } else {
+                val entityRef = daoCtx.recordRefService.getRecordRefById(linkedRefId)
+                contentApi.getContent(entityRef, pathAfterDot, index)
+            }
+        } else {
+            val atts = getRecordsAtts(listOf(recordId)).first()
+            atts.init()
+            val contentValue = atts.getAtt(notBlankAttribute)
+            return if (contentValue is DbContentValue) {
+                contentValue.contentData
+            } else {
+                null
+            }
         }
-        return contentService.readContent(attValue, action)
     }
 
     fun runMigrationByType(
@@ -188,36 +249,36 @@ class DbRecordsDao(
         }
     }
 
-    override fun commit(txnId: UUID, recordsId: List<String>) {
-        log.debug { "${this.hashCode()} commit " + txnId + " records: " + recordsId }
+    override fun commit(txnId: UUID, recordIds: List<String>) {
+        log.debug { "${this.hashCode()} commit " + txnId + " records: " + recordIds }
         AuthContext.runAsSystem {
             ExtTxnContext.withExtTxn(txnId, false) {
-                dbDataService.commit(recordsId.map { getEntityToCommit(it) })
+                dbDataService.commit(recordIds.map { getEntityToCommit(it) })
             }
         }
     }
 
-    override fun rollback(txnId: UUID, recordsId: List<String>) {
-        log.debug { "${this.hashCode()} rollback " + txnId + " records: " + recordsId }
+    override fun rollback(txnId: UUID, recordIds: List<String>) {
+        log.debug { "${this.hashCode()} rollback " + txnId + " records: " + recordIds }
         ExtTxnContext.withExtTxn(txnId, false) {
-            dbDataService.rollback(recordsId)
+            dbDataService.rollback(recordIds)
         }
     }
 
-    override fun getRecordsAtts(recordsId: List<String>): List<*> {
+    override fun getRecordsAtts(recordIds: List<String>): List<AttValue> {
 
-        val txnId = RequestContext.getCurrentNotNull().ctxData.txnId
+        val txnId = RequestContext.getCurrent()?.ctxData?.txnId
 
         return if (txnId != null) {
             ExtTxnContext.withExtTxn(txnId, true) {
-                getRecordsAttsInTxn(recordsId)
+                getRecordsAttsInTxn(recordIds)
             }
         } else {
-            getRecordsAttsInTxn(recordsId)
+            getRecordsAttsInTxn(recordIds)
         }
     }
 
-    private fun getRecordsAttsInTxn(recordsId: List<String>): List<*> {
+    private fun getRecordsAttsInTxn(recordsId: List<String>): List<AttValue> {
         return recordsId.map { id ->
             if (id.isEmpty()) {
                 DbEmptyRecord(daoCtx)
@@ -280,7 +341,7 @@ class DbRecordsDao(
             val attribute = it.getAttribute()
             if (it is ValuePredicate) {
                 when (attribute) {
-                    "_type" -> {
+                    RecordConstants.ATT_TYPE -> {
                         val typeLocalId = EntityRef.valueOf(it.getValue().asText()).getLocalId()
                         ValuePredicate(DbEntity.TYPE, it.getType(), typeLocalId)
                     }
@@ -378,20 +439,20 @@ class DbRecordsDao(
         return queryRes
     }
 
-    override fun delete(recordsId: List<String>): List<DelStatus> {
+    override fun delete(recordIds: List<String>): List<DelStatus> {
 
         if (!config.deletable) {
-            error("Records DAO is not deletable. Records can't be deleted: '$recordsId'")
+            error("Records DAO is not deletable. Records can't be deleted: '$recordIds'")
         }
 
-        val txnId = RequestContext.getCurrentNotNull().ctxData.txnId
+        val txnId = RequestContext.getCurrent()?.ctxData?.txnId
 
         return if (txnId != null) {
             ExtTxnContext.withExtTxn(txnId, false) {
-                deleteInTxn(recordsId)
+                deleteInTxn(recordIds)
             }
         } else {
-            deleteInTxn(recordsId)
+            deleteInTxn(recordIds)
         }
     }
 
@@ -441,42 +502,38 @@ class DbRecordsDao(
         )
     }
 
-    override fun mutate(records: List<LocalRecordAtts>): List<String> {
+    override fun mutate(record: LocalRecordAtts): String {
         if (!config.updatable) {
-            error("Records DAO is not mutable. Records can't be mutated: '${records.map { it.id }}'")
+            error("Records DAO is not mutable. Record can't be mutated: '${record.id}'")
         }
-        val txnId = RequestContext.getCurrentNotNull().ctxData.txnId
+        val txnId = RequestContext.getCurrent()?.ctxData?.txnId
         return if (txnId != null) {
             ExtTxnContext.withExtTxn(txnId, false) {
-                mutateInTxn(records, true)
+                mutateInTxn(record, true)
             }
         } else {
-            mutateInTxn(records, false)
+            mutateInTxn(record, false)
         }
     }
 
-    private fun mutateInTxn(records: List<LocalRecordAtts>, txnExists: Boolean): List<String> {
+    private fun mutateInTxn(record: LocalRecordAtts, txnExists: Boolean): String {
 
-        val typesId = records.map { getTypeIdForRecord(it) }
-        val typesInfo = typesId.mapIndexed { idx, typeId ->
-            ecosTypeService.getTypeInfo(typeId)
-                ?: error("Type is not found: '$typeId'. Record ID: '${records[idx]}'")
-        }
+        val typeId = getTypeIdForRecord(record)
+        val typeInfo = ecosTypeService.getTypeInfo(typeId)
+            ?: error("Type is not found: '$typeId'. Record ID: '${record.id}'")
 
-        val typesAttColumns = ecosTypeService.getColumnsForTypes(typesInfo)
+        val typesAttColumns = ecosTypeService.getColumnsForTypes(listOf(typeInfo))
         val typesColumns = typesAttColumns.map { it.column }
         val typesColumnNames = typesColumns.map { it.name }.toSet()
 
-        return records.mapIndexed { recordIdx, record ->
-            mutateRecordInTxn(
-                record,
-                typesInfo[recordIdx],
-                typesAttColumns,
-                typesColumns,
-                typesColumnNames,
-                txnExists
-            )
-        }
+        return mutateRecordInTxn(
+            record,
+            typeInfo,
+            typesAttColumns,
+            typesColumns,
+            typesColumnNames,
+            txnExists
+        )
     }
 
     private fun mutateRecordInTxn(
@@ -535,7 +592,7 @@ class DbRecordsDao(
         }
 
         if (recToMutate.id != DbEntity.NEW_REC_ID && !AuthContext.isRunAsSystem()) {
-            val txnId = RequestContext.getCurrentNotNull().ctxData.txnId
+            val txnId = RequestContext.getCurrent()?.ctxData?.txnId
             if (!txnExists || recToMutate.attributes[DbDataServiceImpl.COLUMN_EXT_TXN_ID] != txnId) {
                 val recordPerms = getRecordPerms(recToMutate.extId)
                 if (!recordPerms.isCurrentUserHasWritePerms()) {
@@ -588,7 +645,12 @@ class DbRecordsDao(
             recAttributes.remove(ScalarType.DISP.mirrorAtt)
         }
 
-        daoCtx.mutAssocHandler.preProcessContentAtts(recAttributes, recToMutate, typesAttColumns)
+        daoCtx.mutAssocHandler.preProcessContentAtts(
+            recAttributes,
+            recToMutate,
+            typesAttColumns,
+            typeDef.contentConfig.storageType
+        )
         daoCtx.mutAssocHandler.replaceRefsById(recAttributes, typesAttColumns)
 
         val operations = daoCtx.mutAttOperationHandler.extractAttValueOperations(recAttributes)
@@ -816,12 +878,14 @@ class DbRecordsDao(
         daoCtx = DbRecordsDaoCtx(
             serviceFactory.webappProps.appName,
             getId(),
+            dbDataService.getTableRef(),
             config,
             contentService,
             dbRecordRefService,
             ecosTypeService,
             serviceFactory.recordsServiceV1,
-            serviceFactory.getEcosWebAppContext()?.getAuthorityService(),
+            serviceFactory.getEcosWebAppApi()?.getContentApi(),
+            serviceFactory.getEcosWebAppApi()?.getAuthoritiesApi(),
             listeners,
             this
         )

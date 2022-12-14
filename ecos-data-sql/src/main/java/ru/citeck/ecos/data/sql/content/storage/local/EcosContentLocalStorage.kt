@@ -1,9 +1,8 @@
-package ru.citeck.ecos.data.sql.content.data.storage.local
+package ru.citeck.ecos.data.sql.content.storage.local
 
-import ru.citeck.ecos.commons.utils.digest.DigestAlgorithm
-import ru.citeck.ecos.commons.utils.digest.DigestUtils
-import ru.citeck.ecos.data.sql.content.data.storage.EcosContentStorage
-import ru.citeck.ecos.data.sql.content.data.storage.EcosContentStorageMeta
+import ru.citeck.ecos.commons.utils.io.IOUtils
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorage
+import ru.citeck.ecos.data.sql.content.stream.EcosContentWriterInputStream
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
@@ -11,7 +10,6 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
-import java.io.OutputStream
 
 class EcosContentLocalStorage(
     private val dataService: DbDataService<DbContentDataEntity>
@@ -21,55 +19,46 @@ class EcosContentLocalStorage(
         const val TYPE = "local"
     }
 
-    override fun writeContent(action: (OutputStream) -> Unit): EcosContentStorageMeta {
+    override fun uploadContent(type: String, content: EcosContentWriterInputStream): String {
 
         val bytesOut = ByteArrayOutputStream()
-        action.invoke(bytesOut)
+        IOUtils.copy(content, bytesOut)
         val byteArray = bytesOut.toByteArray()
 
-        val digest = DigestUtils.getDigest(byteArray, DigestAlgorithm.SHA256)
+        val sha256 = content.getSha256Digest()
+        val contentSize = content.getContentSize()
 
         val data = dataService.find(
             Predicates.and(
-                Predicates.eq(DbContentDataEntity.SHA_256, digest.hash),
-                Predicates.eq(DbContentDataEntity.SIZE, digest.size)
+                Predicates.eq(DbContentDataEntity.SHA_256, sha256),
+                Predicates.eq(DbContentDataEntity.SIZE, contentSize)
             ),
             emptyList(),
             DbFindPage.FIRST
         )
 
         if (data.entities.isNotEmpty()) {
-            return entityToMeta(data.entities[0])
+            return entityToPath(data.entities[0])
         }
 
         val entity = DbContentDataEntity()
         entity.data = byteArray
-        entity.sha256 = digest.hash
-        entity.size = digest.size
+        entity.sha256 = sha256
+        entity.size = contentSize
 
-        return entityToMeta(dataService.save(entity))
-    }
-
-    private fun entityToMeta(entity: DbContentDataEntity): EcosContentStorageMeta {
-        return EcosContentStorageMeta(
-            entity.id.toString(),
-            entity.sha256,
-            entity.size
-        )
+        return entityToPath(dataService.save(entity))
     }
 
     private fun entityToPath(entity: DbContentDataEntity): String {
         return entity.id.toString()
     }
 
-    override fun <T> readContent(path: String, action: (InputStream) -> T): T {
+    override fun getContent(path: String): InputStream {
 
         val id = path.toLong()
         val entity = dataService.findById(id) ?: error("Content doesn't exists for id: $path")
 
-        val bytesIn = ByteArrayInputStream(entity.data)
-
-        return action.invoke(bytesIn)
+        return ByteArrayInputStream(entity.data)
     }
 
     override fun runMigrations(mock: Boolean, diff: Boolean): List<String> {

@@ -1,21 +1,21 @@
 package ru.citeck.ecos.data.sql.pg.records
 
-import mu.KotlinLogging
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.commons.utils.digest.DigestUtils
 import ru.citeck.ecos.commons.utils.io.IOUtils
+import ru.citeck.ecos.data.sql.records.dao.content.RecordFileUploadData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records3.record.dao.atts.RecordAttsDao
+import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.webapp.api.entity.EntityRef
+import java.io.ByteArrayInputStream
 import java.util.*
 
 class DbRecordsContentAttTest : DbRecordsTestBase() {
-
-    companion object {
-        private val log = KotlinLogging.logger {}
-    }
 
     @Test
     fun test() {
@@ -66,19 +66,21 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
 
         val checkContent = { contentAttName: String ->
 
-            val (utf8String, meta) = recordsDao.readContent(ref.id, contentAttName) { meta, input ->
-                IOUtils.readAsString(input) to meta
-            }
+            val contentData = recordsDao.getContent(ref.id, contentAttName)
+            val utf8String = contentData?.readContent { IOUtils.readAsString(it) }
+            val mimeType = records.getAtt(ref, "$contentAttName.mimeType").asText()
 
             assertThat(utf8String).isEqualTo(textContent)
-            assertThat(meta.mimeType).isEqualTo(contentMimeType)
+            assertThat(mimeType).isEqualTo(contentMimeType)
 
             val contentDataJson = records.getAtt(ref, "$contentAttName._as.content-data?json")
 
             val expectedContentSize = textContent.toByteArray(Charsets.UTF_8).size
+            val contentName = records.getAtt(ref, "$contentAttName.name").asText()
 
-            assertThat(contentDataJson.size()).isEqualTo(3)
+            assertThat(contentDataJson.size()).isEqualTo(4)
             assertThat(contentDataJson["name"].asText()).isEqualTo(records.getAtt(ref, "?disp").asText())
+            assertThat(contentDataJson["contentName"].asText()).isEqualTo(contentName)
             assertThat(contentDataJson["size"].asInt()).isEqualTo(expectedContentSize)
             assertThat(contentDataJson["url"].asText()).isNotBlank
 
@@ -143,14 +145,111 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
 
         val ref = createRecord(contentAttName0 to contentAttValue)
 
-        val (utf8String, meta) = recordsDao.readContent(ref.id, contentAttName0) { meta, input ->
-            IOUtils.readAsString(input) to meta
-        }
+        val contentData = recordsDao.getContent(ref.id, contentAttName0)
+        val utf8String = contentData?.readContent { IOUtils.readAsString(it) }
+
+        val contentName = records.getAtt(ref, "$contentAttName0.name").asText()
+
         assertThat(utf8String).isEqualTo(textContent)
-        assertThat(meta.name).isEqualTo("photo.jpeg")
+        assertThat(contentName).isEqualTo("photo.jpeg")
 
         val bytesFromAttBase64 = records.getAtt(ref, "$contentAttName0.bytes").asText()
         val bytesFromAtt = Base64.getDecoder().decode(bytesFromAttBase64)
         assertThat(String(bytesFromAtt, Charsets.UTF_8)).isEqualTo(textContent)
+    }
+
+    @Test
+    fun uploadFileTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("content")
+                    withType(AttributeType.CONTENT)
+                },
+                AttributeDef.create {
+                    withId("name")
+                    withType(AttributeType.MLTEXT)
+                }
+            )
+        )
+
+        val content = "some-text-content".toByteArray()
+
+        val fileRef = RequestContext.doWithCtx {
+            recordsDao.uploadFile(
+                RecordFileUploadData.create()
+                    .withName("some-name")
+                    .withContent(ByteArrayInputStream(content))
+                    .withMimeType("plain/text")
+                    .withEncoding("UTF-8")
+                    .withEcosType(REC_TEST_TYPE_ID)
+                    .build()
+            )
+        }
+
+        val checkContent: (EntityRef, String) -> Unit = { ref, name ->
+
+            log.info { "Content check for ref $ref" }
+
+            val getAtt: (String) -> String = {
+                records.getAtt(ref, it).asText()
+            }
+
+            assertThat(getAtt("content.mimeType")).isEqualTo("plain/text")
+            assertThat(getAtt("content.size").toLong()).isEqualTo(content.size.toLong())
+            assertThat(getAtt("content.sha256")).isEqualTo(DigestUtils.getSha256(content).hash)
+            assertThat(getAtt("content.encoding")).isEqualTo("UTF-8")
+            assertThat(getAtt("content.bytes")).isEqualTo(Base64.getEncoder().encodeToString(content))
+            assertThat(getAtt("content.name")).isEqualTo("some-name")
+            assertThat(getAtt("?disp")).isEqualTo(name)
+        }
+
+        checkContent(fileRef, "some-name")
+
+        val newRecord = createRecord(
+            "name" to "CustomName",
+            "content" to fileRef
+        )
+
+        checkContent(newRecord, "CustomName")
+    }
+
+    @Test
+    fun uploadWithTempFileTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("content")
+                    withType(AttributeType.CONTENT)
+                }
+            )
+        )
+        val contentSrc = "abcd".toByteArray()
+
+        RequestContext.doWithCtx {
+            val uploadedFile = recordsDao.uploadFile(
+                RecordFileUploadData.create()
+                    .withContent(ByteArrayInputStream(contentSrc))
+                    .withEcosType(REC_TEST_TYPE_ID)
+                    .build()
+            )
+
+            val contentFromUploadedFile = records.getAtt(uploadedFile, "_content.bytes").asText()
+            assertThat(Base64.getDecoder().decode(contentFromUploadedFile)).isEqualTo(contentSrc)
+
+            val newFile = records.create(
+                recordsDao.getId(),
+                ObjectData.create()
+                    .set("_type", REC_TEST_TYPE_REF)
+                    .set("content", uploadedFile)
+            )
+
+            val bytesFromAtt = Base64.getDecoder().decode(records.getAtt(newFile, "content.bytes").asText())
+            val bytesFromRead = recordsDao.getContent(newFile.id, "_content")?.readContentAsBytes()
+
+            assertThat(bytesFromRead).isEqualTo(bytesFromAtt).isEqualTo(contentSrc)
+        }
     }
 }

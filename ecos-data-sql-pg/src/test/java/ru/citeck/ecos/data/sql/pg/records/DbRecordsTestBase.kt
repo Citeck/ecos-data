@@ -7,13 +7,13 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
-import ru.citeck.ecos.commons.test.EcosWebAppContextMock
+import ru.citeck.ecos.commons.test.EcosWebAppApiMock
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.EcosContentServiceImpl
-import ru.citeck.ecos.data.sql.content.data.EcosContentDataServiceImpl
-import ru.citeck.ecos.data.sql.content.data.storage.local.DbContentDataEntity
-import ru.citeck.ecos.data.sql.content.data.storage.local.EcosContentLocalStorage
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl
+import ru.citeck.ecos.data.sql.content.storage.local.DbContentDataEntity
+import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
@@ -50,7 +50,7 @@ import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.request.RequestContext
-import ru.citeck.ecos.webapp.api.context.EcosWebAppContext
+import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.util.concurrent.atomic.AtomicLong
 import javax.sql.DataSource
@@ -197,9 +197,9 @@ abstract class DbRecordsTestBase {
             pgDataServiceFactory
         )
 
-        val webAppContext = EcosWebAppContextMock(appName)
+        val webAppContext = EcosWebAppApiMock(appName)
         recordsServiceFactory = object : RecordsServiceFactory() {
-            override fun getEcosWebAppContext(): EcosWebAppContext {
+            override fun getEcosWebAppApi(): EcosWebAppApi {
                 return webAppContext
             }
         }
@@ -230,7 +230,7 @@ abstract class DbRecordsTestBase {
                 }
             }
 
-            override fun getEcosWebAppContext(): EcosWebAppContext {
+            override fun getEcosWebAppApi(): EcosWebAppApi {
                 return webAppContext
             }
         }
@@ -272,7 +272,7 @@ abstract class DbRecordsTestBase {
             }
         }
 
-        val contentDataService = EcosContentDataServiceImpl()
+        val contentDataService = EcosContentStorageServiceImpl()
         contentDataService.register(
             EcosContentLocalStorage(
                 DbDataServiceImpl(

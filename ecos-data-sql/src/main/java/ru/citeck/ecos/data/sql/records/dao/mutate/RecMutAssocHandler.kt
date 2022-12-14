@@ -24,7 +24,12 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         private const val MUTATION_FROM_CHILD_FLAG = "__mutationFromChild"
     }
 
-    fun preProcessContentAtts(recAttributes: ObjectData, recToMutate: DbEntity, columns: List<EcosAttColumnDef>) {
+    fun preProcessContentAtts(
+        recAttributes: ObjectData,
+        recToMutate: DbEntity,
+        columns: List<EcosAttColumnDef>,
+        contentStorageType: String
+    ) {
 
         for (column in columns) {
 
@@ -38,7 +43,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                     recToMutate,
                     column.attribute.id,
                     contentData,
-                    column.column.multiple
+                    column.column.multiple,
+                    contentStorageType
                 )
             } else if (DbRecordsUtils.isAssocLikeAttribute(column.attribute)) {
                 val assocValue = recAttributes[column.attribute.id]

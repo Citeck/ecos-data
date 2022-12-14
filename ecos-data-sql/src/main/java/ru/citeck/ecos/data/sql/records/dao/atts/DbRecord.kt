@@ -34,8 +34,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             RecordConstants.ATT_MODIFIED to DbEntity.MODIFIED,
             RecordConstants.ATT_MODIFIER to DbEntity.MODIFIER,
             ScalarType.LOCAL_ID.mirrorAtt to DbEntity.EXT_ID,
-            StatusConstants.ATT_STATUS to DbEntity.STATUS,
-            RecordConstants.ATT_CONTENT to "content"
+            StatusConstants.ATT_STATUS to DbEntity.STATUS
         )
 
         val DOC_NUM_COLUMN = DbColumnDef.create {
@@ -243,18 +242,37 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 return DbStatusValue(statusDef)
             }
             ATT_PERMISSIONS -> permsValue
+            RecordConstants.ATT_CONTENT -> getDefaultContent()
             else -> {
-                val perms = permsValue.getRecordPerms()
-                if (perms != null && !perms.isCurrentUserHasAttReadPerms(name)) {
-                    null
-                } else {
+                if (isCurrentUserHasAttReadPerms(name)) {
                     additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
+                } else {
+                    null
                 }
             }
         }
     }
 
-    override fun getEdge(name: String): AttEdge? {
+    private fun isCurrentUserHasAttReadPerms(attribute: String): Boolean {
+        val perms = permsValue.getRecordPerms() ?: return true
+        return perms.isCurrentUserHasAttReadPerms(attribute)
+    }
+
+    private fun getDefaultContent(): Any? {
+        val typeInfo = typeInfo
+        val attributeWithContent = (typeInfo?.contentConfig?.path ?: "").ifBlank { "content" }
+        if (attributeWithContent.contains(".")) {
+            // todo
+            return null
+        }
+        return if (isCurrentUserHasAttReadPerms(attributeWithContent)) {
+            additionalAtts[attributeWithContent]
+        } else {
+            null
+        }
+    }
+
+    override fun getEdge(name: String): AttEdge {
         if (name == StatusConstants.ATT_STATUS) {
             return DbStatusEdge(ctx, type)
         }
@@ -265,7 +283,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         if (name.isBlank()) {
             return RecordRef.EMPTY
         }
-        return ctx.authorityService?.getAuthorityRef(name) ?: return name
+        return ctx.authoritiesApi?.getAuthorityRef(name) ?: return name
     }
 
     override fun getType(): RecordRef {
