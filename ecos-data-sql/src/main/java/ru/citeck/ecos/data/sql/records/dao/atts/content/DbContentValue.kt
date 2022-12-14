@@ -1,7 +1,5 @@
-package ru.citeck.ecos.data.sql.records.dao.atts
+package ru.citeck.ecos.data.sql.records.dao.atts.content
 
-import ru.citeck.ecos.commons.data.MLText
-import ru.citeck.ecos.context.lib.i18n.I18nContext
 import ru.citeck.ecos.data.sql.content.EcosContentDbData
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.records3.record.atts.value.AttValue
@@ -9,10 +7,9 @@ import ru.citeck.ecos.records3.record.atts.value.AttValue
 class DbContentValue(
     private val ctx: DbRecordsDaoCtx,
     private val recId: String,
-    private val name: MLText,
     private val contentDbId: Long,
     private val attribute: String
-) : AttValue {
+) : AttValue, HasEcosContentDbData {
 
     companion object {
         const val CONTENT_DATA = "content-data"
@@ -21,6 +18,10 @@ class DbContentValue(
     val contentData: EcosContentDbData by lazy {
         val service = ctx.contentService ?: error("Content service is null")
         service.getContent(contentDbId) ?: error("Content doesn't found by id '$id'")
+    }
+
+    override fun getContentDbData(): EcosContentDbData {
+        return contentData
     }
 
     override fun getAtt(name: String): Any? {
@@ -48,16 +49,10 @@ class DbContentValue(
 
     override fun getAs(type: String): Any? {
         if (type == CONTENT_DATA) {
-            val name = if (MLText.isEmpty(name)) {
-                contentData.getName()
-            } else {
-                MLText.getClosestValue(name, I18nContext.getLocale())
-            }
             return ContentData(
                 ctx.recContentHandler.createContentUrl(recId, attribute),
-                name,
-                contentData.getSize(),
-                contentData.getName()
+                contentData.getName(),
+                contentData.getSize()
             )
         }
         return null
@@ -66,7 +61,6 @@ class DbContentValue(
     data class ContentData(
         val url: String,
         val name: String,
-        val size: Long,
-        val contentName: String
+        val size: Long
     )
 }

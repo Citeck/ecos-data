@@ -2,10 +2,13 @@ package ru.citeck.ecos.data.sql.records.dao.atts
 
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.context.lib.i18n.I18nContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
+import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValue
+import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValueWithCustomName
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
@@ -167,7 +170,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             return null
         }
         return if (ctx.contentService != null) {
-            DbContentValue(ctx, entity.extId, entity.name, value, attId)
+            DbContentValue(ctx, entity.extId, value, attId)
         } else {
             null
         }
@@ -266,7 +269,14 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             return null
         }
         return if (isCurrentUserHasAttReadPerms(attributeWithContent)) {
-            additionalAtts[attributeWithContent]
+            val contentValue = additionalAtts[attributeWithContent]
+            if (contentValue is DbContentValue) {
+                val entityName = MLText.getClosestValue(entity.name, I18nContext.getLocale())
+                if (entityName.isNotBlank()) {
+                    return DbContentValueWithCustomName(entityName, contentValue)
+                }
+            }
+            return contentValue
         } else {
             null
         }

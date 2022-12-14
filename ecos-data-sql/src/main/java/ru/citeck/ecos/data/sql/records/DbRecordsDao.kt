@@ -13,9 +13,9 @@ import ru.citeck.ecos.data.sql.job.DbJobsProvider
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
-import ru.citeck.ecos.data.sql.records.dao.atts.DbContentValue
 import ru.citeck.ecos.data.sql.records.dao.atts.DbEmptyRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
+import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
 import ru.citeck.ecos.data.sql.records.dao.content.RecordFileUploadData
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.migration.AssocsDbMigration
@@ -182,8 +182,8 @@ class DbRecordsDao(
             val atts = getRecordsAtts(listOf(recordId)).first()
             atts.init()
             val contentValue = atts.getAtt(notBlankAttribute)
-            return if (contentValue is DbContentValue) {
-                contentValue.contentData
+            return if (contentValue is HasEcosContentDbData) {
+                contentValue.getContentDbData()
             } else {
                 null
             }

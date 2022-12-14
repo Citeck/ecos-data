@@ -64,7 +64,7 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
             contentAttName1 to contentAttValue[0]
         )
 
-        val checkContent = { contentAttName: String ->
+        val checkContent = { contentAttName: String, contentName: String ->
 
             val contentData = recordsDao.getContent(ref.id, contentAttName)
             val utf8String = contentData?.readContent { IOUtils.readAsString(it) }
@@ -76,11 +76,16 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
             val contentDataJson = records.getAtt(ref, "$contentAttName._as.content-data?json")
 
             val expectedContentSize = textContent.toByteArray(Charsets.UTF_8).size
-            val contentName = records.getAtt(ref, "$contentAttName.name").asText()
 
-            assertThat(contentDataJson.size()).isEqualTo(4)
-            assertThat(contentDataJson["name"].asText()).isEqualTo(records.getAtt(ref, "?disp").asText())
-            assertThat(contentDataJson["contentName"].asText()).isEqualTo(contentName)
+            val expectedName = if (contentAttName == "_content") {
+                records.getAtt(ref, "?disp").asText()
+            } else {
+                contentName
+            }
+            val contentNameFromAtt = records.getAtt(ref, "$contentAttName.name").asText()
+
+            assertThat(contentDataJson.size()).isEqualTo(3)
+            assertThat(contentDataJson["name"].asText()).isEqualTo(expectedName).isEqualTo(contentNameFromAtt)
             assertThat(contentDataJson["size"].asInt()).isEqualTo(expectedContentSize)
             assertThat(contentDataJson["url"].asText()).isNotBlank
 
@@ -89,10 +94,10 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
 
         listOf(contentAttName0, contentAttName1).forEach {
             try {
-                checkContent(it)
+                checkContent(it, fileName)
                 val json = records.getAtt(ref, "$it._as.content-data?json")
                 updateRecord(ref, it to json)
-                checkContent(it)
+                checkContent(it, fileName)
             } catch (e: Throwable) {
                 log.error { "Attribute: $it" }
                 throw e
