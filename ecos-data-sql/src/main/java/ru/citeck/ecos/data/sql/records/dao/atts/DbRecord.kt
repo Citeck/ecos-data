@@ -72,6 +72,10 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             withName("_isDraft")
             withType(DbColumnType.BOOLEAN)
         }
+
+        fun getDefaultContentAtt(typeInfo: TypeInfo?): String {
+            return (typeInfo?.contentConfig?.path ?: "").ifBlank { "content" }
+        }
     }
 
     private val permsValue by lazy { DbRecPermsValue(ctx, entity.extId) }
@@ -219,7 +223,16 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     }
 
     override fun has(name: String): Boolean {
-        return additionalAtts.contains(ATTS_MAPPING.getOrDefault(name, name))
+        val fixedName = when (name) {
+            RecordConstants.ATT_CONTENT -> getDefaultContentAtt()
+            else -> ATTS_MAPPING.getOrDefault(name, name)
+        }
+        val value = additionalAtts[fixedName] ?: return false
+        return when (value) {
+            is String -> value != ""
+            is Collection<*> -> !value.isEmpty()
+            else -> true
+        }
     }
 
     override fun getAs(type: String): Any? {
@@ -246,6 +259,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             }
             ATT_PERMISSIONS -> permsValue
             RecordConstants.ATT_CONTENT -> getDefaultContent()
+            "previewInfo" -> getDefaultContent()?.getContentValue()?.getAtt("previewInfo")
             else -> {
                 if (isCurrentUserHasAttReadPerms(name)) {
                     additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
@@ -261,9 +275,12 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         return perms.isCurrentUserHasAttReadPerms(attribute)
     }
 
-    private fun getDefaultContent(): Any? {
-        val typeInfo = typeInfo
-        val attributeWithContent = (typeInfo?.contentConfig?.path ?: "").ifBlank { "content" }
+    private fun getDefaultContentAtt(): String {
+        return getDefaultContentAtt(typeInfo)
+    }
+
+    private fun getDefaultContent(): DbContentValueWithCustomName? {
+        val attributeWithContent = getDefaultContentAtt()
         if (attributeWithContent.contains(".")) {
             // todo
             return null
@@ -276,7 +293,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                     return DbContentValueWithCustomName(entityName, contentValue)
                 }
             }
-            return contentValue
+            return null
         } else {
             null
         }

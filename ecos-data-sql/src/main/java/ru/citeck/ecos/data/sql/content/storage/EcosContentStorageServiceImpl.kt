@@ -30,9 +30,14 @@ class EcosContentStorageServiceImpl : EcosContentStorageService, DbMigrationsExe
         )
     }
 
-    override fun getContent(uri: URI): InputStream {
+    override fun <T> readContent(uri: URI, action: (InputStream) -> T): T {
         val contentStorage = getStorage(uri.authority)
-        return contentStorage.getContent(nameEscaper.unescape(uri.path.substring(1)))
+        return contentStorage.readContent(nameEscaper.unescape(uri.path.substring(1)), action)
+    }
+
+    override fun removeContent(uri: URI) {
+        val contentStorage = getStorage(uri.authority)
+        return contentStorage.removeContent(nameEscaper.unescape(uri.path.substring(1)))
     }
 
     private fun getStorage(storage: String): EcosContentStorage {

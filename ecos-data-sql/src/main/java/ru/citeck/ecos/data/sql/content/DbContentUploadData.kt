@@ -2,7 +2,7 @@ package ru.citeck.ecos.data.sql.content
 
 import java.io.InputStream
 
-open class EcosContentUploadData(
+open class DbContentUploadData(
     val encoding: String,
     val mimeType: String,
     val name: String,
@@ -44,8 +44,8 @@ open class EcosContentUploadData(
             return this
         }
 
-        fun build(): EcosContentUploadData {
-            return EcosContentUploadData(
+        fun build(): DbContentUploadData {
+            return DbContentUploadData(
                 encoding = encoding,
                 mimeType = mimeType,
                 name = name,

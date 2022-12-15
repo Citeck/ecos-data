@@ -2,7 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao.content
 
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.utils.DataUriUtil
-import ru.citeck.ecos.data.sql.content.EcosContentUploadData
+import ru.citeck.ecos.data.sql.content.DbContentUploadData
 import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -84,7 +84,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
 
         return contentService.uploadContent(
             storageType.ifBlank { EcosContentLocalStorage.TYPE },
-            EcosContentUploadData.create()
+            DbContentUploadData.create()
                 .withEncoding(data.encoding)
                 .withName(data.name)
                 .withMimeType(data.mimeType)
@@ -137,7 +137,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         }
         val urlData = contentData["url"]
         var dataBytes: ByteArray? = null
-        val uploadData = EcosContentUploadData.create()
+        val uploadData = DbContentUploadData.create()
 
         if (urlData.isTextual() && urlData.isNotEmpty()) {
 
@@ -208,7 +208,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
             ctx.contentApi.getContent(entityRef)?.readContent { input ->
                 contentService.uploadContent(
                     storageType.ifBlank { EcosContentLocalStorage.TYPE },
-                    EcosContentUploadData.create()
+                    DbContentUploadData.create()
                         .withMimeType(metaAtts.mimeType)
                         .withName(metaAtts.name)
                         .withEncoding(metaAtts.encoding)

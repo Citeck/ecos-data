@@ -415,6 +415,13 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         }
     }
 
+    override fun forceDelete(entityId: Long) {
+        initColumns()
+        dataSource.withTransaction(false) {
+            entityRepo.forceDelete(entityId)
+        }
+    }
+
     override fun forceDelete(entity: T) {
         initColumns()
         dataSource.withTransaction(false) {

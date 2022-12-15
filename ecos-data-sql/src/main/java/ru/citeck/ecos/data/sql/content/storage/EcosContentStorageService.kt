@@ -8,5 +8,7 @@ interface EcosContentStorageService {
 
     fun uploadContent(storage: String, content: EcosContentWriterInputStream): URI
 
-    fun getContent(uri: URI): InputStream
+    fun <T> readContent(uri: URI, action: (InputStream) -> T): T
+
+    fun removeContent(uri: URI)
 }

@@ -53,12 +53,16 @@ class EcosContentLocalStorage(
         return entity.id.toString()
     }
 
-    override fun getContent(path: String): InputStream {
+    override fun <T> readContent(path: String, action: (InputStream) -> T): T {
 
         val id = path.toLong()
         val entity = dataService.findById(id) ?: error("Content doesn't exists for id: $path")
 
-        return ByteArrayInputStream(entity.data)
+        return action(ByteArrayInputStream(entity.data))
+    }
+
+    override fun removeContent(path: String) {
+        dataService.forceDelete(path.toLong())
     }
 
     override fun runMigrations(mock: Boolean, diff: Boolean): List<String> {

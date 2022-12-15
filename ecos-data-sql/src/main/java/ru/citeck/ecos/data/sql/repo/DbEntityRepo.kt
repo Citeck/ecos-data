@@ -35,6 +35,8 @@ interface DbEntityRepo<T : Any> {
 
     fun delete(entity: T)
 
+    fun forceDelete(entityId: Long)
+
     fun forceDelete(entity: T)
 
     fun forceDelete(entities: List<T>)

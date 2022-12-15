@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao
 
-import ru.citeck.ecos.data.sql.content.EcosContentService
+import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
@@ -21,7 +21,7 @@ class DbRecordsDaoCtx(
     val sourceId: String,
     val tableRef: DbTableRef,
     val config: DbRecordsDaoConfig,
-    val contentService: EcosContentService?,
+    val contentService: DbContentService?,
     val recordRefService: DbRecordRefService,
     val ecosTypeService: DbEcosTypeService,
     val recordsService: RecordsService,

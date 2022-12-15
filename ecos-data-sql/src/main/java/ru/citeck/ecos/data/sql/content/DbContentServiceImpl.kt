@@ -9,12 +9,12 @@ import java.io.InputStream
 import java.time.Instant
 import java.util.UUID
 
-class EcosContentServiceImpl(
+class DbContentServiceImpl(
     private val dataService: DbDataService<DbContentEntity>,
     private val contentDataService: EcosContentStorageService
-) : EcosContentService, DbMigrationsExecutor {
+) : DbContentService, DbMigrationsExecutor {
 
-    override fun uploadContent(storage: String, data: EcosContentUploadData): EcosContentDbData {
+    override fun uploadContent(storage: String, data: DbContentUploadData): DbEcosContentData {
 
         val contentStream = EcosContentWriterInputStreamImpl(data.content)
         val dataUri = contentDataService.uploadContent(storage, contentStream)
@@ -31,7 +31,7 @@ class EcosContentServiceImpl(
         return EcosContentDataImpl(dataService.save(entity))
     }
 
-    override fun getContent(id: Long): EcosContentDbData? {
+    override fun getContent(id: Long): DbEcosContentData? {
         val entity = dataService.findById(id) ?: return null
         return EcosContentDataImpl(entity)
     }
@@ -46,7 +46,7 @@ class EcosContentServiceImpl(
         return result
     }
 
-    private inner class EcosContentDataImpl(val entity: DbContentEntity) : EcosContentDbData {
+    private inner class EcosContentDataImpl(val entity: DbContentEntity) : DbEcosContentData {
 
         override fun getDbId(): Long {
             return entity.id
@@ -77,7 +77,7 @@ class EcosContentServiceImpl(
         }
 
         override fun <T> readContent(action: (InputStream) -> T): T {
-            return contentDataService.getContent(entity.uri).use { action(it) }
+            return contentDataService.readContent(entity.uri, action)
         }
     }
 }

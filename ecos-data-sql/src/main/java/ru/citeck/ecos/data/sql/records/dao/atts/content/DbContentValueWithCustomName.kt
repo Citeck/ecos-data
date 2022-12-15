@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao.atts.content
 
-import ru.citeck.ecos.data.sql.content.EcosContentDbData
+import ru.citeck.ecos.data.sql.content.DbEcosContentData
 import ru.citeck.ecos.records3.record.atts.value.impl.AttValueDelegate
 import java.io.InputStream
 import java.time.Instant
@@ -10,8 +10,16 @@ class DbContentValueWithCustomName(
     private val value: DbContentValue
 ) : AttValueDelegate(value), HasEcosContentDbData {
 
-    override fun getContentDbData(): EcosContentDbData {
-        return EcosContentDbDataWithName(name, value.contentData)
+    fun getContentValue(): DbContentValue {
+        return value
+    }
+
+    override fun getDisplayName(): Any {
+        return name
+    }
+
+    override fun getContentDbData(): DbEcosContentData {
+        return DbEcosContentDataWithName(name, value.contentData)
     }
 
     override fun getAs(type: String): Any? {
@@ -29,10 +37,10 @@ class DbContentValueWithCustomName(
         return super.getAtt(name)
     }
 
-    private class EcosContentDbDataWithName(
+    private class DbEcosContentDataWithName(
         private val name: String,
-        private val value: EcosContentDbData
-    ) : EcosContentDbData {
+        private val value: DbEcosContentData
+    ) : DbEcosContentData {
         override fun getCreated(): Instant = value.getCreated()
         override fun getEncoding(): String = value.getEncoding()
         override fun getMimeType(): String = value.getMimeType()

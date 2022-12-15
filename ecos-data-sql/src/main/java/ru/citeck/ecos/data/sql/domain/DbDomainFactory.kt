@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.domain
 
-import ru.citeck.ecos.data.sql.content.EcosContentService
+import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
@@ -19,7 +19,7 @@ class DbDomainFactory(
     val permsComponent: DbPermsComponent,
     val computedAttsComponent: DbComputedAttsComponent,
     val recordRefServiceSupplier: (DbDataSource, String) -> DbRecordRefService,
-    val ecosContentServiceSupplier: (DbDataSource, String) -> EcosContentService,
+    val dbContentServiceSupplier: (DbDataSource, String) -> DbContentService,
     val defaultListeners: List<DbRecordsListener>
 ) {
 
@@ -32,7 +32,7 @@ class DbDomainFactory(
         var dataSource: DbDataSource? = null
         var permsComponent: DbPermsComponent? = null
         var computedAttsComponent: DbComputedAttsComponent? = null
-        var ecosContentService: EcosContentService? = null
+        var dbContentService: DbContentService? = null
         var listeners: List<DbRecordsListener>? = null
         var excludeDefaultListeners: Boolean = false
 
@@ -51,8 +51,8 @@ class DbDomainFactory(
             return this
         }
 
-        fun withEcosContentService(ecosContentService: EcosContentService): Builder {
-            this.ecosContentService = ecosContentService
+        fun withEcosContentService(dbContentService: DbContentService): Builder {
+            this.dbContentService = dbContentService
             return this
         }
 
@@ -87,7 +87,7 @@ class DbDomainFactory(
                 recordRefServiceSupplier.invoke(dataSource, schema),
                 permsComponent ?: this@DbDomainFactory.permsComponent,
                 computedAttsComponent ?: this@DbDomainFactory.computedAttsComponent,
-                this.ecosContentService ?: ecosContentServiceSupplier.invoke(dataSource, schema)
+                this.dbContentService ?: dbContentServiceSupplier.invoke(dataSource, schema)
             )
 
             if (!excludeDefaultListeners) {

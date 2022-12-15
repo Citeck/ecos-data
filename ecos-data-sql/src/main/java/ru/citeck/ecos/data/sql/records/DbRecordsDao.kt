@@ -5,7 +5,7 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthRole
-import ru.citeck.ecos.data.sql.content.EcosContentService
+import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
 import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
@@ -80,7 +80,7 @@ class DbRecordsDao(
     private val dbRecordRefService: DbRecordRefService,
     private val permsComponent: DbPermsComponent,
     private val computedAttsComponent: DbComputedAttsComponent?,
-    private val contentService: EcosContentService?
+    private val contentService: DbContentService?
 ) : AbstractRecordsDao(),
     RecordsAttsDao,
     RecordsQueryDao,
@@ -458,9 +458,23 @@ class DbRecordsDao(
 
     private fun deleteInTxn(recordsId: List<String>): List<DelStatus> {
 
+        var isTempStorage = false
+        var typeDef: TypeInfo? = ecosTypeService.getTypeInfo(config.typeRef.id)
+        while (typeDef != null) {
+            if (typeDef.id == "temp-file") {
+                isTempStorage = true
+                break
+            }
+            typeDef = ecosTypeService.getTypeInfo(typeDef.parentRef.getLocalId())
+        }
         for (recordId in recordsId) {
             dbDataService.findByExtId(recordId)?.let { entity ->
-                dbDataService.delete(entity)
+                if (isTempStorage) {
+                    dbDataService.forceDelete(entity)
+                    // todo: remove content
+                } else {
+                    dbDataService.delete(entity)
+                }
                 val typeInfo = ecosTypeService.getTypeInfo(entity.type)
                 if (typeInfo != null) {
                     val event = DbRecordDeletedEvent(DbRecord(daoCtx, entity), typeInfo)
@@ -590,8 +604,9 @@ class DbRecordsDao(
             }
             entity
         }
+        val isNewRec = recToMutate.id == DbEntity.NEW_REC_ID
 
-        if (recToMutate.id != DbEntity.NEW_REC_ID && !AuthContext.isRunAsSystem()) {
+        if (!isNewRec && !AuthContext.isRunAsSystem()) {
             val txnId = RequestContext.getCurrent()?.ctxData?.txnId
             if (!txnExists || recToMutate.attributes[DbDataServiceImpl.COLUMN_EXT_TXN_ID] != txnId) {
                 val recordPerms = getRecordPerms(recToMutate.extId)
@@ -634,6 +649,7 @@ class DbRecordsDao(
         }
 
         val recAttributes = record.attributes.deepCopy()
+
         if (record.attributes.has(DbRecord.ATT_NAME) || record.attributes.has(ScalarType.DISP.mirrorAtt)) {
             val newName = if (record.attributes.has(DbRecord.ATT_NAME)) {
                 record.attributes[DbRecord.ATT_NAME]
@@ -645,12 +661,39 @@ class DbRecordsDao(
             recAttributes.remove(ScalarType.DISP.mirrorAtt)
         }
 
+        var contentAttToExtractName = ""
+        if (recAttributes.has(RecordConstants.ATT_CONTENT)) {
+
+            val targetContentAtt = DbRecord.getDefaultContentAtt(typeDef)
+            if (targetContentAtt.contains(".")) {
+                error("Inner content uploading is not supported. Content attribute: $targetContentAtt")
+            }
+            val contentValue = recAttributes[RecordConstants.ATT_CONTENT]
+            recAttributes[targetContentAtt] = contentValue
+            recAttributes.remove(RecordConstants.ATT_CONTENT)
+
+            val hasCustomNameAtt = typeDef.model.attributes.find { it.id == ATT_CUSTOM_NAME } != null
+            if (hasCustomNameAtt && recAttributes[ATT_CUSTOM_NAME].isEmpty()) {
+                contentAttToExtractName = targetContentAtt
+            }
+        }
+
         daoCtx.mutAssocHandler.preProcessContentAtts(
             recAttributes,
             recToMutate,
             typesAttColumns,
             typeDef.contentConfig.storageType
         )
+
+        if (contentAttToExtractName.isNotBlank()) {
+            val attribute = recAttributes[contentAttToExtractName]
+            if (attribute.isNumber()) {
+                contentService?.getContent(attribute.asLong())?.getName()?.let {
+                    recAttributes[ATT_CUSTOM_NAME] = it
+                }
+            }
+        }
+
         daoCtx.mutAssocHandler.replaceRefsById(recAttributes, typesAttColumns)
 
         val operations = daoCtx.mutAttOperationHandler.extractAttValueOperations(recAttributes)

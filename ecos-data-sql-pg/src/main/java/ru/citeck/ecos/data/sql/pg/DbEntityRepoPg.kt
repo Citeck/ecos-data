@@ -211,6 +211,13 @@ class DbEntityRepoPg<T : Any>(
         forceDelete(mapper.convertToMap(entity))
     }
 
+    override fun forceDelete(entityId: Long) {
+        if (columns.isEmpty()) {
+            return
+        }
+        forceDeleteById(entityId)
+    }
+
     override fun delete(entity: T) {
 
         if (columns.isEmpty()) {
@@ -240,9 +247,13 @@ class DbEntityRepoPg<T : Any>(
     }
 
     private fun forceDelete(entity: Map<String, Any?>) {
+        forceDeleteById(entity[DbEntity.ID] as Long)
+    }
+
+    private fun forceDeleteById(entityId: Long) {
         updateSchemaCacheIfRequired()
         dataSource.update(
-            "DELETE FROM ${tableRef.fullName} WHERE \"${DbEntity.ID}\"=${entity[DbEntity.ID]}",
+            "DELETE FROM ${tableRef.fullName} WHERE \"${DbEntity.ID}\"=$entityId",
             emptyList()
         )
     }

@@ -9,7 +9,7 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.test.EcosWebAppApiMock
 import ru.citeck.ecos.context.lib.auth.AuthContext
-import ru.citeck.ecos.data.sql.content.EcosContentServiceImpl
+import ru.citeck.ecos.data.sql.content.DbContentServiceImpl
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl
 import ru.citeck.ecos.data.sql.content.storage.local.DbContentDataEntity
@@ -286,7 +286,7 @@ abstract class DbRecordsTestBase {
                 )
             )
         )
-        val contentService = EcosContentServiceImpl(
+        val contentService = DbContentServiceImpl(
             DbDataServiceImpl(
                 DbContentEntity::class.java,
                 DbDataServiceConfig.create {
