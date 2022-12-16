@@ -6,13 +6,11 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.utils.digest.DigestUtils
 import ru.citeck.ecos.commons.utils.io.IOUtils
-import ru.citeck.ecos.data.sql.records.dao.content.RecordFileUploadData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records3.record.dao.atts.RecordAttsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
-import java.io.ByteArrayInputStream
 import java.util.*
 
 class DbRecordsContentAttTest : DbRecordsTestBase() {
@@ -183,14 +181,15 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
 
         val fileRef = RequestContext.doWithCtx {
             recordsDao.uploadFile(
-                RecordFileUploadData.create()
-                    .withName("some-name")
-                    .withContent(ByteArrayInputStream(content))
-                    .withMimeType("plain/text")
-                    .withEncoding("UTF-8")
-                    .withEcosType(REC_TEST_TYPE_ID)
-                    .build()
-            )
+                REC_TEST_TYPE_ID,
+                "some-name",
+                "plain/text",
+                "UTF-8",
+                null
+            ) {
+
+                it.writeBytes(content)
+            }
         }
 
         val checkContent: (EntityRef, String) -> Unit = { ref, name ->
@@ -235,11 +234,8 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
 
         RequestContext.doWithCtx {
             val uploadedFile = recordsDao.uploadFile(
-                RecordFileUploadData.create()
-                    .withContent(ByteArrayInputStream(contentSrc))
-                    .withEcosType(REC_TEST_TYPE_ID)
-                    .build()
-            )
+                ecosType = REC_TEST_TYPE_ID
+            ) { it.writeBytes(contentSrc) }
 
             val contentFromUploadedFile = records.getAtt(uploadedFile, "_content.bytes").asText()
             assertThat(Base64.getDecoder().decode(contentFromUploadedFile)).isEqualTo(contentSrc)

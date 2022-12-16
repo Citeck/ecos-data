@@ -1,8 +1,9 @@
 package ru.citeck.ecos.data.sql.content.storage
 
 import ru.citeck.ecos.commons.utils.NameUtils
-import ru.citeck.ecos.data.sql.content.stream.EcosContentWriterInputStream
+import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
+import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import java.io.InputStream
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
@@ -12,7 +13,11 @@ class EcosContentStorageServiceImpl : EcosContentStorageService, DbMigrationsExe
     private val nameEscaper = NameUtils.getEscaperWithAllowedChars("/?&=")
     private val storages: MutableMap<String, EcosContentStorage> = ConcurrentHashMap()
 
-    override fun uploadContent(storage: String, content: EcosContentWriterInputStream): URI {
+    override fun init(ecosContentWriterFactory: EcosContentWriterFactory) {
+        storages.values.forEach { it.init(ecosContentWriterFactory) }
+    }
+
+    override fun uploadContent(storage: String, action: (EcosContentWriter) -> Unit): URI {
 
         val delimIdx = storage.indexOf('/')
         val (storageType, storageSubType) = if (delimIdx > 0) {
@@ -22,7 +27,7 @@ class EcosContentStorageServiceImpl : EcosContentStorageService, DbMigrationsExe
         }
 
         val contentStorage = getStorage(storageType)
-        val storagePath = contentStorage.uploadContent(storageSubType, content)
+        val storagePath = contentStorage.uploadContent(storageSubType, action)
         return URI(
             EcosContentStorageConstants.URI_SCHEMA +
                 "://" + contentStorage.getType() +

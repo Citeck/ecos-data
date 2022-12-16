@@ -16,7 +16,6 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbEmptyRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
-import ru.citeck.ecos.data.sql.records.dao.content.RecordFileUploadData
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.migration.AssocsDbMigration
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
@@ -66,6 +65,7 @@ import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.records3.utils.RecordRefUtils
 import ru.citeck.ecos.webapp.api.content.EcosContentData
+import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
@@ -118,17 +118,24 @@ class DbRecordsDao(
         dbDataService.registerMigration(AssocsDbMigration(dbRecordRefService))
     }
 
-    fun uploadFile(data: RecordFileUploadData): EntityRef {
+    fun uploadFile(
+        ecosType: String? = null,
+        name: String? = null,
+        mimeType: String? = null,
+        encoding: String? = null,
+        attributes: ObjectData? = null,
+        writer: (EcosContentWriter) -> Unit
+    ): EntityRef {
 
         if (contentService == null) {
             error("RecordsDao doesn't support content attributes")
         }
-        val typeId = data.ecosType.ifBlank { config.typeRef.id }
+        val typeId = (ecosType ?: "").ifBlank { config.typeRef.id }
         if (typeId.isBlank()) {
             error("Type is blank. Uploading is impossible")
         }
         val typeDef = daoCtx.ecosTypeService.getTypeInfo(typeId)
-            ?: error("type '${data.ecosType}' is not found")
+            ?: error("type '$ecosType' is not found")
 
         val contentAttribute = typeDef.contentConfig.path.ifBlank { "content" }
         if (contentAttribute.contains(".")) {
@@ -141,13 +148,19 @@ class DbRecordsDao(
             error("Content attribute is not found: $contentAttribute")
         }
         val storageType = typeDef.contentConfig.storageType
-        val contentId = daoCtx.recContentHandler.uploadContent(data, storageType) ?: error("File uploading failed")
+        val contentId = daoCtx.recContentHandler.uploadContent(
+            name,
+            mimeType,
+            encoding,
+            storageType,
+            writer
+        ) ?: error("File uploading failed")
 
         val recordToMutate = LocalRecordAtts()
         recordToMutate.setAtt(contentAttribute, contentId)
-        recordToMutate.setAtt("name", data.name)
-        recordToMutate.setAtt(RecordConstants.ATT_TYPE, TypeUtils.getTypeRef(data.ecosType))
-        data.attributes.forEach { key, value ->
+        recordToMutate.setAtt("name", name)
+        recordToMutate.setAtt(RecordConstants.ATT_TYPE, TypeUtils.getTypeRef(typeId))
+        attributes?.forEach { key, value ->
             recordToMutate.setAtt(key, value)
         }
         return daoCtx.recContentHandler.withContentDbDataAware {
@@ -932,5 +945,6 @@ class DbRecordsDao(
             listeners,
             this
         )
+        daoCtx.contentService?.init()
     }
 }

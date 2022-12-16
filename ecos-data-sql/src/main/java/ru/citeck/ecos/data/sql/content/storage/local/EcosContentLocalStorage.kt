@@ -1,12 +1,12 @@
 package ru.citeck.ecos.data.sql.content.storage.local
 
-import ru.citeck.ecos.commons.utils.io.IOUtils
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorage
-import ru.citeck.ecos.data.sql.content.stream.EcosContentWriterInputStream
+import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -19,14 +19,21 @@ class EcosContentLocalStorage(
         const val TYPE = "local"
     }
 
-    override fun uploadContent(type: String, content: EcosContentWriterInputStream): String {
+    private lateinit var writerFactory: EcosContentWriterFactory
+
+    override fun init(writerFactory: EcosContentWriterFactory) {
+        this.writerFactory = writerFactory
+    }
+
+    override fun uploadContent(type: String, writer: (EcosContentWriter) -> Unit): String {
 
         val bytesOut = ByteArrayOutputStream()
-        IOUtils.copy(content, bytesOut)
+        val contentWriter = writerFactory.createWriter(bytesOut)
+        writer(contentWriter)
         val byteArray = bytesOut.toByteArray()
 
-        val sha256 = content.getSha256Digest()
-        val contentSize = content.getContentSize()
+        val sha256 = contentWriter.getSha256()
+        val contentSize = contentWriter.getContentSize()
 
         val data = dataService.find(
             Predicates.and(

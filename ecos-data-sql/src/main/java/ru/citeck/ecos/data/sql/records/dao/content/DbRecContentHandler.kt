@@ -2,14 +2,12 @@ package ru.citeck.ecos.data.sql.records.dao.content
 
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.utils.DataUriUtil
-import ru.citeck.ecos.data.sql.content.DbContentUploadData
-import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
 import ru.citeck.ecos.webapp.api.constants.AppName
+import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.entity.EntityRef
-import java.io.ByteArrayInputStream
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -78,19 +76,15 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         return EntityRef.EMPTY
     }
 
-    fun uploadContent(data: RecordFileUploadData, storageType: String): Long? {
-
+    fun uploadContent(
+        name: String?,
+        mimeType: String?,
+        encoding: String?,
+        storage: String?,
+        writer: (EcosContentWriter) -> Unit
+    ): Long? {
         val contentService = ctx.contentService ?: return null
-
-        return contentService.uploadContent(
-            storageType.ifBlank { EcosContentLocalStorage.TYPE },
-            DbContentUploadData.create()
-                .withEncoding(data.encoding)
-                .withName(data.name)
-                .withMimeType(data.mimeType)
-                .withContent(data.content)
-                .build()
-        ).getDbId()
+        return contentService.uploadContent(name, mimeType, encoding, storage, writer).getDbId()
     }
 
     fun uploadContent(
@@ -98,7 +92,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         attribute: String,
         contentData: DataValue,
         multiple: Boolean,
-        storageType: String
+        storage: String
     ): Any? {
 
         val contentService = ctx.contentService ?: return null
@@ -110,14 +104,14 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
             return if (multiple) {
                 val newArray = DataValue.createArr()
                 contentData.forEach {
-                    val contentId = uploadContent(record, attribute, it, false, storageType)
+                    val contentId = uploadContent(record, attribute, it, false, storage)
                     if (contentId != null) {
                         newArray.add(contentId)
                     }
                 }
                 newArray
             } else {
-                uploadContent(record, attribute, contentData[0], false, storageType)
+                uploadContent(record, attribute, contentData[0], false, storage)
             }
         }
         if (!contentData.isObject()) {
@@ -130,14 +124,15 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
                 val appNameDelimIdx = contentText.indexOf(EntityRef.APP_NAME_DELIMITER)
                 val srcIdDelimIdx = contentText.indexOf(EntityRef.SOURCE_ID_DELIMITER)
                 if (srcIdDelimIdx != -1 && appNameDelimIdx < srcIdDelimIdx) {
-                    return uploadFromEntity(EntityRef.valueOf(contentText), storageType)
+                    return uploadFromEntity(EntityRef.valueOf(contentText), storage)
                 }
             }
             return null
         }
         val urlData = contentData["url"]
         var dataBytes: ByteArray? = null
-        val uploadData = DbContentUploadData.create()
+        var mimeType = ""
+        var name = ""
 
         if (urlData.isTextual() && urlData.isNotEmpty()) {
 
@@ -152,8 +147,8 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
                 if (dataBytes == null || dataBytes.isEmpty()) {
                     return null
                 }
-                uploadData.withMimeType(data.mimeType)
-                    .withName(contentData["originalName"].asText())
+                mimeType = data.mimeType
+                name = contentData["originalName"].asText()
             }
         }
         if (dataBytes == null && contentData.has("data")) {
@@ -161,18 +156,18 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
             if (!data.isObject()) {
                 return null
             }
-            val name = contentData["originalName"].asText().ifBlank { contentData["name"].asText() }
+            name = contentData["originalName"].asText().ifBlank { contentData["name"].asText() }
             val entityRef = data["entityRef"].asText()
             if (entityRef.isNotBlank()) {
-                return uploadFromEntity(EntityRef.valueOf(entityRef), storageType)
+                return uploadFromEntity(EntityRef.valueOf(entityRef), storage)
             } else {
                 val nodeRef = data["nodeRef"].asText()
                 if (nodeRef.isNotBlank()) {
                     val ref = EntityRef.create(AppName.ALFRESCO, "", nodeRef)
                     val content = ctx.recordsService.getAtts(ref, AlfContentAtts::class.java)
                     dataBytes = content.bytes
-                    uploadData.withMimeType(content.mimetype ?: "application/octet-stream")
-                        .withName(name.ifBlank { content.name ?: "" })
+                    mimeType = content.mimetype ?: "application/octet-stream"
+                    name = name.ifBlank { content.name ?: "" }
                 } else {
                     return null
                 }
@@ -181,14 +176,12 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         if (dataBytes == null) {
             return null
         }
-        uploadData.withContent(ByteArrayInputStream(dataBytes))
-        return contentService.uploadContent(
-            storageType.ifBlank { EcosContentLocalStorage.TYPE },
-            uploadData.build()
-        ).getDbId()
+        return contentService.uploadContent(name, mimeType, null, storage) {
+            it.writeBytes(dataBytes)
+        }.getDbId()
     }
 
-    private fun uploadFromEntity(entityRef: EntityRef, storageType: String): Long? {
+    private fun uploadFromEntity(entityRef: EntityRef, storage: String): Long? {
 
         val contentService = ctx.contentService ?: return null
 
@@ -207,14 +200,11 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         } else {
             ctx.contentApi.getContent(entityRef)?.readContent { input ->
                 contentService.uploadContent(
-                    storageType.ifBlank { EcosContentLocalStorage.TYPE },
-                    DbContentUploadData.create()
-                        .withMimeType(metaAtts.mimeType)
-                        .withName(metaAtts.name)
-                        .withEncoding(metaAtts.encoding)
-                        .withContent(input)
-                        .build()
-                ).getDbId()
+                    name = metaAtts.name,
+                    mimeType = metaAtts.mimeType,
+                    encoding = metaAtts.encoding,
+                    storage = storage
+                ) { it.writeStream(input) }.getDbId()
             }
         }
     }

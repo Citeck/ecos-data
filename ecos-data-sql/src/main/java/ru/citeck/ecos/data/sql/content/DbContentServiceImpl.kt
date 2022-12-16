@@ -2,10 +2,14 @@ package ru.citeck.ecos.data.sql.content
 
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
-import ru.citeck.ecos.data.sql.content.stream.EcosContentWriterInputStreamImpl
+import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
+import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
+import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
+import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import java.io.InputStream
+import java.io.OutputStream
 import java.time.Instant
 import java.util.UUID
 
@@ -14,19 +18,48 @@ class DbContentServiceImpl(
     private val contentDataService: EcosContentStorageService
 ) : DbContentService, DbMigrationsExecutor {
 
-    override fun uploadContent(storage: String, data: DbContentUploadData): DbEcosContentData {
+    private val contentWriterFactory: EcosContentWriterFactory = ContentWriterFactoryImpl()
 
-        val contentStream = EcosContentWriterInputStreamImpl(data.content)
-        val dataUri = contentDataService.uploadContent(storage, contentStream)
+    override fun init() {
+        contentDataService.init(contentWriterFactory)
+    }
+
+    override fun uploadContent(
+        name: String?,
+        mimeType: String?,
+        encoding: String?,
+        storage: String?,
+        writer: (EcosContentWriter) -> Unit
+    ): DbEcosContentData {
+
+        val nnName = (name ?: "").ifBlank { UUID.randomUUID().toString() }
+        val nnMimeType = (mimeType ?: "").ifBlank { "application/octet-stream" }
+        val nnEncoding = encoding ?: ""
+        val nnStorage = (storage ?: "").ifBlank { EcosContentLocalStorage.TYPE }
+
+        var sha256 = ""
+        var size = 0L
+
+        val dataUri = contentDataService.uploadContent(nnStorage) {
+            writer(it)
+            it.getOutputStream().flush()
+            sha256 = it.getSha256()
+            size = it.getContentSize()
+        }
+
+        if (sha256.isEmpty() || size <= 0L) {
+            error("Invalid content metadata. Sha256: $sha256 Size: $size")
+        }
+
         val entity = DbContentEntity()
 
+        entity.name = nnName
+        entity.mimeType = nnMimeType
+        entity.encoding = nnEncoding
         entity.created = Instant.now()
-        entity.encoding = data.encoding
-        entity.mimeType = data.mimeType.ifBlank { "application/octet-stream" }
-        entity.sha256 = contentStream.getSha256Digest()
-        entity.size = contentStream.getContentSize()
+        entity.sha256 = sha256
+        entity.size = size
         entity.uri = dataUri
-        entity.name = data.name.ifBlank { UUID.randomUUID().toString() }
 
         return EcosContentDataImpl(dataService.save(entity))
     }
@@ -78,6 +111,13 @@ class DbContentServiceImpl(
 
         override fun <T> readContent(action: (InputStream) -> T): T {
             return contentDataService.readContent(entity.uri, action)
+        }
+    }
+
+    private class ContentWriterFactoryImpl : EcosContentWriterFactory {
+
+        override fun createWriter(output: OutputStream): EcosContentWriter {
+            return EcosContentWriterImpl(output)
         }
     }
 }
