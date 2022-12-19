@@ -117,7 +117,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         if (!contentData.isObject()) {
             if (contentData.isLong()) {
                 if (isContentDbDataAware()) {
-                    return contentData.asLong()
+                    return contentService.cloneContent(contentData.asLong()).getDbId()
                 }
             } else if (contentData.isTextual()) {
                 val contentText = contentData.asText()
@@ -189,8 +189,8 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
             val atts = withContentDbDataAware {
                 ctx.recordsService.getAtts(entityRef, ContentLocationAtts::class.java)
             }
-            if (atts.dbSchema == ctx.tableRef.schema && (atts.contentId ?: -1) >= 0) {
-                return atts.contentId
+            if (atts.dbSchema == ctx.tableRef.schema && atts.contentId != null && atts.contentId >= 0) {
+                return contentService.cloneContent(atts.contentId).getDbId()
             }
         }
         ctx.contentApi ?: error("Content API is null")

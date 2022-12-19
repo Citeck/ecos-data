@@ -19,7 +19,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             return
         }
 
-        val typeInfo = ctx.ecosTypeService.getTypeInfo(after.type) ?: error("Entity with unknown type: " + after.type)
+        val typeInfo = ctx.ecosTypeService.getTypeInfoNotNull(after.type)
 
         if (isNewRecord) {
             val event = DbRecordCreatedEvent(DbRecord(ctx, after), typeInfo)

@@ -12,6 +12,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
+import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
@@ -89,21 +90,20 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             }
             val typeId = type.asText()
 
-            val typeInfo = ctx.ecosTypeService.getTypeInfo(typeId) ?: error("Type doesn't found for id '$typeId'")
+            val typeInfo = ctx.ecosTypeService.getTypeInfoNotNull(typeId)
 
             val childAttributes = ObjectData.create()
-            childAttributes["_type"] = TypeUtils.getTypeRef(typeId)
-            childAttributes["_content"] = listOf(value)
+            childAttributes[RecordConstants.ATT_TYPE] = TypeUtils.getTypeRef(typeId)
+            childAttributes[RecordConstants.ATT_CONTENT] = listOf(value)
 
             val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
             val sourceId = sourceIdMapping.getOrDefault(ctx.sourceId, ctx.sourceId)
 
-            childAttributes["_parent"] = EntityRef.create(ctx.appName, sourceId, recordId)
+            childAttributes[RecordConstants.ATT_PARENT] = EntityRef.create(ctx.appName, sourceId, recordId)
 
             val name = value["originalName"]
             if (name.isNotNull()) {
-                // todo: should be _name
-                childAttributes["_disp"] = name
+                childAttributes[ScalarType.DISP.mirrorAtt] = name
             }
 
             val childRef = ctx.recordsService.create(typeInfo.sourceId, childAttributes)

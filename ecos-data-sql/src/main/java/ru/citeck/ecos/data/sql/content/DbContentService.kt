@@ -14,5 +14,9 @@ interface DbContentService {
         writer: (EcosContentWriter) -> Unit
     ): DbEcosContentData
 
+    fun removeContent(id: Long)
+
     fun getContent(id: Long): DbEcosContentData?
+
+    fun cloneContent(id: Long): DbEcosContentData
 }

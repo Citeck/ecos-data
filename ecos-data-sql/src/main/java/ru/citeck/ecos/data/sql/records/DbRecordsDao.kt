@@ -134,8 +134,7 @@ class DbRecordsDao(
         if (typeId.isBlank()) {
             error("Type is blank. Uploading is impossible")
         }
-        val typeDef = daoCtx.ecosTypeService.getTypeInfo(typeId)
-            ?: error("type '$ecosType' is not found")
+        val typeDef = daoCtx.ecosTypeService.getTypeInfoNotNull(typeId)
 
         val contentAttribute = typeDef.contentConfig.path.ifBlank { "content" }
         if (contentAttribute.contains(".")) {
@@ -470,35 +469,7 @@ class DbRecordsDao(
     }
 
     private fun deleteInTxn(recordsId: List<String>): List<DelStatus> {
-
-        var isTempStorage = false
-        var typeDef: TypeInfo? = ecosTypeService.getTypeInfo(config.typeRef.id)
-        while (typeDef != null) {
-            if (typeDef.id == "temp-file") {
-                isTempStorage = true
-                break
-            }
-            typeDef = ecosTypeService.getTypeInfo(typeDef.parentRef.getLocalId())
-        }
-        for (recordId in recordsId) {
-            dbDataService.findByExtId(recordId)?.let { entity ->
-                if (isTempStorage) {
-                    dbDataService.forceDelete(entity)
-                    // todo: remove content
-                } else {
-                    dbDataService.delete(entity)
-                }
-                val typeInfo = ecosTypeService.getTypeInfo(entity.type)
-                if (typeInfo != null) {
-                    val event = DbRecordDeletedEvent(DbRecord(daoCtx, entity), typeInfo)
-                    listeners.forEach {
-                        it.onDeleted(event)
-                    }
-                }
-            }
-        }
-
-        return recordsId.map { DelStatus.OK }
+        return daoCtx.deleteDao.delete(recordsId)
     }
 
     private fun getTypeIdForRecord(record: LocalRecordAtts): String {
@@ -936,6 +907,7 @@ class DbRecordsDao(
             getId(),
             dbDataService.getTableRef(),
             config,
+            dbDataService,
             contentService,
             dbRecordRefService,
             ecosTypeService,

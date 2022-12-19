@@ -5,8 +5,11 @@ import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
 import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
 import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
+import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import java.io.InputStream
 import java.io.OutputStream
@@ -67,6 +70,29 @@ class DbContentServiceImpl(
     override fun getContent(id: Long): DbEcosContentData? {
         val entity = dataService.findById(id) ?: return null
         return EcosContentDataImpl(entity)
+    }
+
+    override fun removeContent(id: Long) {
+        val entity = dataService.findById(id) ?: return
+        dataService.forceDelete(entity)
+        val entitiesWithSameUri = dataService.find(
+            Predicates.eq(
+                DbContentEntity.URI,
+                entity.uri
+            ),
+            emptyList(),
+            DbFindPage.ALL
+        )
+        if (entitiesWithSameUri.entities.isEmpty()) {
+            contentDataService.removeContent(entity.uri)
+        }
+    }
+
+    override fun cloneContent(id: Long): DbEcosContentData {
+        val entity = dataService.findById(id) ?: error("Content doesn't found by id '$id'")
+        entity.id = DbContentEntity.NEW_REC_ID
+        entity.created = Instant.now()
+        return EcosContentDataImpl(dataService.save(entity))
     }
 
     override fun runMigrations(mock: Boolean, diff: Boolean): List<String> {

@@ -37,7 +37,7 @@ class RecMutConverter {
                 if (rawValue.size() == 0) {
                     DataValue.NULL
                 } else {
-                    rawValue.get(0)
+                    rawValue[0]
                 }
             } else {
                 rawValue

@@ -13,12 +13,21 @@ import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 class DbEcosTypeService(private val typesRepo: TypesRepo) {
 
     companion object {
+        const val TYPE_ID_TEMP_FILE = "temp-file"
+
         private val log = KotlinLogging.logger {}
 
         private val VALID_COLUMN_NAME = "[\\w-_:]+".toRegex()
     }
 
+    fun getTypeInfoNotNull(typeId: String): TypeInfo {
+        return getTypeInfo(typeId) ?: error("TypeInfo is not found for id '$typeId'")
+    }
+
     fun getTypeInfo(typeId: String): TypeInfo? {
+        if (typeId.isBlank()) {
+            return null
+        }
         return typesRepo.getTypeInfo(TypeUtils.getTypeRef(typeId))
     }
 
