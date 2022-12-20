@@ -10,6 +10,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.dao.delete.DelStatus
+import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
@@ -33,7 +34,7 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
                 if (parentRefId != null && !parentAtt.isNullOrBlank()) {
                     val childRef = ctx.recordRefService.getRecordRefById(entity.refId)
                     val parentRef = ctx.recordRefService.getRecordRefById(parentRefId)
-                    if (EntityRef.isEmpty(parentRef)) {
+                    if (parentRef.getAppName() != AppName.ALFRESCO && EntityRef.isEmpty(parentRef)) {
                         ctx.recordsService.mutate(
                             parentRef,
                             mapOf(
