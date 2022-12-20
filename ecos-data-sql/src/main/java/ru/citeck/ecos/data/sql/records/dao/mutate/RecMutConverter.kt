@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.records.dao.mutate
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.data.sql.dto.DbColumnType
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class RecMutConverter {
 
@@ -44,18 +45,25 @@ class RecMutConverter {
             }
         }
 
-        if (multiple) {
+        return if (multiple) {
             val result = ArrayList<Any?>(value.size())
             for (element in value) {
-                result.add(convertToClass(element, false, javaType))
+                val convertedElement = convertToClass(element, false, javaType)
+                if (!isNull(convertedElement)) {
+                    result.add(convertToClass(element, false, javaType))
+                }
             }
-            return result
-        }
-
-        return if (value.isObject() && javaType == String::class.java) {
+            result
+        } else if (value.isObject() && javaType == String::class.java) {
             Json.mapper.toString(value)
         } else {
             Json.mapper.convert(value, javaType)
         }
+    }
+
+    private fun isNull(value: Any?): Boolean {
+        return value == null ||
+            value is DataValue && value.isNull() ||
+            value is EntityRef && value.isEmpty()
     }
 }

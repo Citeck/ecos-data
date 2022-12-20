@@ -8,7 +8,9 @@ import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.dao.delete.DelStatus
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
 
@@ -24,6 +26,23 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
         val typesInfo = HashMap<String, DbRecordDeleteTypeInfo>()
         for (recordId in recordIds) {
             dataService.findByExtId(recordId)?.let { entity ->
+
+                val parentRefId = entity.attributes[RecordConstants.ATT_PARENT] as? Long
+                val parentAtt = entity.attributes[RecordConstants.ATT_PARENT_ATT] as? String
+
+                if (parentRefId != null && !parentAtt.isNullOrBlank()) {
+                    val childRef = ctx.recordRefService.getRecordRefById(entity.refId)
+                    val parentRef = ctx.recordRefService.getRecordRefById(parentRefId)
+                    if (EntityRef.isEmpty(parentRef)) {
+                        ctx.recordsService.mutate(
+                            parentRef,
+                            mapOf(
+                                "att_rem_$parentAtt" to childRef
+                            )
+                        )
+                    }
+                }
+
                 if (forceDeleteRequired) {
                     val info = typesInfo.computeIfAbsent(entity.type) { getRecordTypeInfo(it) }
                     info.contentAtts.forEach { contentAtt ->
@@ -55,7 +74,7 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
         }
         var isTempStorage = false
         var typeDef: TypeInfo? = typeService.getTypeInfoNotNull(typeId)
-        var iterations = 10
+        var iterations = 5
         while (typeDef != null && --iterations > 0) {
             if (typeDef.id == DbEcosTypeService.TYPE_ID_TEMP_FILE) {
                 isTempStorage = true
