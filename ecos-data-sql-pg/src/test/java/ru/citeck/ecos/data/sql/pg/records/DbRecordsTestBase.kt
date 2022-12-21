@@ -14,6 +14,8 @@ import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl
 import ru.citeck.ecos.data.sql.content.storage.local.DbContentDataEntity
 import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
+import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
+import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
@@ -51,7 +53,9 @@ import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
+import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicLong
 import javax.sql.DataSource
 
@@ -272,8 +276,12 @@ abstract class DbRecordsTestBase {
             }
         }
 
-        val contentDataService = EcosContentStorageServiceImpl()
-        contentDataService.register(
+        val contentStorageService = EcosContentStorageServiceImpl(object : EcosContentWriterFactory {
+            override fun createWriter(output: OutputStream): EcosContentWriter {
+                return EcosContentWriterImpl(output)
+            }
+        })
+        contentStorageService.register(
             EcosContentLocalStorage(
                 DbDataServiceImpl(
                     DbContentDataEntity::class.java,
@@ -296,7 +304,7 @@ abstract class DbRecordsTestBase {
                 dbDataSource,
                 pgDataServiceFactory
             ),
-            contentDataService
+            contentStorageService
         )
 
         dbRecordRefDataService = DbDataServiceImpl(

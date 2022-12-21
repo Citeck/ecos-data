@@ -4,8 +4,6 @@ import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 
 interface DbContentService {
 
-    fun init()
-
     fun uploadContent(
         name: String?,
         mimeType: String?,

@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.records.dao.atts.content
 
 import ru.citeck.ecos.commons.data.DataValue
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbEcosContentData
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.records3.record.atts.value.AttValue
@@ -14,6 +15,14 @@ class DbContentValue(
 
     companion object {
         const val CONTENT_DATA = "content-data"
+
+        const val ATT_NAME = "name"
+        const val ATT_SHA256 = "sha256"
+        const val ATT_SIZE = "size"
+        const val ATT_MIME_TYPE = "mimeType"
+        const val ATT_ENCODING = "encoding"
+        const val ATT_CREATED = "created"
+        const val ATT_BYTES = "bytes"
     }
 
     val contentData: DbEcosContentData by lazy {
@@ -29,15 +38,52 @@ class DbContentValue(
         return contentData.getName()
     }
 
+    override fun asText(): String {
+        return contentData.getName()
+    }
+
+    override fun asJson(): Any {
+        val data = mutableMapOf<String, Any>()
+        data[ATT_NAME] = contentData.getName()
+        data[ATT_SHA256] = contentData.getSha256()
+        data[ATT_SIZE] = contentData.getSize()
+        data[ATT_MIME_TYPE] = contentData.getMimeType()
+        data[ATT_ENCODING] = contentData.getEncoding()
+        data[ATT_CREATED] = contentData.getCreated()
+        return data
+    }
+    override fun asDouble(): Double {
+        return contentData.getSize().toDouble()
+    }
+
+    override fun asBoolean(): Boolean {
+        return true
+    }
+
+    override fun asRaw(): Any {
+        return asJson()
+    }
+
+    override fun asBin(): Any {
+        return contentData.readContent { it.readBytes() }
+    }
+
     override fun getAtt(name: String): Any? {
         return when (name) {
-            "name" -> contentData.getName()
-            "sha256" -> contentData.getSha256()
-            "size" -> contentData.getSize()
-            "mimeType" -> contentData.getMimeType()
-            "encoding" -> contentData.getEncoding()
-            "created" -> contentData.getCreated()
-            "bytes" -> contentData.readContent { it.readBytes() }
+            ATT_NAME -> contentData.getName()
+            ATT_SHA256 -> contentData.getSha256()
+            ATT_SIZE -> contentData.getSize()
+            ATT_MIME_TYPE -> contentData.getMimeType()
+            ATT_ENCODING -> contentData.getEncoding()
+            ATT_CREATED -> contentData.getCreated()
+            ATT_BYTES -> contentData.readContent { it.readBytes() }
+            "uri" -> {
+                return if (AuthContext.isRunAsSystem() || AuthContext.isRunAsAdmin()) {
+                    contentData.getUri()
+                } else {
+                    null
+                }
+            }
             "tableRef", "contentDbId" -> {
                 if (!ctx.recContentHandler.isContentDbDataAware()) {
                     return null

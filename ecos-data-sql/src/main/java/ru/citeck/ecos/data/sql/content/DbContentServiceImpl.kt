@@ -12,19 +12,14 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.URI
 import java.time.Instant
 import java.util.UUID
 
 class DbContentServiceImpl(
     private val dataService: DbDataService<DbContentEntity>,
-    private val contentDataService: EcosContentStorageService
+    private val contentStorageService: EcosContentStorageService
 ) : DbContentService, DbMigrationsExecutor {
-
-    private val contentWriterFactory: EcosContentWriterFactory = ContentWriterFactoryImpl()
-
-    override fun init() {
-        contentDataService.init(contentWriterFactory)
-    }
 
     override fun uploadContent(
         name: String?,
@@ -42,7 +37,7 @@ class DbContentServiceImpl(
         var sha256 = ""
         var size = 0L
 
-        val dataUri = contentDataService.uploadContent(nnStorage) {
+        val dataUri = contentStorageService.uploadContent(nnStorage) {
             writer(it)
             it.getOutputStream().flush()
             sha256 = it.getSha256()
@@ -83,7 +78,7 @@ class DbContentServiceImpl(
             DbFindPage.ALL
         )
         if (entitiesWithSameUri.entities.isEmpty()) {
-            contentDataService.removeContent(entity.uri)
+            contentStorageService.removeContent(entity.uri)
         }
     }
 
@@ -96,9 +91,9 @@ class DbContentServiceImpl(
 
     override fun runMigrations(mock: Boolean, diff: Boolean): List<String> {
         var result = dataService.runMigrations(emptyList(), mock, diff, true)
-        if (contentDataService is DbMigrationsExecutor) {
+        if (contentStorageService is DbMigrationsExecutor) {
             val newRes = ArrayList(result)
-            newRes.addAll(contentDataService.runMigrations(mock, diff))
+            newRes.addAll(contentStorageService.runMigrations(mock, diff))
             result = newRes
         }
         return result
@@ -108,6 +103,10 @@ class DbContentServiceImpl(
 
         override fun getDbId(): Long {
             return entity.id
+        }
+
+        override fun getUri(): URI {
+            return entity.uri
         }
 
         override fun getCreated(): Instant {
@@ -135,14 +134,7 @@ class DbContentServiceImpl(
         }
 
         override fun <T> readContent(action: (InputStream) -> T): T {
-            return contentDataService.readContent(entity.uri, action)
-        }
-    }
-
-    private class ContentWriterFactoryImpl : EcosContentWriterFactory {
-
-        override fun createWriter(output: OutputStream): EcosContentWriter {
-            return EcosContentWriterImpl(output)
+            return contentStorageService.readContent(entity.uri, action)
         }
     }
 }

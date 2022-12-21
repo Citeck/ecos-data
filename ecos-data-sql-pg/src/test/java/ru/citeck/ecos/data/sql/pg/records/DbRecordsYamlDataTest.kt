@@ -2,7 +2,9 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.commons.json.YamlUtils
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 
 class DbRecordsYamlDataTest : DbRecordsTestBase() {
@@ -41,10 +43,13 @@ class DbRecordsYamlDataTest : DbRecordsTestBase() {
         val ref = createRecord(ATT_TEXT to textValue, ATT_DATETIME to dateTimeValue, ATT_NUMBER to numberValue)
 
         val yamlData = records.getAtt(ref, "?json|yaml()").asText()
-        val data = Json.mapper.read(yamlData)
+        val data = Json.mapper.convertNotNull(
+            YamlUtils.read(yamlData, Json.context),
+            DataValue::class.java
+        )
 
-        assertThat(data?.get(ATT_NUMBER)?.asInt()).isEqualTo(numberValue)
-        assertThat(data?.get(ATT_TEXT)?.asText()).isEqualTo(textValue)
-        assertThat(data?.get(ATT_DATETIME)?.asText()).isEqualTo(dateTimeValue)
+        assertThat(data[ATT_NUMBER].asInt()).isEqualTo(numberValue)
+        assertThat(data[ATT_TEXT].asText()).isEqualTo(textValue)
+        assertThat(data[ATT_DATETIME].asText()).isEqualTo(dateTimeValue)
     }
 }

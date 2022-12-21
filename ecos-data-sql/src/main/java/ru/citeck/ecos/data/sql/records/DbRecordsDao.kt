@@ -917,6 +917,5 @@ class DbRecordsDao(
             listeners,
             this
         )
-        daoCtx.contentService?.init()
     }
 }

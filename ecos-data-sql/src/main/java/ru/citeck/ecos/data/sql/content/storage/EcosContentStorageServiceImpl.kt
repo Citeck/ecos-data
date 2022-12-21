@@ -8,14 +8,12 @@ import java.io.InputStream
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
-class EcosContentStorageServiceImpl : EcosContentStorageService, DbMigrationsExecutor {
+class EcosContentStorageServiceImpl(
+    private val contentWriterFactory: EcosContentWriterFactory
+) : EcosContentStorageService, DbMigrationsExecutor {
 
     private val nameEscaper = NameUtils.getEscaperWithAllowedChars("/?&=")
     private val storages: MutableMap<String, EcosContentStorage> = ConcurrentHashMap()
-
-    override fun init(ecosContentWriterFactory: EcosContentWriterFactory) {
-        storages.values.forEach { it.init(ecosContentWriterFactory) }
-    }
 
     override fun uploadContent(storage: String, action: (EcosContentWriter) -> Unit): URI {
 
@@ -65,5 +63,6 @@ class EcosContentStorageServiceImpl : EcosContentStorageService, DbMigrationsExe
 
     fun register(type: String, storage: EcosContentStorage) {
         this.storages[type] = storage
+        storage.init(contentWriterFactory)
     }
 }

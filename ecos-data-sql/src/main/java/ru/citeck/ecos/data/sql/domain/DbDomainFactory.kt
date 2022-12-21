@@ -1,6 +1,8 @@
 package ru.citeck.ecos.data.sql.domain
 
 import ru.citeck.ecos.data.sql.content.DbContentService
+import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
+import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
@@ -11,6 +13,8 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
+import ru.citeck.ecos.webapp.api.content.EcosContentWriter
+import java.io.OutputStream
 
 class DbDomainFactory(
     val ecosTypeRepo: TypesRepo,
@@ -19,9 +23,15 @@ class DbDomainFactory(
     val permsComponent: DbPermsComponent,
     val computedAttsComponent: DbComputedAttsComponent,
     val recordRefServiceSupplier: (DbDataSource, String) -> DbRecordRefService,
-    val dbContentServiceSupplier: (DbDataSource, String) -> DbContentService,
+    val dbContentServiceSupplier: (DbDataSource, EcosContentWriterFactory, String) -> DbContentService,
     val defaultListeners: List<DbRecordsListener>
 ) {
+
+    val contentWriterFactory: EcosContentWriterFactory = object : EcosContentWriterFactory {
+        override fun createWriter(output: OutputStream): EcosContentWriter {
+            return EcosContentWriterImpl(output)
+        }
+    }
 
     fun create(domainConfig: DbDomainConfig): Builder {
         return Builder(domainConfig)
@@ -35,6 +45,7 @@ class DbDomainFactory(
         var dbContentService: DbContentService? = null
         var listeners: List<DbRecordsListener>? = null
         var excludeDefaultListeners: Boolean = false
+        var contentWriterFactory: EcosContentWriterFactory? = null
 
         fun withDataSource(dataSource: DbDataSource): Builder {
             this.dataSource = dataSource
@@ -87,7 +98,11 @@ class DbDomainFactory(
                 recordRefServiceSupplier.invoke(dataSource, schema),
                 permsComponent ?: this@DbDomainFactory.permsComponent,
                 computedAttsComponent ?: this@DbDomainFactory.computedAttsComponent,
-                this.dbContentService ?: dbContentServiceSupplier.invoke(dataSource, schema)
+                this.dbContentService ?: dbContentServiceSupplier.invoke(
+                    dataSource,
+                    contentWriterFactory ?: this@DbDomainFactory.contentWriterFactory,
+                    schema
+                )
             )
 
             if (!excludeDefaultListeners) {
