@@ -3,15 +3,12 @@ package ru.citeck.ecos.data.sql.content
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
-import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
-import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import java.io.InputStream
-import java.io.OutputStream
 import java.net.URI
 import java.time.Instant
 import java.util.UUID
