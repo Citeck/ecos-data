@@ -44,7 +44,7 @@ class DbRecordsYamlDataTest : DbRecordsTestBase() {
 
         val yamlData = records.getAtt(ref, "?json|yaml()").asText()
         val data = Json.mapper.convertNotNull(
-            YamlUtils.read(yamlData, Json.context),
+            YamlUtils.read(yamlData, Json.context)!!,
             DataValue::class.java
         )
 
