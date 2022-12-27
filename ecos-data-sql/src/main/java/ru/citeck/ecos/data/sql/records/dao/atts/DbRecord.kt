@@ -19,6 +19,7 @@ import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
+import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import kotlin.collections.LinkedHashMap
 
@@ -255,7 +256,8 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 val statusId = entity.status
                 val typeInfo = ctx.ecosTypeService.getTypeInfo(entity.type) ?: return statusId
                 val statusDef = typeInfo.model.statuses.firstOrNull { it.id == statusId } ?: return statusId
-                return DbStatusValue(statusDef)
+                val attValue = ctx.attValuesConverter.toAttValue(statusDef) ?: EmptyAttValue.INSTANCE
+                return DbStatusValue(statusDef, attValue)
             }
             ATT_PERMISSIONS -> permsValue
             RecordConstants.ATT_CONTENT -> getDefaultContent()

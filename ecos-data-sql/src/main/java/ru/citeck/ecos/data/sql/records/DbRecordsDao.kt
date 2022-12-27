@@ -915,7 +915,8 @@ class DbRecordsDao(
             serviceFactory.getEcosWebAppApi()?.getContentApi(),
             serviceFactory.getEcosWebAppApi()?.getAuthoritiesApi(),
             listeners,
-            this
+            this,
+            serviceFactory.attValuesConverter
         )
     }
 }
