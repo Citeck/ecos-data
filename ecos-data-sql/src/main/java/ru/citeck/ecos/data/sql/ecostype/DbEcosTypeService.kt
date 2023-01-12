@@ -6,6 +6,8 @@ import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttStoringType
+import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
@@ -87,6 +89,12 @@ class DbEcosTypeService(private val typesRepo: TypesRepo) {
         }
         if (attribute.id.startsWith("_")) {
             log.debug { "Attribute id '${attribute.id}' starts with '_', but it is reserved system prefix" }
+            return null
+        }
+        if (attribute.computed.type != ComputedAttType.NONE &&
+            attribute.computed.storingType == ComputedAttStoringType.NONE
+        ) {
+            // computed attributes without storingType won't be stored in DB
             return null
         }
 
