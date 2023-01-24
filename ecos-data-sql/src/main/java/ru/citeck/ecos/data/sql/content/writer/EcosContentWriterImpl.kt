@@ -1,47 +1,36 @@
 package ru.citeck.ecos.data.sql.content.writer
 
+import ru.citeck.ecos.commons.utils.ByteUtils
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
+import ru.citeck.ecos.webapp.api.content.EcosContentWriterMeta
 import java.io.InputStream
 import java.io.OutputStream
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 
 class EcosContentWriterImpl(output: OutputStream) : EcosContentWriter {
 
     private val sha256Digest = MessageDigest.getInstance("SHA-256")
     private val contentSize = AtomicLong()
 
-    private val cachedHash = AtomicReference<String>()
-    private val cachedHashContentSize = AtomicLong(0)
-
     private val outputStream = OutputStreamProxy(output)
 
-    override fun getContentSize(): Long {
-        return contentSize.get()
-    }
+    private val finished = AtomicBoolean()
+    private lateinit var meta: EcosContentWriterMeta
 
-    override fun getSha256(): String {
-        if (contentSize.get() == 0L) {
-            error("Empty content")
-        }
-        if (cachedHashContentSize.get() != contentSize.get()) {
-            cachedHash.set(bytesToHex(sha256Digest.digest()))
-            cachedHashContentSize.set(contentSize.get())
-        }
-        return cachedHash.get()
-    }
-
-    private fun bytesToHex(hash: ByteArray): String {
-        val hexString = StringBuilder()
-        for (b in hash) {
-            val hex = Integer.toHexString(0xFF and b.toInt())
-            if (hex.length == 1) {
-                hexString.append('0')
+    override fun finish(): EcosContentWriterMeta {
+        if (finished.compareAndSet(false, true)) {
+            if (contentSize.get() == 0L) {
+                error("Empty content")
             }
-            hexString.append(hex)
+            val sha256 = ByteUtils.toHexString(sha256Digest.digest())
+            meta = object : EcosContentWriterMeta {
+                override fun getSha256() = sha256
+                override fun getSize(): Long = contentSize.get()
+            }
         }
-        return hexString.toString()
+        return meta
     }
 
     override fun writeText(text: String) {

@@ -32,8 +32,9 @@ class EcosContentLocalStorage(
         writer(contentWriter)
         val byteArray = bytesOut.toByteArray()
 
-        val sha256 = contentWriter.getSha256()
-        val contentSize = contentWriter.getContentSize()
+        val meta = contentWriter.finish()
+        val sha256 = meta.getSha256()
+        val contentSize = meta.getSize()
 
         val data = dataService.find(
             Predicates.and(

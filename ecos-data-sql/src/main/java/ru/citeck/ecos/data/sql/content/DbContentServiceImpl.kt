@@ -37,8 +37,9 @@ class DbContentServiceImpl(
         val dataUri = contentStorageService.uploadContent(nnStorage) {
             writer(it)
             it.getOutputStream().flush()
-            sha256 = it.getSha256()
-            size = it.getContentSize()
+            val meta = it.finish()
+            sha256 = meta.getSha256()
+            size = meta.getSize()
         }
 
         if (sha256.isEmpty() || size <= 0L) {
