@@ -7,7 +7,7 @@ import ru.citeck.ecos.context.lib.auth.AuthConstants
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.records2.RecordRef
-import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.txn.lib.TxnContext
 import java.util.UUID
 
 class RecordsDaoWritePermsTest : DbRecordsTestBase() {
@@ -28,7 +28,7 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
         setAuthoritiesWithWritePerms(ref, "user0")
 
         AuthContext.runAs("user1") {
-            RequestContext.doWithTxn {
+            TxnContext.doInTxn {
                 createRecord(
                     "id" to ref.id,
                     "test" to "abc"
@@ -37,7 +37,7 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
                 records.mutateAtt(ref, "test", "def")
                 assertThat(records.getAtt(ref, "test").asText()).isEqualTo("def")
             }
-            RequestContext.doWithTxn {
+            TxnContext.doInTxn {
                 assertThrows<Exception> {
                     records.mutateAtt(ref, "test", "def")
                 }

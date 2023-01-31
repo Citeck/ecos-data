@@ -2,10 +2,10 @@ package ru.citeck.ecos.data.sql.datasource
 
 import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.utils.use
+import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import java.sql.*
-import javax.sql.DataSource
 
-class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
+class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
 
     companion object {
         private val log = KotlinLogging.logger {}
@@ -14,6 +14,8 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
     private val currentThreadTxn = ThreadLocal<TxnState>()
     private val thSchemaCommands = ThreadLocal<MutableList<String>>()
     private val thSchemaMock = ThreadLocal.withInitial { false }
+
+    private val javaDataSource = dataSource.getJavaDataSource()
 
     override fun updateSchema(query: String) {
         withConnection { connection ->
@@ -140,33 +142,41 @@ class DbDataSourceImpl(private val dataSource: DataSource) : DbDataSource {
                 }
             }
         } else {
-            return dataSource.connection.use { connection ->
+            return javaDataSource.connection.use { connection ->
                 val autoCommitBefore = connection.autoCommit
                 val readOnlyBefore = connection.isReadOnly
-                if (autoCommitBefore) {
-                    connection.autoCommit = false
-                }
-                if (readOnlyBefore != readOnly) {
-                    connection.isReadOnly = readOnly
+                if (!dataSource.isManaged()) {
+                    if (autoCommitBefore) {
+                        connection.autoCommit = false
+                    }
+                    if (readOnlyBefore != readOnly) {
+                        connection.isReadOnly = readOnly
+                    }
                 }
                 try {
                     currentThreadTxn.set(TxnState(readOnly, connection))
                     val actionRes = action.invoke()
-                    connection.commit()
+                    if (!dataSource.isManaged()) {
+                        connection.commit()
+                    }
                     actionRes
                 } catch (originalEx: Throwable) {
-                    try {
-                        connection.rollback()
-                    } catch (e: Throwable) {
-                        originalEx.addSuppressed(e)
+                    if (!dataSource.isManaged()) {
+                        try {
+                            connection.rollback()
+                        } catch (e: Throwable) {
+                            originalEx.addSuppressed(e)
+                        }
                     }
                     throw originalEx
                 } finally {
-                    if (autoCommitBefore) {
-                        connection.autoCommit = true
-                    }
-                    if (readOnlyBefore != readOnly) {
-                        connection.isReadOnly = readOnlyBefore
+                    if (!dataSource.isManaged()) {
+                        if (autoCommitBefore) {
+                            connection.autoCommit = true
+                        }
+                        if (readOnlyBefore != readOnly) {
+                            connection.isReadOnly = readOnlyBefore
+                        }
                     }
                     currentThreadTxn.remove()
                 }

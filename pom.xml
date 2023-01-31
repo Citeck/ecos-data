@@ -12,7 +12,7 @@
 
     <properties>
 
-        <revision>1.21.0</revision>
+        <revision>1.21.1</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
@@ -30,12 +30,13 @@
         <kotlin.version>1.7.10</kotlin.version>
         <kotlin.logging.version>1.12.5</kotlin.logging.version>
 
-        <ecos.commons.version>2.12.0</ecos.commons.version>
-        <ecos.records.version>3.56.0</ecos.records.version>
+        <ecos.commons.version>2.12.1</ecos.commons.version>
+        <ecos.records.version>3.56.1</ecos.records.version>
         <ecos.model-lib.version>2.17.1</ecos.model-lib.version>
         <ecos.context-lib.version>1.3.1</ecos.context-lib.version>
         <ecos.snakeyaml.version>2.2.0</ecos.snakeyaml.version>
-        <ecos.webapp-api.version>1.6.0</ecos.webapp-api.version>
+        <ecos.webapp-api.version>1.6.1</ecos.webapp-api.version>
+        <ecos.txn-lib.version>1.0.0-SNAPSHOT</ecos.txn-lib.version>
 
         <postgresql.driver.version>42.2.14</postgresql.driver.version>
         <embedded-postgres.version>1.3.1</embedded-postgres.version>
@@ -91,6 +92,13 @@
             <groupId>ru.citeck.ecos.model</groupId>
             <artifactId>ecos-model-lib</artifactId>
             <version>${ecos.model-lib.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>ru.citeck.ecos.txn</groupId>
+            <artifactId>ecos-txn-lib</artifactId>
+            <version>${ecos.txn-lib.version}</version>
             <scope>provided</scope>
         </dependency>
 

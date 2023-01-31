@@ -18,7 +18,6 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
-import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
@@ -391,10 +390,10 @@ class DbEntityRepoPg<T : Any>(
 
         val attsToSave = LinkedHashMap(entityMap)
         attsToSave.remove(DbEntity.ID)
-        if (!ExtTxnContext.isWithoutModifiedMeta()) {
-            attsToSave[DbEntity.MODIFIED] = nowInstant
-            attsToSave[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
-        }
+        // if (!ExtTxnContext.isWithoutModifiedMeta()) {
+        attsToSave[DbEntity.MODIFIED] = nowInstant
+        attsToSave[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
+        // }
         return if (id == DbEntity.NEW_REC_ID) {
             insertImpl(attsToSave, nowInstant)
         } else {

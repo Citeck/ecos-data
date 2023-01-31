@@ -8,7 +8,7 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
 import ru.citeck.ecos.records2.RecordRef
-import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.txn.lib.TxnContext
 
 class DbRecordsDaoTxnTest : DbRecordsTestBase() {
 
@@ -23,8 +23,8 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
             ).map { it.build() }
         )
 
-        val newRecId = createRecord("textAtt" to "value")
-        RequestContext.doWithTxn {
+        val newRecId = TxnContext.doInTxn { createRecord("textAtt" to "value") }
+        TxnContext.doInTxn {
             assertThat(records.getAtt(newRecId, "textAtt").asText()).isEqualTo("value")
             records.delete(newRecId)
             assertThat(records.getAtt(newRecId, "textAtt").asText()).isEqualTo("")
@@ -43,7 +43,7 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
         )
 
         var newRecRef = RecordRef.EMPTY
-        RequestContext.doWithTxn(false) {
+        TxnContext.doInTxn(false) {
             newRecRef = createRecord("textAtt" to "Value")
             assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value")
             updateRecord(newRecRef, "textAtt" to "Value2")
@@ -51,7 +51,7 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
         }
         assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value2")
 
-        RequestContext.doWithTxn(false) {
+        TxnContext.doInTxn(false) {
             updateRecord(newRecRef, "textAtt" to "Value3")
             assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value3")
             updateRecord(newRecRef, "textAtt" to "Value4")
@@ -72,7 +72,7 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
         )
 
         var newRecRef = RecordRef.EMPTY
-        RequestContext.doWithTxn(false) {
+        TxnContext.doInTxn(false) {
             newRecRef = createRecord("textAtt" to "Value")
             assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value")
             assertThat(records.getAtt(newRecRef, "_notExists?bool").asBoolean()).isFalse
@@ -85,14 +85,14 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
         assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEmpty()
         assertThat(records.getAtt(newRecRef, "_notExists?bool").asBoolean()).isTrue
 
-        RequestContext.doWithTxn(false) {
+        TxnContext.doInTxn(false) {
             newRecRef = createRecord("textAtt" to "Value")
             assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value")
             assertThat(records.getAtt(newRecRef, "_notExists?bool").asBoolean()).isFalse
         }
 
         try {
-            RequestContext.doWithTxn(false) {
+            TxnContext.doInTxn(false) {
                 records.delete(newRecRef)
                 assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEmpty()
                 assertThat(records.getAtt(newRecRef, "_notExists?bool").asBoolean()).isTrue
@@ -132,7 +132,7 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
         )
 
         var newRecRef: RecordRef = RecordRef.EMPTY
-        RequestContext.doWithTxn(false) {
+        TxnContext.doInTxn(false) {
             newRecRef = records.create(
                 RECS_DAO_ID,
                 mapOf(
@@ -145,14 +145,14 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
         printAllColumns()
         assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("value")
 
-        RequestContext.doWithTxn(false) {
+        TxnContext.doInTxn(false) {
             records.mutate(newRecRef, mapOf("textAtt" to "changedInTxn"))
             assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("changedInTxn")
         }
         assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("changedInTxn")
 
         try {
-            RequestContext.doWithTxn(false) {
+            TxnContext.doInTxn(false) {
                 records.mutate(newRecRef, mapOf("textAtt" to "changedInTxnAndRolledBack"))
                 assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("changedInTxnAndRolledBack")
                 error("error")
@@ -163,7 +163,7 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
         assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("changedInTxn")
 
         try {
-            RequestContext.doWithTxn(false) {
+            TxnContext.doInTxn(false) {
                 records.mutate(newRecRef, mapOf("textAtt" to "changedInTxnAndRolledBack"))
                 records.mutate(newRecRef, mapOf("numAtt" to 1234))
 
@@ -192,7 +192,7 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
         assertThat(atts.getAtt("num").asDouble()).isEqualTo(0.0)
         assertThat(atts.getAtt("txt").asText()).isEqualTo("changedInTxn")
 
-        RequestContext.doWithTxn(false) {
+        TxnContext.doInTxn(false) {
             records.mutate(newRecRef, mapOf("textAtt" to "changedInTxn2"))
             records.mutate(newRecRef, mapOf("numAtt" to 1234))
         }

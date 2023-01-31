@@ -9,6 +9,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.txn.lib.TxnContext
 
 class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
@@ -80,18 +81,18 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
         val refs = mutableListOf<RecordRef>()
 
         AuthContext.runAs("user") {
-            val parentRec = RequestContext.doWithTxn {
+            val parentRec = TxnContext.doInTxn {
                 createRecord()
             }
 
-            RequestContext.doWithTxn {
+            TxnContext.doInTxn {
                 val childRec1 = createRecord("_parent" to parentRec, "_parentAtt" to "childAssoc")
                 val parentRefFromChild1 = records.getAtt(childRec1, "_parent?id").asText()
                 assertThat(parentRefFromChild1).isEqualTo(parentRec.toString())
                 refs.add(childRec1)
 /*            }
 
-            RequestContext.doWithTxn {*/
+            TxnContext.doInTxn {*/
                 val childRec2 = createRecord("_parent" to parentRec, "_parentAtt" to "childAssoc")
                 val parentRefFromChild2 = records.getAtt(childRec2, "_parent?id").asText()
                 assertThat(parentRefFromChild2).isEqualTo(parentRec.toString())
@@ -99,8 +100,6 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
                 println("ORIG_TABLE")
                 printQueryRes("SELECT * FROM ${tableRef.fullName}")
-                println("TXN_TABLE")
-                printQueryRes("SELECT * from ${tableRef.fullName.dropLast(1)}__ext_txn\";")
                 println("REFS")
                 printQueryRes("SELECT * from \"${tableRef.schema}\".\"ecos_record_ref\";")
             }
@@ -109,8 +108,6 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
             println("ORIG_TABLE")
             printQueryRes("SELECT * FROM ${tableRef.fullName}")
-            println("TXN_TABLE")
-            printQueryRes("SELECT * from ${tableRef.fullName.dropLast(1)}__ext_txn\";")
             println("REFS")
             printQueryRes("SELECT * from \"${tableRef.schema}\".\"ecos_record_ref\";")
 

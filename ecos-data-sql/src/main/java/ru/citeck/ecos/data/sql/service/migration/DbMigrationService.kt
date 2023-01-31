@@ -5,7 +5,6 @@ import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.commons.utils.ReflectUtils
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
-import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataService
 import java.util.concurrent.ConcurrentHashMap
@@ -13,7 +12,6 @@ import java.util.concurrent.ConcurrentHashMap
 class DbMigrationService<T : Any>(
     val dataService: DbDataService<T>,
     val schemaDao: DbSchemaDao,
-    val entityRepo: DbEntityRepo<T>,
     val dataSource: DbDataSource
 ) {
 

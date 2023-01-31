@@ -10,8 +10,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
 import ru.citeck.ecos.records2.RecordRef
-import ru.citeck.ecos.records3.record.request.RequestContext
-import java.util.*
+import ru.citeck.ecos.txn.lib.TxnContext
 import kotlin.collections.ArrayList
 
 class DbRecordsAuthTest : DbRecordsTestBase() {
@@ -50,7 +49,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         }
 
         AuthContext.runAs("user0") {
-            RequestContext.doWithTxn {
+            TxnContext.doInTxn {
                 rec = createRecord("textAtt" to "value")
                 assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
                 // New record in txn table, and we can't find it. Maybe in future this will be changed.
@@ -230,11 +229,9 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         }
 
         testTextAttValueAsUser0("123")
-        recordsDao.commit(UUID.randomUUID(), listOf(rec.id))
-        testTextAttValueAsUser0("123")
 
         AuthContext.runAs("user1") {
-            RequestContext.doWithTxn {
+            TxnContext.doInTxn {
                 records.mutateAtt(rec, "textAtt", "1234")
             }
         }
@@ -242,7 +239,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         testTextAttValueAsUser0("1234")
 
         AuthContext.runAs("user1") {
-            RequestContext.doWithTxn {
+            TxnContext.doInTxn {
                 records.mutateAtt(rec, "textAtt", "1234")
                 setRecPerms(listOf("user0"))
                 records.mutateAtt(rec, "textAtt", "123456")

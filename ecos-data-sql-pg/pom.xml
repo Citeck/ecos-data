@@ -13,6 +13,13 @@
         <version>${revision}</version>
     </parent>
 
+    <properties>
+
+        <commons-dbcp2.version>2.9.0</commons-dbcp2.version>
+        <javax.jta.version>1.1</javax.jta.version>
+
+    </properties>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -45,6 +52,20 @@
             <artifactId>postgresql</artifactId>
             <version>${postgresql.driver.version}</version>
             <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-dbcp2</artifactId>
+            <version>${commons-dbcp2.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>javax.transaction</groupId>
+            <artifactId>jta</artifactId>
+            <version>${javax.jta.version}</version>
+            <scope>test</scope>
         </dependency>
 
     </dependencies>

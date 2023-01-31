@@ -2,9 +2,12 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import mu.KotlinLogging
+import org.apache.commons.dbcp2.BasicDataSource
+import org.apache.commons.dbcp2.managed.BasicManagedDataSource
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
+import org.postgresql.xa.PGXADataSource
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.test.EcosWebAppApiMock
@@ -52,12 +55,15 @@ import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.txn.lib.manager.TransactionManagerImpl
+import ru.citeck.ecos.txn.lib.resource.type.xa.JavaXaTxnManagerAdapter
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
+import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicLong
-import javax.sql.DataSource
 
 abstract class DbRecordsTestBase {
 
@@ -73,7 +79,6 @@ abstract class DbRecordsTestBase {
         const val COLUMN_TABLE_NAME = "TABLE_NAME"
 
         private lateinit var pg: EmbeddedPostgres
-        private lateinit var dataSource: DataSource
         private var started = false
 
         private val DEFAULT_TABLE = DbTableRef("records-test-schema", "test-records-table")
@@ -86,8 +91,6 @@ abstract class DbRecordsTestBase {
                 pg.postgresDatabase.connection.use { conn ->
                     conn.prepareStatement("CREATE DATABASE \"${PgUtils.TEST_DB_NAME}\"").use { it.executeUpdate() }
                 }
-                dataSource = pg.getDatabase("postgres", PgUtils.TEST_DB_NAME)
-                started = true
             }
         }
     }
@@ -111,6 +114,7 @@ abstract class DbRecordsTestBase {
     lateinit var dataService: DbDataService<DbEntity>
     lateinit var dbRecordRefDataService: DbDataService<DbRecordRefEntity>
     lateinit var dbRecordRefService: DbRecordRefService
+    lateinit var dataSource: BasicDataSource
 
     val log = KotlinLogging.logger {}
 
@@ -123,7 +127,6 @@ abstract class DbRecordsTestBase {
     @BeforeEach
     fun beforeEachBase() {
 
-        dropAllTables()
         typesInfo.clear()
         numTemplates.clear()
         recReadPerms.clear()
@@ -137,6 +140,8 @@ abstract class DbRecordsTestBase {
     @AfterEach
     fun afterEachBase() {
         RequestContext.setDefaultServices(null)
+        dropAllTables()
+        dataSource.close()
     }
 
     fun setAuthoritiesWithAttReadPerms(rec: RecordRef, att: String, vararg authorities: String) {
@@ -184,8 +189,25 @@ abstract class DbRecordsTestBase {
     ) {
 
         this.tableRef = tableRef
+        val webAppApi = EcosWebAppApiMock(appName)
 
-        dbDataSource = DbDataSourceImpl(dataSource)
+        val xaDataSource = PGXADataSource()
+        xaDataSource.setURL(pg.getJdbcUrl("postgres", PgUtils.TEST_DB_NAME))
+        xaDataSource.user = "postgres"
+
+        val dataSource = BasicManagedDataSource()
+        dataSource.transactionManager = JavaXaTxnManagerAdapter(webAppApi.getProperties())
+        dataSource.xaDataSourceInstance = xaDataSource
+        dataSource.defaultAutoCommit = false
+        dataSource.autoCommitOnReturn = false
+        this.dataSource = dataSource
+
+        val jdbcDataSource = object : JdbcDataSource {
+            override fun getJavaDataSource() = dataSource
+            override fun isManaged() = true
+        }
+
+        dbDataSource = DbDataSourceImpl(jdbcDataSource)
 
         val pgDataServiceFactory = PgDataServiceFactory()
 
@@ -201,10 +223,11 @@ abstract class DbRecordsTestBase {
             pgDataServiceFactory
         )
 
-        val webAppContext = EcosWebAppApiMock(appName)
+        TxnContext.setManager(TransactionManagerImpl(webAppApi))
+
         recordsServiceFactory = object : RecordsServiceFactory() {
             override fun getEcosWebAppApi(): EcosWebAppApi {
-                return webAppContext
+                return webAppApi
             }
         }
         val numCounters = mutableMapOf<EntityRef, AtomicLong>()
@@ -235,7 +258,7 @@ abstract class DbRecordsTestBase {
             }
 
             override fun getEcosWebAppApi(): EcosWebAppApi {
-                return webAppContext
+                return webAppApi
             }
         }
         modelServiceFactory.setRecordsServices(recordsServiceFactory)
@@ -409,18 +432,20 @@ abstract class DbRecordsTestBase {
     }
 
     fun dropAllTables() {
-        dataSource.connection.use { conn ->
-            val tables = ArrayList<String>()
-            conn.metaData.getTables(null, null, "", arrayOf("TABLE")).use { res ->
-                while (res.next()) {
-                    tables.add("\"${res.getString("TABLE_SCHEM")}\".\"${res.getString("TABLE_NAME")}\"")
+        TxnContext.doInTxn {
+            dataSource.connection.use { conn ->
+                val tables = ArrayList<String>()
+                conn.metaData.getTables(null, null, "", arrayOf("TABLE")).use { res ->
+                    while (res.next()) {
+                        tables.add("\"${res.getString("TABLE_SCHEM")}\".\"${res.getString("TABLE_NAME")}\"")
+                    }
                 }
-            }
-            if (tables.isNotEmpty()) {
-                val dropCommand = "DROP TABLE " + tables.joinToString(",") + " CASCADE"
-                println("EXEC: $dropCommand")
-                conn.createStatement().use { it.executeUpdate(dropCommand) }
-                conn.createStatement().use { it.executeUpdate("DEALLOCATE ALL") }
+                if (tables.isNotEmpty()) {
+                    val dropCommand = "DROP TABLE " + tables.joinToString(",") + " CASCADE"
+                    println("EXEC: $dropCommand")
+                    conn.createStatement().use { it.executeUpdate(dropCommand) }
+                    conn.createStatement().use { it.executeUpdate("DEALLOCATE ALL") }
+                }
             }
         }
     }
@@ -465,9 +490,11 @@ abstract class DbRecordsTestBase {
     }
 
     fun sqlUpdate(sql: String): Int {
-        return dataSource.connection.use { conn ->
-            conn.createStatement().use { stmt ->
-                stmt.executeUpdate(sql)
+        return TxnContext.doInTxn {
+            dataSource.connection.use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeUpdate(sql)
+                }
             }
         }
     }

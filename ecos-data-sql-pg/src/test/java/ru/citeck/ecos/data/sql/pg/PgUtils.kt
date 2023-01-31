@@ -4,6 +4,7 @@ import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
 import ru.citeck.ecos.data.sql.utils.use
+import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 
 object PgUtils {
 
@@ -14,7 +15,12 @@ object PgUtils {
             pg.postgresDatabase.connection.use { conn ->
                 conn.prepareStatement("CREATE DATABASE $TEST_DB_NAME").use { it.executeUpdate() }
             }
-            val dbDataSource = DbDataSourceImpl(pg.getDatabase("postgres", "test"))
+            val javaDataSource = pg.getDatabase("postgres", "test")
+            val jdbcDataSource = object : JdbcDataSource {
+                override fun getJavaDataSource() = javaDataSource
+                override fun isManaged() = false
+            }
+            val dbDataSource = DbDataSourceImpl(jdbcDataSource)
             dbDataSource.withTransaction(false) {
                 dbDataSource.watchSchemaCommands {
                     action.invoke(dbDataSource)

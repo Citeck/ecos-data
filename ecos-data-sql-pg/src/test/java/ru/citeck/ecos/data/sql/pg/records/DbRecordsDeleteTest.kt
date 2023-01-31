@@ -6,7 +6,7 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.dao.delete.DelStatus
-import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.txn.lib.TxnContext
 
 class DbRecordsDeleteTest : DbRecordsTestBase() {
 
@@ -32,7 +32,7 @@ class DbRecordsDeleteTest : DbRecordsTestBase() {
 
         val elements = createElements()
 
-        RequestContext.doWithTxn {
+        TxnContext.doInTxn {
             records.delete(elements)
         }
 
@@ -41,7 +41,7 @@ class DbRecordsDeleteTest : DbRecordsTestBase() {
 
         val elements2 = createElements()
         elements2.forEach {
-            RequestContext.doWithTxn {
+            TxnContext.doInTxn {
                 records.delete(it)
             }
         }

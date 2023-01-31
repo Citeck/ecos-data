@@ -35,7 +35,6 @@ class DbRecordsDaoColumnUpdateTest : DbRecordsTestBase() {
         registerTypeWithAtt(AttributeType.DATE)
 
         sqlUpdate("ALTER TABLE ${tableRef.fullName} ALTER COLUMN \"$attId\" TYPE DATE USING \"$attId\"::date;")
-        sqlUpdate("ALTER TABLE ${tableRef.fullName.removeSuffix("\"")}__ext_txn\" ALTER COLUMN \"$attId\" TYPE DATE USING \"$attId\"::date;")
 
         val rec2 = createRecord(attId to dateTimeValue)
         assertThat(records.getAtt(rec2, attId).asText()).isEqualTo(dateTimeValue)

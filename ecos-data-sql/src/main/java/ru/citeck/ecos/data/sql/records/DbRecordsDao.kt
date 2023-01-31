@@ -26,10 +26,8 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbCommitEntityDto
 import ru.citeck.ecos.data.sql.service.DbDataService
-import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
-import ru.citeck.ecos.data.sql.txn.ExtTxnContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
@@ -61,9 +59,10 @@ import ru.citeck.ecos.records3.record.dao.query.RecordsQueryDao
 import ru.citeck.ecos.records3.record.dao.query.RecsGroupQueryDao
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
-import ru.citeck.ecos.records3.record.dao.txn.TxnRecordsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.records3.utils.RecordRefUtils
+import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.txn.lib.transaction.Transaction
 import ru.citeck.ecos.webapp.api.content.EcosContentData
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -71,6 +70,7 @@ import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.regex.Pattern
 import kotlin.collections.ArrayList
+import kotlin.collections.HashSet
 import kotlin.math.min
 
 class DbRecordsDao(
@@ -86,7 +86,6 @@ class DbRecordsDao(
     RecordsQueryDao,
     RecordMutateDao,
     RecordsDeleteDao,
-    TxnRecordsDao,
     JobsProvider,
     RecsGroupQueryDao {
 
@@ -147,23 +146,25 @@ class DbRecordsDao(
             error("Content attribute is not found: $contentAttribute")
         }
         val storageType = typeDef.contentConfig.storageType
-        val contentId = daoCtx.recContentHandler.uploadContent(
-            name,
-            mimeType,
-            encoding,
-            storageType,
-            writer
-        ) ?: error("File uploading failed")
+        return TxnContext.doInTxn {
+            val contentId = daoCtx.recContentHandler.uploadContent(
+                name,
+                mimeType,
+                encoding,
+                storageType,
+                writer
+            ) ?: error("File uploading failed")
 
-        val recordToMutate = LocalRecordAtts()
-        recordToMutate.setAtt(contentAttribute, contentId)
-        recordToMutate.setAtt("name", name)
-        recordToMutate.setAtt(RecordConstants.ATT_TYPE, TypeUtils.getTypeRef(typeId))
-        attributes?.forEach { key, value ->
-            recordToMutate.setAtt(key, value)
-        }
-        return daoCtx.recContentHandler.withContentDbDataAware {
-            EntityRef.create(daoCtx.appName, daoCtx.sourceId, mutate(recordToMutate))
+            val recordToMutate = LocalRecordAtts()
+            recordToMutate.setAtt(contentAttribute, contentId)
+            recordToMutate.setAtt("name", name)
+            recordToMutate.setAtt(RecordConstants.ATT_TYPE, TypeUtils.getTypeRef(typeId))
+            attributes?.forEach { key, value ->
+                recordToMutate.setAtt(key, value)
+            }
+            daoCtx.recContentHandler.withContentDbDataAware {
+                EntityRef.create(daoCtx.appName, daoCtx.sourceId, mutate(recordToMutate))
+            }
         }
     }
 
@@ -208,35 +209,40 @@ class DbRecordsDao(
         mock: Boolean,
         config: ObjectData
     ) {
+        return TxnContext.doInTxn {
+            val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
+            val newConfig = config.deepCopy()
+            newConfig["typeInfo"] = typeInfo
+            if (!newConfig.has("sourceId")) {
+                newConfig["sourceId"] = getId()
+            }
+            if (!newConfig.has("appName")) {
+                newConfig["appName"] = serviceFactory.webappProps.appName
+            }
 
-        val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
-        val newConfig = config.deepCopy()
-        newConfig["typeInfo"] = typeInfo
-        if (!newConfig.has("sourceId")) {
-            newConfig["sourceId"] = getId()
+            dbDataService.runMigrationByType(type, mock, newConfig)
         }
-        if (!newConfig.has("appName")) {
-            newConfig["appName"] = serviceFactory.webappProps.appName
-        }
-
-        dbDataService.runMigrationByType(type, mock, newConfig)
     }
 
     fun runMigrations(typeRef: EntityRef, mock: Boolean = true, diff: Boolean = true): List<String> {
-        val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
-        val columns = ecosTypeService.getColumnsForTypes(listOf(typeInfo)).map { it.column }
-        dbDataService.resetColumnsCache()
-        val migrations = ArrayList(dbDataService.runMigrations(columns, mock, diff, false))
-        if (contentService is DbMigrationsExecutor) {
-            migrations.addAll(contentService.runMigrations(mock, diff))
+        return TxnContext.doInTxn {
+            val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
+            val columns = ecosTypeService.getColumnsForTypes(listOf(typeInfo)).map { it.column }
+            dbDataService.resetColumnsCache()
+            val migrations = ArrayList(dbDataService.runMigrations(columns, mock, diff, false))
+            if (contentService is DbMigrationsExecutor) {
+                migrations.addAll(contentService.runMigrations(mock, diff))
+            }
+            migrations.addAll(dbRecordRefService.runMigrations(mock, diff))
+            migrations
         }
-        migrations.addAll(dbRecordRefService.runMigrations(mock, diff))
-        return migrations
     }
 
     fun updatePermissions(records: List<String>) {
-        AuthContext.runAsSystem {
-            dbDataService.commit(records.map { getEntityToCommit(it) })
+        TxnContext.doInTxn {
+            AuthContext.runAsSystem {
+                dbDataService.prepareEntitiesToCommit(records.map { getEntityToCommit(it) })
+            }
         }
     }
 
@@ -261,37 +267,8 @@ class DbRecordsDao(
         }
     }
 
-    override fun commit(txnId: UUID, recordIds: List<String>) {
-        log.debug { "${this.hashCode()} commit " + txnId + " records: " + recordIds }
-        AuthContext.runAsSystem {
-            ExtTxnContext.withExtTxn(txnId, false) {
-                dbDataService.commit(recordIds.map { getEntityToCommit(it) })
-            }
-        }
-    }
-
-    override fun rollback(txnId: UUID, recordIds: List<String>) {
-        log.debug { "${this.hashCode()} rollback " + txnId + " records: " + recordIds }
-        ExtTxnContext.withExtTxn(txnId, false) {
-            dbDataService.rollback(recordIds)
-        }
-    }
-
     override fun getRecordsAtts(recordIds: List<String>): List<AttValue> {
-
-        val txnId = RequestContext.getCurrent()?.ctxData?.txnId
-
-        return if (txnId != null) {
-            ExtTxnContext.withExtTxn(txnId, true) {
-                getRecordsAttsInTxn(recordIds)
-            }
-        } else {
-            getRecordsAttsInTxn(recordIds)
-        }
-    }
-
-    private fun getRecordsAttsInTxn(recordsId: List<String>): List<AttValue> {
-        return recordsId.map { id ->
+        return recordIds.map { id ->
             if (id.isEmpty()) {
                 DbEmptyRecord(daoCtx)
             } else {
@@ -301,6 +278,10 @@ class DbRecordsDao(
     }
 
     private fun findDbEntityByExtId(extId: String): DbEntity? {
+
+        if (getUpdatedInTxnIds().contains(extId)) {
+            return AuthContext.runAsSystem { dbDataService.findByExtId(extId) }
+        }
 
         if (AuthContext.isRunAsSystem()) {
             return dbDataService.findByExtId(extId)
@@ -456,20 +437,7 @@ class DbRecordsDao(
         if (!config.deletable) {
             error("Records DAO is not deletable. Records can't be deleted: '$recordIds'")
         }
-
-        val txnId = RequestContext.getCurrent()?.ctxData?.txnId
-
-        return if (txnId != null) {
-            ExtTxnContext.withExtTxn(txnId, false) {
-                deleteInTxn(recordIds)
-            }
-        } else {
-            deleteInTxn(recordIds)
-        }
-    }
-
-    private fun deleteInTxn(recordsId: List<String>): List<DelStatus> {
-        return daoCtx.deleteDao.delete(recordsId)
+        return TxnContext.doInTxn { daoCtx.deleteDao.delete(recordIds) }
     }
 
     private fun getTypeIdForRecord(record: LocalRecordAtts): String {
@@ -504,13 +472,22 @@ class DbRecordsDao(
         if (!config.updatable) {
             error("Records DAO is not mutable. Record can't be mutated: '${record.id}'")
         }
-        val txnId = RequestContext.getCurrent()?.ctxData?.txnId
-        return if (txnId != null) {
-            ExtTxnContext.withExtTxn(txnId, false) {
-                mutateInTxn(record, true)
+        return TxnContext.doInTxn {
+            val resultRecId = mutateInTxn(record, true)
+            val txn = TxnContext.getTxn()
+
+            val prepareToCommitEntities = txn.getData(RecsPrepareToCommitTxnKey) {
+                LinkedHashSet<String>()
             }
-        } else {
-            mutateInTxn(record, false)
+            if (prepareToCommitEntities.isEmpty()) {
+                TxnContext.doBeforeCommit(0f) {
+                    dbDataService.prepareEntitiesToCommit(prepareToCommitEntities.map { getEntityToCommit(it) })
+                }
+            }
+            prepareToCommitEntities.add(resultRecId)
+            getUpdatedInTxnIds(txn).add(resultRecId)
+
+            resultRecId
         }
     }
 
@@ -554,11 +531,7 @@ class DbRecordsDao(
             if (!AuthContext.getCurrentAuthorities().contains(AuthRole.ADMIN)) {
                 error("Assocs migration allowed only for admin")
             }
-            ExtTxnContext.withoutModifiedMeta {
-                ExtTxnContext.withoutExtTxn {
-                    runMigrationByType(AssocsDbMigration.TYPE, EntityRef.EMPTY, false, ObjectData.create())
-                }
-            }
+            runMigrationByType(AssocsDbMigration.TYPE, EntityRef.EMPTY, false, ObjectData.create())
             return record.id
         }
 
@@ -591,8 +564,7 @@ class DbRecordsDao(
         val isNewRec = recToMutate.id == DbEntity.NEW_REC_ID
 
         if (!isNewRec && !AuthContext.isRunAsSystem()) {
-            val txnId = RequestContext.getCurrent()?.ctxData?.txnId
-            if (!txnExists || recToMutate.attributes[DbDataServiceImpl.COLUMN_EXT_TXN_ID] != txnId) {
+            if (!getUpdatedInTxnIds().contains(recToMutate.extId)) {
                 val recordPerms = getRecordPerms(recToMutate.extId)
                 if (!recordPerms.isCurrentUserHasWritePerms()) {
                     error("Permissions Denied. You can't change record '${record.id}'")
@@ -747,7 +719,7 @@ class DbRecordsDao(
                 recAfterSave
             }
             if (!txnExists) {
-                dbDataService.commit(listOf(getEntityToCommit(newEntity.extId)))
+                dbDataService.prepareEntitiesToCommit(listOf(getEntityToCommit(newEntity.extId)))
             }
             newEntity
         }
@@ -919,4 +891,11 @@ class DbRecordsDao(
             serviceFactory.attValuesConverter
         )
     }
+
+    private fun getUpdatedInTxnIds(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<String> {
+        return txn?.getData(RecsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
+    }
+
+    private object RecsUpdatedInThisTxnKey
+    private object RecsPrepareToCommitTxnKey
 }

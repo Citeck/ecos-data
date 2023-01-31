@@ -16,7 +16,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import ru.citeck.ecos.records3.record.dao.impl.proxy.RecordsDaoProxy
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
-import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.txn.lib.TxnContext
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -36,7 +36,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         val instantBeforeCreate = Instant.now()
 
         val testAttValue = "abc"
-        val ref = RequestContext.doWithTxn {
+        val ref = TxnContext.doInTxn {
             val ref = createRecord("testStr" to testAttValue)
             ref
         }
@@ -62,7 +62,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(created2).isEqualTo(created1)
         assertThat(modified2).isAfter(modified1)
 
-        val (created3, modified3) = RequestContext.doWithTxn {
+        val (created3, modified3) = TxnContext.doInTxn {
             updateRecord(ref, "testStr" to testAttValue + 2)
             getCreatedModified()
         }
@@ -76,7 +76,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(modified4).isEqualTo(modified3)
 
         var updatedTime: Instant? = null
-        RequestContext.doWithTxn {
+        TxnContext.doInTxn {
             updateRecord(ref, "testStr" to testAttValue + 3)
             updatedTime = Instant.now()
             // check that modified time doesn't change on commit

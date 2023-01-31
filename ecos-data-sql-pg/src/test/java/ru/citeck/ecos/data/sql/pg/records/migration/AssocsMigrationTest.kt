@@ -10,7 +10,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
-import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.txn.lib.TxnContext
 
 class AssocsMigrationTest : DbRecordsTestBase() {
 
@@ -101,7 +101,6 @@ class AssocsMigrationTest : DbRecordsTestBase() {
 
         dbDataSource.withTransaction(false) {
             dbDataSource.updateSchema("ALTER TABLE ${tableRef.fullName} DROP COLUMN ${DbEntity.REF_ID}")
-            dbDataSource.updateSchema("ALTER TABLE ${tableRef.fullName.dropLast(1)}__ext_txn\" DROP COLUMN ${DbEntity.REF_ID}")
             dbDataSource.updateSchema("DROP TABLE \"${tableRef.schema}\".\"ecos_record_ref\"")
         }
         dbRecordRefDataService.resetColumnsCache()
@@ -109,7 +108,7 @@ class AssocsMigrationTest : DbRecordsTestBase() {
 
         printQueryRes("SELECT * from ${tableRef.fullName}")
 
-        RequestContext.doWithTxn {
+        TxnContext.doInTxn {
             AuthContext.runAs("admin", listOf(AuthRole.ADMIN)) {
                 val emptyRef = RecordRef.create(recordsDao.getId(), "")
                 val atts = RecordAtts(emptyRef)
