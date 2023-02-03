@@ -442,6 +442,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         return dataSource.withTransaction(mock) {
             val result = runMigrationsInTxn(expectedColumns, mock, diff, onlyOwn)
             resetColumnsCache()
+            TxnContext.doAfterRollback(0f, false) {
+                resetColumnsCache()
+            }
             result
         }
     }
@@ -701,7 +704,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
         try {
             return dataSource.withTransaction(true, action)
         } catch (rootEx: SQLException) {
-            if (rootEx.message?.contains("column .+ does not exist".toRegex()) == true) {
+            if (rootEx.message?.contains("(column|relation) .+ does not exist".toRegex()) == true) {
                 resetColumnsCache()
                 initColumns()
                 try {
