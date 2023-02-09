@@ -3,8 +3,9 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import ru.citeck.ecos.context.lib.auth.AuthConstants
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.context.lib.auth.AuthUser
+import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.txn.lib.TxnContext
@@ -63,7 +64,9 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
         AuthContext.runAs("user3") {
             createRecord("id" to ref.id)
         }
-        assertThat(records.getAtt(ref, "permissions._has.Write?bool!false").asText()).isEqualTo("false")
+        AuthContext.runAs(EmptyAuth) {
+            assertThat(records.getAtt(ref, "permissions._has.Write?bool!false").asText()).isEqualTo("false")
+        }
         AuthContext.runAs("user1") {
             assertThat(records.getAtt(ref, "permissions._has.Write?bool").asText()).isEqualTo("false")
         }
@@ -78,7 +81,7 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
         )
         val usersWithWritePerms = listOf(
             "user0",
-            AuthConstants.SYSTEM_USER
+            AuthUser.SYSTEM
         )
 
         usersWithoutWritePerms.forEach {

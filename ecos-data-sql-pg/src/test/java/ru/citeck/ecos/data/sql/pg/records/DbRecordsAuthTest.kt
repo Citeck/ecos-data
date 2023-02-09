@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthGroup
+import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
@@ -157,51 +158,54 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
 
         setAuthoritiesWithReadPerms(rec, "user0")
 
-        assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
-        AuthContext.runAs("user1") {
+        AuthContext.runAs(EmptyAuth) {
+
             assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
-            assertThrows<Exception> {
-                updateRecord(rec, "textAtt" to "567", "_type" to REC_TEST_TYPE_REF)
+            AuthContext.runAs("user1") {
+                assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
+                assertThrows<Exception> {
+                    updateRecord(rec, "textAtt" to "567", "_type" to REC_TEST_TYPE_REF)
+                }
+                AuthContext.runAsFull("user0") {
+                    updateRecord(rec, "textAtt" to "111")
+                    assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("111")
+                }
+                assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
+                assertThrows<Exception> {
+                    updateRecord(rec, "textAtt" to "567", "_type" to REC_TEST_TYPE_REF)
+                }
             }
-            AuthContext.runAsFull("user0") {
-                updateRecord(rec, "textAtt" to "111")
-                assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("111")
+
+            setAuthoritiesWithReadPerms(rec, setOf("user0", "user1"))
+            AuthContext.runAs("user0") {
+                updateRecord(rec, "textAtt" to "with perms")
             }
-            assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
-            assertThrows<Exception> {
-                updateRecord(rec, "textAtt" to "567", "_type" to REC_TEST_TYPE_REF)
+            AuthContext.runAs("user1") {
+                assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("with perms")
             }
-        }
+            AuthContext.runAs("user3") {
+                assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
+            }
 
-        setAuthoritiesWithReadPerms(rec, setOf("user0", "user1"))
-        AuthContext.runAs("user0") {
-            updateRecord(rec, "textAtt" to "with perms")
-        }
-        AuthContext.runAs("user1") {
-            assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("with perms")
-        }
-        AuthContext.runAs("user3") {
-            assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
-        }
+            setAuthoritiesWithReadPerms(rec, (0..10).map { "user$it" }.toSet())
+            AuthContext.runAs("user1") {
+                updateRecord(rec, "textAtt" to "update-perms")
+            }
+            AuthContext.runAs("user5") {
+                updateRecord(rec, "textAtt" to "val22")
+                assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("val22")
+            }
 
-        setAuthoritiesWithReadPerms(rec, (0..10).map { "user$it" }.toSet())
-        AuthContext.runAs("user1") {
-            updateRecord(rec, "textAtt" to "update-perms")
-        }
-        AuthContext.runAs("user5") {
-            updateRecord(rec, "textAtt" to "val22")
-            assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("val22")
-        }
+            setAuthoritiesWithReadPerms(rec, (0..5).map { "user$it" }.toSet())
+            AuthContext.runAs("user5") {
+                updateRecord(rec, "textAtt" to "val33")
+                assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("val33")
+            }
 
-        setAuthoritiesWithReadPerms(rec, (0..5).map { "user$it" }.toSet())
-        AuthContext.runAs("user5") {
-            updateRecord(rec, "textAtt" to "val33")
-            assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("val33")
-        }
-
-        setAuthoritiesWithReadPerms(rec, (0..4).map { "user$it" }.toSet())
-        AuthContext.runAs("user5") {
-            assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
+            setAuthoritiesWithReadPerms(rec, (0..4).map { "user$it" }.toSet())
+            AuthContext.runAs("user5") {
+                assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("")
+            }
         }
     }
 

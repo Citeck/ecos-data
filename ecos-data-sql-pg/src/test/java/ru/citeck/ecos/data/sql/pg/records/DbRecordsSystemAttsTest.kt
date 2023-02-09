@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.RecordRef
@@ -26,10 +27,12 @@ class DbRecordsSystemAttsTest : DbRecordsTestBase() {
             )
         )
 
-        val exception = assertThrows<Exception> {
-            createRecord("system-att-0" to "value")
+        AuthContext.runAs(EmptyAuth) {
+            val exception = assertThrows<Exception> {
+                createRecord("system-att-0" to "value")
+            }
+            assertThat(exception.message).contains("Permission denied")
         }
-        assertThat(exception.message).contains("Permission denied")
 
         val record = AuthContext.runAsSystem {
             createRecord("system-att-0" to "value")

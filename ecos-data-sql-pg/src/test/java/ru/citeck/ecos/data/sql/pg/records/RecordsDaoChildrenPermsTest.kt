@@ -5,6 +5,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.RecordRef
@@ -46,22 +47,24 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
         setAuthoritiesWithReadPerms(parentRecord, "parent-user", "other-user")
 
         val checkReadPermsForAll = {
-            checkReadPerms(childRecord, false)
-            AuthContext.runAs("user") {
-                checkReadPerms(childRecord, true)
-            }
-            checkReadPerms(parentRecord, false)
-            AuthContext.runAs("parent-user") {
-                checkReadPerms(parentRecord, true)
-            }
-            AuthContext.runAs("other-user") {
-                checkReadPerms(parentRecord, true)
-            }
-            AuthContext.runAs("user") {
+            AuthContext.runAs(EmptyAuth) {
+                checkReadPerms(childRecord, false)
+                AuthContext.runAs("user") {
+                    checkReadPerms(childRecord, true)
+                }
                 checkReadPerms(parentRecord, false)
-            }
-            AuthContext.runAs("other-user") {
-                checkReadPerms(childRecord, inheritParentPerms)
+                AuthContext.runAs("parent-user") {
+                    checkReadPerms(parentRecord, true)
+                }
+                AuthContext.runAs("other-user") {
+                    checkReadPerms(parentRecord, true)
+                }
+                AuthContext.runAs("user") {
+                    checkReadPerms(parentRecord, false)
+                }
+                AuthContext.runAs("other-user") {
+                    checkReadPerms(childRecord, inheritParentPerms)
+                }
             }
         }
 
