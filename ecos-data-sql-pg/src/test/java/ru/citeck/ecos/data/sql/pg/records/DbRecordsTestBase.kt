@@ -1,16 +1,12 @@
 package ru.citeck.ecos.data.sql.pg.records
 
-import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import mu.KotlinLogging
 import org.apache.commons.dbcp2.BasicDataSource
 import org.apache.commons.dbcp2.managed.BasicManagedDataSource
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
-import org.postgresql.xa.PGXADataSource
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
-import ru.citeck.ecos.commons.test.EcosWebAppApiMock
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbContentServiceImpl
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
@@ -24,7 +20,6 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
-import ru.citeck.ecos.data.sql.pg.PgUtils
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
@@ -55,6 +50,8 @@ import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.test.commons.EcosWebAppApiMock
+import ru.citeck.ecos.test.commons.containers.TestContainers
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.txn.lib.manager.TransactionManagerImpl
 import ru.citeck.ecos.txn.lib.resource.type.xa.JavaXaTxnManagerAdapter
@@ -78,21 +75,7 @@ abstract class DbRecordsTestBase {
         const val COLUMN_TABLE_SCHEMA = "TABLE_SCHEM"
         const val COLUMN_TABLE_NAME = "TABLE_NAME"
 
-        private lateinit var pg: EmbeddedPostgres
-        private var started = false
-
         private val DEFAULT_TABLE = DbTableRef("records-test-schema", "test-records-table")
-
-        @BeforeAll
-        @JvmStatic
-        fun beforeAll() {
-            if (!started) {
-                pg = EmbeddedPostgres.builder().start()
-                pg.postgresDatabase.connection.use { conn ->
-                    conn.prepareStatement("CREATE DATABASE \"${PgUtils.TEST_DB_NAME}\"").use { it.executeUpdate() }
-                }
-            }
-        }
     }
 
     private val typesInfo = mutableMapOf<String, TypeInfo>()
@@ -191,13 +174,9 @@ abstract class DbRecordsTestBase {
         this.tableRef = tableRef
         val webAppApi = EcosWebAppApiMock(appName)
 
-        val xaDataSource = PGXADataSource()
-        xaDataSource.setURL(pg.getJdbcUrl("postgres", PgUtils.TEST_DB_NAME))
-        xaDataSource.user = "postgres"
-
         val dataSource = BasicManagedDataSource()
         dataSource.transactionManager = JavaXaTxnManagerAdapter(webAppApi.getProperties())
-        dataSource.xaDataSourceInstance = xaDataSource
+        dataSource.xaDataSourceInstance = TestContainers.getPostgres().getXaDataSource()
         dataSource.defaultAutoCommit = false
         dataSource.autoCommitOnReturn = false
         this.dataSource = dataSource
