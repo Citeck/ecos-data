@@ -22,7 +22,7 @@ object PgUtils {
                 }
             }
         } finally {
-            postgres.recreate()
+            postgres.release()
         }
     }
 }
