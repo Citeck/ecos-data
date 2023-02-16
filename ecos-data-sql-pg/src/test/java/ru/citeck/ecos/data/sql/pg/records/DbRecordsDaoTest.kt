@@ -78,6 +78,8 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         var updatedTime: Instant? = null
         TxnContext.doInTxn {
             updateRecord(ref, "testStr" to testAttValue + 3)
+            // Without this sleep sometimes modified5 is equal to updatedTime
+            Thread.sleep(10)
             updatedTime = Instant.now()
             // check that modified time doesn't change on commit
             Thread.sleep(1_000)
