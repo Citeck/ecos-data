@@ -21,6 +21,10 @@ import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import java.time.temporal.Temporal
+import java.util.*
+import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
 import kotlin.collections.LinkedHashMap
 
 class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValue {
@@ -138,6 +142,8 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             emptyMap()
         }
 
+        val defaultContentAtt = getDefaultContentAtt()
+
         attTypes.forEach { (attId, attType) ->
             val value = recData[attId]
             if (DbRecordsUtils.isAssocLikeAttribute(attType)) {
@@ -157,7 +163,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                         }
                     }
                     AttributeType.CONTENT -> {
-                        recData[attId] = convertContentAtt(value, attId)
+                        recData[attId] = convertContentAtt(value, attId, attId == defaultContentAtt)
                     }
                     else -> {
                     }
@@ -167,15 +173,15 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         this.additionalAtts = recData
     }
 
-    private fun convertContentAtt(value: Any?, attId: String): Any? {
+    private fun convertContentAtt(value: Any?, attId: String, isDefaultContentAtt: Boolean): Any? {
         if (value is List<*>) {
-            return value.mapNotNull { convertContentAtt(it, attId) }
+            return value.mapNotNull { convertContentAtt(it, attId, isDefaultContentAtt) }
         }
         if (value !is Long || value < 0) {
             return null
         }
         return if (ctx.contentService != null) {
-            DbContentValue(ctx, entity.extId, value, attId)
+            DbContentValue(ctx, entity.extId, value, attId, isDefaultContentAtt)
         } else {
             null
         }
@@ -209,16 +215,71 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         return entity.name
     }
 
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> filterUnknownJsonTypes(value: T): T {
+        if (value == null) {
+            return null as T
+        }
+        val nnValue: Any = value
+        if (value is Map<*, *>) {
+            if (value.isEmpty() || value.keys.first() !is String) {
+                return value
+            }
+            nnValue as Map<String, Any?>
+            val newMap = LinkedHashMap<String, Any?>()
+            nnValue.forEach { (k, v) ->
+                val filtered = filterUnknownJsonTypes(v)
+                if (filtered != Unit) {
+                    newMap[k] = filtered
+                }
+            }
+            return newMap as T
+        } else if (nnValue is List<Any?>) {
+            val newList = ArrayList<Any?>()
+            nnValue.forEach {
+                val filtered = filterUnknownJsonTypes(it)
+                if (filtered != Unit) {
+                    newList.add(filtered)
+                }
+            }
+            return newList as T
+        } else if (
+            nnValue::class.java.isPrimitive ||
+            nnValue::class.java.isEnum ||
+            value is Boolean ||
+            value is Number ||
+            value is Char ||
+            value is String ||
+            value is EntityRef ||
+            value is Date ||
+            value is Temporal ||
+            value is ByteArray
+        ) {
+            return value
+        }
+        return Unit as T
+    }
+
     override fun asJson(): Any {
         val jsonAtts = LinkedHashMap<String, Any?>()
         jsonAtts["id"] = entity.extId
+
         if (typeInfo == null) {
-            jsonAtts.putAll(additionalAtts)
-            return jsonAtts
+            error("TypeInfo is null")
         }
         val nonSystemAttIds = typeInfo.model.attributes.map { it.id }.toSet()
-        additionalAtts.keys.filter { nonSystemAttIds.contains(it) }.forEach {
-            jsonAtts[it] = additionalAtts[it]
+
+        val validAdditionalAtts = filterUnknownJsonTypes(
+            additionalAtts.entries.filter {
+                nonSystemAttIds.contains(it.key)
+            }.associate { it.key to it.value }
+        )
+        for ((k, v) in validAdditionalAtts) {
+            if (isCurrentUserHasAttReadPerms(k)) {
+                jsonAtts[k] = v
+            } else {
+                jsonAtts[k] = null
+            }
         }
         return jsonAtts
     }

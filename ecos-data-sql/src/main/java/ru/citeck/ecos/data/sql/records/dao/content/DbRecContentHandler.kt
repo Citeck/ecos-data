@@ -32,13 +32,17 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
     }
 
     fun createContentUrl(recordId: String, attribute: String): String {
+        return createContentUrl(EntityRef.create(ctx.appName, ctx.sourceId, recordId), attribute)
+    }
 
-        val ref = ctx.sourceId + EntityRef.SOURCE_ID_DELIMITER + recordId
+    fun createContentUrl(entityRef: EntityRef, attribute: String): String {
+
+        val ref = entityRef.getSourceId() + EntityRef.SOURCE_ID_DELIMITER + entityRef.getLocalId()
 
         val refEnc = URLEncoder.encode(ref, Charsets.UTF_8.name())
         val attEnc = URLEncoder.encode(attribute, Charsets.UTF_8.name())
 
-        return "/gateway/${ctx.appName}/api/ecos/webapp/content?ref=$refEnc&att=$attEnc"
+        return "/gateway/${entityRef.getAppName()}/api/ecos/webapp/content?ref=$refEnc&att=$attEnc"
     }
 
     fun getRecordRefFromContentUrl(url: String): EntityRef {

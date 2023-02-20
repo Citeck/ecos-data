@@ -28,6 +28,7 @@ import ru.citeck.ecos.data.sql.service.DbCommitEntityDto
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
+import ru.citeck.ecos.model.lib.attributes.dto.AttIndexDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
@@ -102,6 +103,11 @@ class DbRecordsDao(
             AttributeDef.create()
                 .withId(RecordConstants.ATT_PARENT)
                 .withType(AttributeType.ASSOC)
+                .withIndex(
+                    AttIndexDef.create()
+                        .withEnabled(true)
+                        .build()
+                )
                 .build()
         ).associateBy { it.id }
     }
@@ -112,6 +118,9 @@ class DbRecordsDao(
     private val listeners: MutableList<DbRecordsListener> = CopyOnWriteArrayList()
 
     private val recordsJobs: List<Job> by lazy { evalJobs() }
+
+    private val recsUpdatedInThisTxnKey = IdentityKey()
+    private val recsPrepareToCommitTxnKey = IdentityKey()
 
     init {
         dbDataService.registerMigration(AssocsDbMigration(dbRecordRefService))
@@ -142,7 +151,6 @@ class DbRecordsDao(
         if (typeDef.model.attributes.all { it.id != contentAttribute } &&
             typeDef.model.systemAttributes.all { it.id != contentAttribute }
         ) {
-
             error("Content attribute is not found: $contentAttribute")
         }
         val storageType = typeDef.contentConfig.storageType
@@ -308,19 +316,22 @@ class DbRecordsDao(
 
     override fun queryRecords(recsQuery: RecordsQuery): Any? {
 
-        if (recsQuery.language != PredicateService.LANGUAGE_PREDICATE) {
+        if (recsQuery.language.isNotEmpty() && recsQuery.language != PredicateService.LANGUAGE_PREDICATE) {
             return null
         }
         val originalPredicate = recsQuery.getQuery(Predicate::class.java)
 
-        val queryTypePred = PredicateUtils.filterValuePredicates(originalPredicate) {
-            it.getAttribute() == "_type" && it.getValue().asText().isNotBlank()
-        }.orElse(null)
-
-        val ecosTypeRef = if (queryTypePred is ValuePredicate) {
-            EntityRef.valueOf(queryTypePred.getValue().asText())
+        val ecosTypeRef = if (recsQuery.ecosType.isNotEmpty()) {
+            TypeUtils.getTypeRef(recsQuery.ecosType)
         } else {
-            config.typeRef
+            val queryTypePred = PredicateUtils.filterValuePredicates(originalPredicate) {
+                it.getAttribute() == RecordConstants.ATT_TYPE && it.getValue().asText().isNotBlank()
+            }.orElse(null)
+            if (queryTypePred is ValuePredicate) {
+                EntityRef.valueOf(queryTypePred.getValue().asText())
+            } else {
+                config.typeRef
+            }
         }
 
         val attributesById = if (EntityRef.isNotEmpty(ecosTypeRef)) {
@@ -473,10 +484,10 @@ class DbRecordsDao(
             error("Records DAO is not mutable. Record can't be mutated: '${record.id}'")
         }
         return TxnContext.doInTxn {
-            val resultRecId = mutateInTxn(record, true)
+            val resultRecId = mutateInTxn(record)
             val txn = TxnContext.getTxn()
 
-            val prepareToCommitEntities = txn.getData(RecsPrepareToCommitTxnKey) {
+            val prepareToCommitEntities = txn.getData(recsPrepareToCommitTxnKey) {
                 LinkedHashSet<String>()
             }
             if (prepareToCommitEntities.isEmpty()) {
@@ -491,7 +502,7 @@ class DbRecordsDao(
         }
     }
 
-    private fun mutateInTxn(record: LocalRecordAtts, txnExists: Boolean): String {
+    private fun mutateInTxn(record: LocalRecordAtts): String {
 
         val typeId = getTypeIdForRecord(record)
         val typeInfo = ecosTypeService.getTypeInfo(typeId)
@@ -506,8 +517,7 @@ class DbRecordsDao(
             typeInfo,
             typesAttColumns,
             typesColumns,
-            typesColumnNames,
-            txnExists
+            typesColumnNames
         )
     }
 
@@ -516,8 +526,7 @@ class DbRecordsDao(
         typeDef: TypeInfo,
         typesAttColumns: List<EcosAttColumnDef>,
         typesColumns: List<DbColumnDef>,
-        typesColumnNames: Set<String>,
-        txnExists: Boolean
+        typesColumnNames: Set<String>
     ): String {
 
         if (record.attributes["__updatePermissions"].asBoolean()) {
@@ -718,9 +727,6 @@ class DbRecordsDao(
             } else {
                 recAfterSave
             }
-            if (!txnExists) {
-                dbDataService.prepareEntitiesToCommit(listOf(getEntityToCommit(newEntity.extId)))
-            }
             newEntity
         }
 
@@ -893,9 +899,8 @@ class DbRecordsDao(
     }
 
     private fun getUpdatedInTxnIds(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<String> {
-        return txn?.getData(RecsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
+        return txn?.getData(recsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
     }
 
-    private object RecsUpdatedInThisTxnKey
-    private object RecsPrepareToCommitTxnKey
+    private class IdentityKey
 }
