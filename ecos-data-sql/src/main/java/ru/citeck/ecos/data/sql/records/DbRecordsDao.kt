@@ -113,6 +113,9 @@ class DbRecordsDao(
 
     private val recordsJobs: List<Job> by lazy { evalJobs() }
 
+    private val recsUpdatedInThisTxnKey = IdentityKey()
+    private val recsPrepareToCommitTxnKey = IdentityKey()
+
     init {
         dbDataService.registerMigration(AssocsDbMigration(dbRecordRefService))
     }
@@ -476,7 +479,7 @@ class DbRecordsDao(
             val resultRecId = mutateInTxn(record, true)
             val txn = TxnContext.getTxn()
 
-            val prepareToCommitEntities = txn.getData(RecsPrepareToCommitTxnKey) {
+            val prepareToCommitEntities = txn.getData(recsPrepareToCommitTxnKey) {
                 LinkedHashSet<String>()
             }
             if (prepareToCommitEntities.isEmpty()) {
@@ -893,9 +896,8 @@ class DbRecordsDao(
     }
 
     private fun getUpdatedInTxnIds(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<String> {
-        return txn?.getData(RecsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
+        return txn?.getData(recsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
     }
 
-    private object RecsUpdatedInThisTxnKey
-    private object RecsPrepareToCommitTxnKey
+    private class IdentityKey
 }
