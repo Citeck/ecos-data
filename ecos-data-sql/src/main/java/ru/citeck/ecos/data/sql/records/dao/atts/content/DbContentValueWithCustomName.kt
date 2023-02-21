@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao.atts.content
 
 import ru.citeck.ecos.data.sql.content.DbEcosContentData
 import ru.citeck.ecos.records3.record.atts.value.impl.AttValueDelegate
+import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.io.InputStream
 import java.net.URI
 import java.time.Instant
@@ -44,7 +45,7 @@ class DbContentValueWithCustomName(
     ) : DbEcosContentData {
         override fun getCreated(): Instant = value.getCreated()
         override fun getEncoding(): String = value.getEncoding()
-        override fun getMimeType(): String = value.getMimeType()
+        override fun getMimeType(): MimeType = value.getMimeType()
         override fun getName(): String = name
         override fun getSha256(): String = value.getSha256()
         override fun getSize(): Long = value.getSize()

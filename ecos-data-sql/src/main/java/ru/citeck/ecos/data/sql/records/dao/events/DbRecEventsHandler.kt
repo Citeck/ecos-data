@@ -2,10 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao.events
 
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
-import ru.citeck.ecos.data.sql.records.listener.DbRecordChangedEvent
-import ru.citeck.ecos.data.sql.records.listener.DbRecordCreatedEvent
-import ru.citeck.ecos.data.sql.records.listener.DbRecordDraftStatusChangedEvent
-import ru.citeck.ecos.data.sql.records.listener.DbRecordStatusChangedEvent
+import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
@@ -44,6 +41,18 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             val recChangedEvent = DbRecordChangedEvent(recAfter, typeInfo, attsBefore, attsAfter)
             ctx.listeners.forEach {
                 it.onChanged(recChangedEvent)
+            }
+        }
+
+        val contentBefore = recBefore.getDefaultContent()
+        val contentAfter = recAfter.getDefaultContent()
+
+        if (contentBefore != null || contentAfter != null) {
+            if (contentBefore?.getContentDbData()?.getUri() != contentAfter?.getContentDbData()?.getUri()) {
+                val contentChangedEvent = DbRecordContentChangedEvent(recAfter, typeInfo, contentBefore, contentAfter)
+                ctx.listeners.forEach {
+                    it.onContentChanged(contentChangedEvent)
+                }
             }
         }
 

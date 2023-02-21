@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.content
 
+import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
@@ -8,6 +9,7 @@ import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
+import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.io.InputStream
 import java.net.URI
 import java.time.Instant
@@ -115,8 +117,8 @@ class DbContentServiceImpl(
             return entity.encoding
         }
 
-        override fun getMimeType(): String {
-            return entity.mimeType
+        override fun getMimeType(): MimeType {
+            return MimeTypes.parse(entity.mimeType)
         }
 
         override fun getName(): String {

@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.records.dao.atts.content
 
 import ru.citeck.ecos.commons.data.DataValue
+import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbEcosContentData
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
@@ -9,6 +10,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.mime.MimeType
 
 class DbContentValue(
     private val ctx: DbRecordsDaoCtx,
@@ -39,8 +41,6 @@ class DbContentValue(
         private const val PREVIEW_INFO_ATT_ORIGINAL_URL = "originalUrl"
         private const val PREVIEW_INFO_ATT_ORIGINAL_NAME = "originalName"
         private const val PREVIEW_INFO_ATT_ORIGINAL_EXT = "originalExt"
-
-        private const val PDF_MIME_TYPE = "application/pdf"
     }
 
     private val currentEntityRef = EntityRef.create(ctx.appName, ctx.sourceId, recId)
@@ -126,8 +126,8 @@ class DbContentValue(
                 val origExtension = contentData.getName().substringAfterLast(".", "")
 
                 val previewData = if (
-                    origMimeType.startsWith("image/") ||
-                    origMimeType == PDF_MIME_TYPE
+                    origMimeType.getType() == "image" ||
+                    origMimeType == MimeTypes.APP_PDF
                 ) {
                     PreviewData(origUrl, origExtension, origMimeType)
                 } else if (isDefaultContent) {
@@ -144,7 +144,7 @@ class DbContentValue(
                             withQuery(
                                 Predicates.and(
                                     Predicates.eq(RecordConstants.ATT_PARENT, currentEntityRef),
-                                    Predicates.eq("mimeType", PDF_MIME_TYPE),
+                                    Predicates.eq("mimeType", MimeTypes.APP_PDF_TEXT),
                                     Predicates.eq("srcAttribute", RecordConstants.ATT_CONTENT)
                                 )
                             )
@@ -159,21 +159,15 @@ class DbContentValue(
                         PreviewData(
                             atts[ATT_URL].asText(),
                             atts[ATT_EXTENSION].asText(),
-                            atts[ATT_MIME_TYPE].asText()
+                            MimeTypes.parse(atts[ATT_MIME_TYPE].asText())
                         )
                     }
                 } else {
                     null
                 } ?: return null
 
-                val url = if (previewData.mimeType.endsWith("/pdf")) {
-                    previewData.url + "&type=pdf"
-                } else {
-                    previewData.url
-                }
-
                 return DataValue.createObj()
-                    .set(PREVIEW_INFO_ATT_URL, url)
+                    .set(PREVIEW_INFO_ATT_URL, previewData.url)
                     .set(PREVIEW_INFO_ATT_EXT, previewData.ext)
                     .set(PREVIEW_INFO_ATT_MIME_TYPE, previewData.mimeType)
                     .set(PREVIEW_INFO_ATT_ORIGINAL_URL, origUrl)
@@ -204,6 +198,6 @@ class DbContentValue(
     private data class PreviewData(
         val url: String,
         val ext: String,
-        val mimeType: String
+        val mimeType: MimeType
     )
 }

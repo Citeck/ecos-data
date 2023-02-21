@@ -342,7 +342,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         return getDefaultContentAtt(typeInfo)
     }
 
-    private fun getDefaultContent(): DbContentValueWithCustomName? {
+    fun getDefaultContent(): DbContentValueWithCustomName? {
         val attributeWithContent = getDefaultContentAtt()
         if (attributeWithContent.contains(".")) {
             // todo
@@ -352,9 +352,9 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             val contentValue = additionalAtts[attributeWithContent]
             if (contentValue is DbContentValue) {
                 val entityName = MLText.getClosestValue(entity.name, I18nContext.getLocale())
-                if (entityName.isNotBlank()) {
-                    return DbContentValueWithCustomName(entityName, contentValue)
-                }
+                    .ifBlank { contentValue.contentData.getName() }
+                    .ifBlank { "no-name" }
+                return DbContentValueWithCustomName(entityName, contentValue)
             }
             return null
         } else {

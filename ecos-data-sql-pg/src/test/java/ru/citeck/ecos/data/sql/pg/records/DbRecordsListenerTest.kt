@@ -70,7 +70,7 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
 
         val statusChangedEvents = mutableListOf<Pair<String, String>>()
 
-        val listener = object : DbRecordsListener {
+        val listener = object : DbRecordsListenerAdapter() {
             override fun onChanged(event: DbRecordChangedEvent) {
                 mutationEvents.add(event)
                 val beforeAtts = records.getAtts(event.before, attsToReq)
@@ -90,8 +90,6 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
                 val beforeStr = event.before.id
                 val afterStr = event.after.id
                 statusChangedEvents.add(beforeStr to afterStr)
-            }
-            override fun onDraftStatusChanged(event: DbRecordDraftStatusChangedEvent) {
             }
         }
         recordsDao.addListener(listener)
