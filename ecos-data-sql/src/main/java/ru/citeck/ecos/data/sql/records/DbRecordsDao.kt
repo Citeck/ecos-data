@@ -338,8 +338,13 @@ class DbRecordsDao(
             if (it is ValuePredicate) {
                 when (attribute) {
                     RecordConstants.ATT_TYPE -> {
-                        val typeLocalId = EntityRef.valueOf(it.getValue().asText()).getLocalId()
-                        ValuePredicate(DbEntity.TYPE, it.getType(), typeLocalId)
+                        val value = it.getValue()
+                        val newValue = if (value.isArray()) {
+                            value.map { typeRef -> EntityRef.valueOf(typeRef.asText()).getLocalId() }
+                        } else {
+                            EntityRef.valueOf(it.getValue().asText()).getLocalId()
+                        }
+                        ValuePredicate(DbEntity.TYPE, it.getType(), newValue)
                     }
                     else -> {
                         var newPred = if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
@@ -445,7 +450,11 @@ class DbRecordsDao(
 
     private fun getTypeIdForRecord(record: LocalRecordAtts): String {
 
-        val typeRefStr = record.attributes[RecordConstants.ATT_TYPE].asText()
+        val typeRefStr = record.attributes[RecordConstants.ATT_TYPE].asText().ifBlank {
+            // legacy type attribute
+            record.attributes["_etype"].asText()
+        }
+
         val typeRefFromAtts = EntityRef.valueOf(typeRefStr).getLocalId()
         if (typeRefFromAtts.isNotBlank()) {
             return typeRefFromAtts
