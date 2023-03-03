@@ -544,10 +544,12 @@ class DbRecordsDao(
             error("Records DAO is not deletable. Records can't be deleted: '$recordIds'")
         }
         return TxnContext.doInTxn {
-            recordIds.forEach {
-                val recordPerms = getRecordPerms(it)
-                if (!recordPerms.isCurrentUserHasWritePerms()) {
-                    error("Permissions Denied. You can't delete record '$it'")
+            if (!AuthContext.isRunAsSystem()) {
+                recordIds.forEach {
+                    val recordPerms = getRecordPerms(it)
+                    if (!recordPerms.isCurrentUserHasWritePerms()) {
+                        error("Permissions Denied. You can't delete record '$it'")
+                    }
                 }
             }
             daoCtx.deleteDao.delete(recordIds)
