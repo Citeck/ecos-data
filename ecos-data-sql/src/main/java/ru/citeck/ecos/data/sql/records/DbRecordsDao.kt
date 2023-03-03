@@ -17,6 +17,7 @@ import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.migration.AssocsDbMigration
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
+import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -727,9 +728,10 @@ class DbRecordsDao(
 
         val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
 
+        var recordPerms: DbRecordPerms = DbRecordAllowedAllPerms
         if (!isNewEntity && !isRunAsSystem) {
             if (!getUpdatedInTxnIds().contains(entityToMutate.extId)) {
-                val recordPerms = getRecordPerms(entityToMutate.extId)
+                recordPerms = getRecordPerms(entityToMutate.extId)
                 if (!recordPerms.isCurrentUserHasWritePerms()) {
                     error("Permissions Denied. You can't change record '${record.id}'")
                 }
@@ -777,15 +779,6 @@ class DbRecordsDao(
             val hasCustomNameAtt = typeInfo.model.attributes.find { it.id == ATT_CUSTOM_NAME } != null
             if (hasCustomNameAtt && recAttributes[ATT_CUSTOM_NAME].isEmpty()) {
                 contentAttToExtractName = targetContentAtt
-            }
-        }
-
-        if (contentAttToExtractName.isNotBlank()) {
-            val attribute = recAttributes[contentAttToExtractName]
-            if (attribute.isNumber()) {
-                contentService?.getContent(attribute.asLong())?.getName()?.let {
-                    recAttributes[ATT_CUSTOM_NAME] = it
-                }
             }
         }
 
@@ -837,6 +830,15 @@ class DbRecordsDao(
             typeAttColumns,
             typeInfo.contentConfig.storageType
         )
+
+        if (contentAttToExtractName.isNotBlank() && recordPerms.isCurrentUserHasAttWritePerms(ATT_CUSTOM_NAME)) {
+            val attribute = recAttributes[contentAttToExtractName]
+            if (attribute.isNumber()) {
+                contentService?.getContent(attribute.asLong())?.getName()?.let {
+                    recAttributes[ATT_CUSTOM_NAME] = it
+                }
+            }
+        }
 
         daoCtx.mutAssocHandler.replaceRefsById(recAttributes, typeAttColumns)
 
