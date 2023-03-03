@@ -98,6 +98,27 @@ class DbRecordsAspectTest : DbRecordsTestBase() {
         listOf("typeText", "aspect0:text", "aspect1:text", "aspect2:text", "aspect2:assoc").forEach {
             mutateTest(record, it)
         }
+
+        fun checkAssociatedAssocs(vararg expected: String) {
+            val assocs = records.getAtt(record, "assoc:associatedWith[]?id").asStrList()
+            assertThat(assocs).containsExactly(*expected)
+        }
+        val ref0 = "emodel/some-type@ref0"
+        val ref1 = "emodel/some-type@ref1"
+        val ref2 = "emodel/some-type@ref2"
+
+        updateRecord(record, "att_add_assoc:associatedWith" to ref0)
+        checkAssociatedAssocs(ref0)
+        updateRecord(record, "att_add_assoc:associatedWith" to ref1)
+        checkAssociatedAssocs(ref0, ref1)
+        updateRecord(record, "att_add_assoc:associatedWith" to ref2)
+        checkAssociatedAssocs(ref0, ref1, ref2)
+        updateRecord(record, "att_rem_assoc:associatedWith" to ref0)
+        checkAssociatedAssocs(ref1, ref2)
+        updateRecord(record, "att_rem_assoc:associatedWith" to ref1)
+        checkAssociatedAssocs(ref2)
+        updateRecord(record, "att_rem_assoc:associatedWith" to ref2)
+        checkAssociatedAssocs()
     }
 
     @BeforeEach
@@ -167,6 +188,21 @@ class DbRecordsAspectTest : DbRecordsTestBase() {
                         AttributeDef.create {
                             withId("aspect2:assoc")
                             withType(AttributeType.ASSOC)
+                        }
+                    )
+                )
+            }
+        )
+
+        registerAspect(
+            AspectInfo.create {
+                withId("associated")
+                withAttributes(
+                    listOf(
+                        AttributeDef.create {
+                            withId("assoc:associatedWith")
+                            withType(AttributeType.ASSOC)
+                            withMultiple(true)
                         }
                     )
                 )

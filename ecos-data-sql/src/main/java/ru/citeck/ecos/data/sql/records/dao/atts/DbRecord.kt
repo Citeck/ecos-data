@@ -364,13 +364,23 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             }
         }
 
+        val isRunAsSystem = AuthContext.isRunAsSystem()
+
         val attIds = LinkedHashSet<String>(32)
         typeInfo.model.attributes.mapTo(attIds) { it.id }
-        if (AuthContext.isRunAsSystem()) {
+        if (isRunAsSystem) {
             typeInfo.model.systemAttributes.mapTo(attIds) { it.id }
         }
-        attIds.removeIf { !isCurrentUserHasAttReadPerms(it) }
         attIds.add(ATT_ASPECTS)
+        val aspects = additionalAtts[ATT_ASPECTS]
+        if (aspects is DbAspectsValue) {
+            val aspectsAtts = ctx.ecosTypeService.getAttributesForAspects(aspects.getAspectRefs(), isRunAsSystem)
+            for (att in aspectsAtts) {
+                attIds.add(att.id)
+            }
+        }
+
+        attIds.removeIf { !isCurrentUserHasAttReadPerms(it) }
 
         val resultAtts = ObjectData.create()
 

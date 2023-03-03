@@ -50,15 +50,21 @@ class DbEcosModelService(modelServices: ModelServiceFactory) {
     }
 
     fun getAllAttributesForAspects(aspectRefs: List<EntityRef>): List<AttributeDef> {
-        val columns = ArrayList<AttributeDef>(32)
+        return getAttributesForAspects(aspectRefs, true)
+    }
+
+    fun getAttributesForAspects(aspectRefs: List<EntityRef>, includeSystem: Boolean): List<AttributeDef> {
+        val attributes = ArrayList<AttributeDef>(32)
         for (aspectRef in aspectRefs) {
             val aspectInfo = aspectsRepo.getAspectInfo(aspectRef)
             if (aspectInfo != null) {
-                columns.addAll(aspectInfo.attributes)
-                columns.addAll(aspectInfo.systemAttributes)
+                attributes.addAll(aspectInfo.attributes)
+                if (includeSystem) {
+                    attributes.addAll(aspectInfo.systemAttributes)
+                }
             }
         }
-        return columns
+        return attributes
     }
 
     fun getColumnsForAspects(aspectRefs: Collection<EntityRef>): List<EcosAttColumnDef> {
