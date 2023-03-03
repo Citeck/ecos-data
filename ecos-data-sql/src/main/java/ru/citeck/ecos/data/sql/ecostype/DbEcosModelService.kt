@@ -4,15 +4,16 @@ import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
+import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttStoringType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
-import ru.citeck.ecos.model.lib.type.repo.TypesRepo
-import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
+import ru.citeck.ecos.model.lib.utils.ModelUtils
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
-class DbEcosTypeService(private val typesRepo: TypesRepo) {
+class DbEcosModelService(modelServices: ModelServiceFactory) {
 
     companion object {
         const val TYPE_ID_TEMP_FILE = "temp-file"
@@ -20,6 +21,21 @@ class DbEcosTypeService(private val typesRepo: TypesRepo) {
         private val log = KotlinLogging.logger {}
 
         private val VALID_COLUMN_NAME = "[\\w-_:]+".toRegex()
+    }
+
+    private val typesRepo = modelServices.typesRepo
+    private val aspectsRepo = modelServices.aspectsRepo
+
+    fun getAspectsForAtts(attributes: Set<String>): List<EntityRef> {
+        return aspectsRepo.getAspectsForAtts(attributes)
+    }
+
+    fun getAllChildrenIds(typeId: String, result: MutableCollection<String>) {
+        val children = typesRepo.getChildren(ModelUtils.getTypeRef(typeId))
+        for (child in children) {
+            result.add(child.getLocalId())
+            getAllChildrenIds(child.getLocalId(), result)
+        }
     }
 
     fun getTypeInfoNotNull(typeId: String): TypeInfo {
@@ -30,7 +46,31 @@ class DbEcosTypeService(private val typesRepo: TypesRepo) {
         if (typeId.isBlank()) {
             return null
         }
-        return typesRepo.getTypeInfo(TypeUtils.getTypeRef(typeId))
+        return typesRepo.getTypeInfo(ModelUtils.getTypeRef(typeId))
+    }
+
+    fun getAllAttributesForAspects(aspectRefs: List<EntityRef>): List<AttributeDef> {
+        val columns = ArrayList<AttributeDef>(32)
+        for (aspectRef in aspectRefs) {
+            val aspectInfo = aspectsRepo.getAspectInfo(aspectRef)
+            if (aspectInfo != null) {
+                columns.addAll(aspectInfo.attributes)
+                columns.addAll(aspectInfo.systemAttributes)
+            }
+        }
+        return columns
+    }
+
+    fun getColumnsForAspects(aspectRefs: Collection<EntityRef>): List<EcosAttColumnDef> {
+        val columns = ArrayList<EcosAttColumnDef>(32)
+        for (aspectRef in aspectRefs) {
+            val aspectInfo = aspectsRepo.getAspectInfo(aspectRef)
+            if (aspectInfo != null) {
+                columns.addAll(mapAttsToColumns(aspectInfo.attributes, false))
+                columns.addAll(mapAttsToColumns(aspectInfo.systemAttributes, true))
+            }
+        }
+        return columns
     }
 
     fun getColumnsForTypes(typesInfo: List<TypeInfo>): List<EcosAttColumnDef> {

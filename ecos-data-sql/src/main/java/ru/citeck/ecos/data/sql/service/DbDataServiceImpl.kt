@@ -9,8 +9,6 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.*
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
 import ru.citeck.ecos.data.sql.dto.fk.FkCascadeActionOptions
-import ru.citeck.ecos.data.sql.job.DbJob
-import ru.citeck.ecos.data.sql.job.DbJobsProvider
 import ru.citeck.ecos.data.sql.meta.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.meta.dto.DbTableChangeSet
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaConfig
@@ -40,7 +38,7 @@ import java.sql.SQLException
 import java.time.Instant
 import java.util.*
 
-class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
+class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     companion object {
 
@@ -643,10 +641,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T>, DbJobsProvider {
             setColumns(columns)
         }
         return columns
-    }
-
-    override fun getJobs(): List<DbJob> {
-        return emptyList()
     }
 
     private fun preparePredicate(predicate: Predicate): Predicate {

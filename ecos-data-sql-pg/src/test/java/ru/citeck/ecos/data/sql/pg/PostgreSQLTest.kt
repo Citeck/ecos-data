@@ -2,7 +2,6 @@ package ru.citeck.ecos.data.sql.pg
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import ru.citeck.ecos.data.sql.utils.use
 import ru.citeck.ecos.test.commons.containers.TestContainers
 import java.sql.ResultSet
 import java.sql.Statement

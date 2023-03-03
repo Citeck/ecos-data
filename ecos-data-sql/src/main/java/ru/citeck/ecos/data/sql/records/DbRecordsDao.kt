@@ -4,12 +4,10 @@ import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
-import ru.citeck.ecos.context.lib.auth.AuthRole
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
+import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
-import ru.citeck.ecos.data.sql.job.DbJobsProvider
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
@@ -28,13 +26,12 @@ import ru.citeck.ecos.data.sql.service.DbCommitEntityDto
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
-import ru.citeck.ecos.model.lib.attributes.dto.AttIndexDef
+import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
-import ru.citeck.ecos.model.lib.type.repo.TypesRepo
-import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
+import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.PredicateUtils
@@ -42,9 +39,6 @@ import ru.citeck.ecos.records2.predicate.model.EmptyPredicate
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
-import ru.citeck.ecos.records2.source.dao.local.job.Job
-import ru.citeck.ecos.records2.source.dao.local.job.JobsProvider
-import ru.citeck.ecos.records2.source.dao.local.job.PeriodicJob
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
@@ -67,16 +61,18 @@ import ru.citeck.ecos.txn.lib.transaction.Transaction
 import ru.citeck.ecos.webapp.api.content.EcosContentData
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.regex.Pattern
 import kotlin.collections.ArrayList
 import kotlin.collections.HashSet
+import kotlin.collections.LinkedHashSet
 import kotlin.math.min
 
 class DbRecordsDao(
     private val config: DbRecordsDaoConfig,
-    private val ecosTypesRepo: TypesRepo,
+    private val modelServices: ModelServiceFactory,
     private val dbDataService: DbDataService<DbEntity>,
     private val dbRecordRefService: DbRecordRefService,
     private val permsComponent: DbPermsComponent,
@@ -87,37 +83,30 @@ class DbRecordsDao(
     RecordsQueryDao,
     RecordMutateDao,
     RecordsDeleteDao,
-    JobsProvider,
     RecsGroupQueryDao {
 
     companion object {
 
+        private const val ATT_ID = "id"
         private const val ATT_STATE = "_state"
         private const val ATT_CUSTOM_NAME = "name"
 
         private val AGG_FUNC_PATTERN = Pattern.compile("^(\\w+)\\((\\w+|\\*)\\)$")
 
-        private val log = KotlinLogging.logger {}
-
         private val GLOBAL_ATTS = listOf(
             AttributeDef.create()
                 .withId(RecordConstants.ATT_PARENT)
                 .withType(AttributeType.ASSOC)
-                .withIndex(
-                    AttIndexDef.create()
-                        .withEnabled(true)
-                        .build()
-                )
                 .build()
         ).associateBy { it.id }
+
+        private val log = KotlinLogging.logger {}
     }
 
-    private lateinit var ecosTypeService: DbEcosTypeService
+    private lateinit var ecosTypeService: DbEcosModelService
     private lateinit var daoCtx: DbRecordsDaoCtx
 
     private val listeners: MutableList<DbRecordsListener> = CopyOnWriteArrayList()
-
-    private val recordsJobs: List<Job> by lazy { evalJobs() }
 
     private val recsUpdatedInThisTxnKey = IdentityKey()
     private val recsPrepareToCommitTxnKey = IdentityKey()
@@ -138,7 +127,7 @@ class DbRecordsDao(
         if (contentService == null) {
             error("RecordsDao doesn't support content attributes")
         }
-        val typeId = (ecosType ?: "").ifBlank { config.typeRef.id }
+        val typeId = (ecosType ?: "").ifBlank { config.typeRef.getLocalId() }
         if (typeId.isBlank()) {
             error("Type is blank. Uploading is impossible")
         }
@@ -146,7 +135,7 @@ class DbRecordsDao(
 
         val contentAttribute = typeDef.contentConfig.path.ifBlank { "content" }
         if (contentAttribute.contains(".")) {
-            error("You can't upload file with content as complex path")
+            error("You can't upload file with content as complex path: '$contentAttribute'")
         }
         if (typeDef.model.attributes.all { it.id != contentAttribute } &&
             typeDef.model.systemAttributes.all { it.id != contentAttribute }
@@ -166,7 +155,7 @@ class DbRecordsDao(
             val recordToMutate = LocalRecordAtts()
             recordToMutate.setAtt(contentAttribute, contentId)
             recordToMutate.setAtt("name", name)
-            recordToMutate.setAtt(RecordConstants.ATT_TYPE, TypeUtils.getTypeRef(typeId))
+            recordToMutate.setAtt(RecordConstants.ATT_TYPE, ModelUtils.getTypeRef(typeId))
             attributes?.forEach { key, value ->
                 recordToMutate.setAtt(key, value)
             }
@@ -196,7 +185,7 @@ class DbRecordsDao(
             return if (linkedRefId !is Long) {
                 null
             } else {
-                val entityRef = daoCtx.recordRefService.getRecordRefById(linkedRefId)
+                val entityRef = daoCtx.recordRefService.getEntityRefById(linkedRefId)
                 contentApi.getContent(entityRef, pathAfterDot, index)
             }
         } else {
@@ -306,9 +295,9 @@ class DbRecordsDao(
         if (parentRefId == null || parentRefId <= 0) {
             return null
         }
-        val parentRef = dbRecordRefService.getRecordRefById(parentRefId)
+        val parentRef = dbRecordRefService.getEntityRefById(parentRefId)
 
-        if (recordsService.getAtt(parentRef, RecordConstants.ATT_NOT_EXISTS + "?bool").asBoolean()) {
+        if (recordsService.getAtt(parentRef, RecordConstants.ATT_NOT_EXISTS + ScalarType.BOOL_SCHEMA).asBoolean()) {
             return null
         }
         return entity
@@ -322,7 +311,7 @@ class DbRecordsDao(
         val originalPredicate = recsQuery.getQuery(Predicate::class.java)
 
         val ecosTypeRef = if (recsQuery.ecosType.isNotEmpty()) {
-            TypeUtils.getTypeRef(recsQuery.ecosType)
+            ModelUtils.getTypeRef(recsQuery.ecosType)
         } else {
             val queryTypePred = PredicateUtils.filterValuePredicates(originalPredicate) {
                 it.getAttribute() == RecordConstants.ATT_TYPE && it.getValue().asText().isNotBlank()
@@ -334,31 +323,128 @@ class DbRecordsDao(
             }
         }
 
-        val attributesById = if (EntityRef.isNotEmpty(ecosTypeRef)) {
+        val attributesById: Map<String, AttributeDef>
+        val typeAspects: Set<EntityRef>
+
+        if (ecosTypeRef.isNotEmpty()) {
             val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.getLocalId())
-            typeInfo?.model?.getAllAttributes()?.associateBy { it.id } ?: emptyMap()
+            attributesById = typeInfo?.model?.getAllAttributes()?.associateBy { it.id } ?: emptyMap()
+            typeAspects = typeInfo?.aspects?.map { it.ref }?.toSet() ?: emptySet()
         } else {
-            emptyMap()
+            attributesById = emptyMap()
+            typeAspects = emptySet()
         }
 
-        val predicate = PredicateUtils.mapAttributePredicates(recsQuery.getQuery(Predicate::class.java)) {
-            val attribute = it.getAttribute()
-            if (it is ValuePredicate) {
+        fun replaceRefsToIds(value: DataValue): DataValue {
+            if (value.isArray()) {
+                return DataValue.create(
+                    dbRecordRefService.getIdByEntityRefs(
+                        value.mapNotNull {
+                            val txt = it.asText()
+                            if (txt.isNotEmpty()) {
+                                txt.toEntityRef()
+                            } else {
+                                null
+                            }
+                        }
+                    )
+                )
+            }
+            if (value.isTextual()) {
+                val txt = value.asText()
+                if (txt.isEmpty()) {
+                    return value
+                }
+                val refIds = dbRecordRefService.getIdByEntityRefs(
+                    listOf(txt.toEntityRef())
+                )
+                return DataValue.create(refIds.firstOrNull() ?: -1)
+            }
+            return value
+        }
+
+        var typePredicateExists = false
+
+        var predicate = PredicateUtils.mapAttributePredicates(recsQuery.getQuery(Predicate::class.java)) { currentPred ->
+            val attribute = currentPred.getAttribute()
+            if (currentPred is ValuePredicate) {
                 when (attribute) {
                     RecordConstants.ATT_TYPE -> {
-                        val value = it.getValue()
-                        val newValue = if (value.isArray()) {
-                            value.map { typeRef -> EntityRef.valueOf(typeRef.asText()).getLocalId() }
-                        } else {
-                            EntityRef.valueOf(it.getValue().asText()).getLocalId()
+                        typePredicateExists = true
+                        val value = currentPred.getValue()
+                        when (currentPred.getType()) {
+                            ValuePredicate.Type.EQ,
+                            ValuePredicate.Type.CONTAINS,
+                            ValuePredicate.Type.IN -> {
+                                val expandedValue = mutableSetOf<String>()
+                                if (value.isArray()) {
+                                    value.forEach { typeRef ->
+                                        val typeId = typeRef.asText().toEntityRef().getLocalId()
+                                        expandedValue.add(typeId)
+                                        ecosTypeService.getAllChildrenIds(typeId, expandedValue)
+                                    }
+                                } else {
+                                    val typeId = EntityRef.valueOf(value.asText()).getLocalId()
+                                    expandedValue.add(typeId)
+                                    ecosTypeService.getAllChildrenIds(typeId, expandedValue)
+                                }
+                                if (currentPred.getType() != ValuePredicate.Type.IN) {
+                                    if (expandedValue.size > 1) {
+                                        ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, expandedValue)
+                                    } else if (expandedValue.size == 1) {
+                                        ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValue.first())
+                                    } else {
+                                        Predicates.alwaysTrue()
+                                    }
+                                } else {
+                                    ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValue)
+                                }
+                            }
+                            else -> {
+                                Predicates.alwaysFalse()
+                            }
                         }
-                        ValuePredicate(DbEntity.TYPE, it.getType(), newValue)
+                    }
+                    DbRecord.ATT_ASPECTS -> {
+                        val aspectsPredicate: Predicate = when (currentPred.getType()) {
+                            ValuePredicate.Type.EQ,
+                            ValuePredicate.Type.CONTAINS -> {
+                                val value = currentPred.getValue()
+                                if (value.isTextual()) {
+                                    if (typeAspects.contains(value.asText().toEntityRef())) {
+                                        Predicates.alwaysTrue()
+                                    } else {
+                                        currentPred
+                                    }
+                                } else {
+                                    currentPred
+                                }
+                            }
+                            ValuePredicate.Type.IN -> {
+                                val aspects = currentPred.getValue().toList(EntityRef::class.java)
+                                if (aspects.any { typeAspects.contains(it) }) {
+                                    Predicates.alwaysTrue()
+                                } else {
+                                    currentPred
+                                }
+                            }
+                            else -> currentPred
+                        }
+                        if (aspectsPredicate is ValuePredicate) {
+                            ValuePredicate(
+                                aspectsPredicate.getAttribute(),
+                                aspectsPredicate.getType(),
+                                replaceRefsToIds(aspectsPredicate.getValue())
+                            )
+                        } else {
+                            aspectsPredicate
+                        }
                     }
                     else -> {
                         var newPred = if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
-                            ValuePredicate(DbRecord.ATTS_MAPPING[attribute], it.getType(), it.getValue())
+                            ValuePredicate(DbRecord.ATTS_MAPPING[attribute], currentPred.getType(), currentPred.getValue())
                         } else {
-                            it
+                            currentPred
                         }
                         val attDef = attributesById[newPred.getAttribute()]
                             ?: GLOBAL_ATTS[newPred.getAttribute()]
@@ -376,33 +462,37 @@ class DbRecordsDao(
                             }
                         }
                         if (DbRecordsUtils.isAssocLikeAttribute(attDef) && newPred.getValue().isTextual()) {
-                            val txtValue = newPred.getValue().asText()
-                            if (txtValue.isNotBlank()) {
-                                val refs = dbRecordRefService.getIdByRecordRefs(
-                                    listOf(
-                                        EntityRef.valueOf(txtValue)
-                                    )
-                                )
-                                newPred = ValuePredicate(
-                                    newPred.getAttribute(),
-                                    newPred.getType(),
-                                    refs.firstOrNull() ?: -1L
-                                )
-                            }
+                            newPred = ValuePredicate(
+                                newPred.getAttribute(),
+                                newPred.getType(),
+                                replaceRefsToIds(newPred.getValue())
+                            )
                         }
                         newPred
                     }
                 }
-            } else if (it is EmptyPredicate) {
+            } else if (currentPred is EmptyPredicate) {
                 if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
                     EmptyPredicate(DbRecord.ATTS_MAPPING[attribute])
                 } else {
-                    it
+                    currentPred
                 }
             } else {
-                log.error { "Unknown predicate type: ${it::class}" }
+                log.error { "Unknown predicate type: ${currentPred::class}" }
                 null
             }
+        } ?: Predicates.alwaysTrue()
+
+        if (!typePredicateExists && config.typeRef.getLocalId() != ecosTypeRef.getLocalId()) {
+            val typeIds = mutableListOf<String>()
+            typeIds.add(ecosTypeRef.getLocalId())
+            ecosTypeService.getAllChildrenIds(ecosTypeRef.getLocalId(), typeIds)
+            val typePred: Predicate = if (typeIds.size == 1) {
+                ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.EQ, typeIds[0])
+            } else {
+                ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, typeIds)
+            }
+            predicate = Predicates.and(typePred, predicate)
         }
 
         val selectFunctions = mutableListOf<AggregateFunc>()
@@ -423,7 +513,7 @@ class DbRecordsDao(
 
         val page = recsQuery.page
         val findRes = dbDataService.find(
-            predicate ?: Predicates.alwaysTrue(),
+            predicate,
             recsQuery.sortBy.map {
                 DbFindSort(DbRecord.ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.ascending)
             },
@@ -453,7 +543,15 @@ class DbRecordsDao(
         if (!config.deletable) {
             error("Records DAO is not deletable. Records can't be deleted: '$recordIds'")
         }
-        return TxnContext.doInTxn { daoCtx.deleteDao.delete(recordIds) }
+        return TxnContext.doInTxn {
+            recordIds.forEach {
+                val recordPerms = getRecordPerms(it)
+                if (!recordPerms.isCurrentUserHasWritePerms()) {
+                    error("Permissions Denied. You can't delete record '$it'")
+                }
+            }
+            daoCtx.deleteDao.delete(recordIds)
+        }
     }
 
     private fun getTypeIdForRecord(record: LocalRecordAtts): String {
@@ -468,7 +566,7 @@ class DbRecordsDao(
             return typeRefFromAtts
         }
 
-        val extId = record.id.ifBlank { record.attributes["id"].asText() }
+        val extId = record.id.ifBlank { record.attributes[ATT_ID].asText() }
         if (extId.isNotBlank()) {
             val typeFromRecord = AuthContext.runAsSystem {
                 dbDataService.findByExtId(extId)?.type
@@ -479,7 +577,7 @@ class DbRecordsDao(
         }
 
         if (EntityRef.isNotEmpty(config.typeRef)) {
-            return config.typeRef.id
+            return config.typeRef.getLocalId()
         }
 
         error(
@@ -517,56 +615,53 @@ class DbRecordsDao(
         val typeInfo = ecosTypeService.getTypeInfo(typeId)
             ?: error("Type is not found: '$typeId'. Record ID: '${record.id}'")
 
-        val typesAttColumns = ecosTypeService.getColumnsForTypes(listOf(typeInfo))
-        val typesColumns = typesAttColumns.map { it.column }
-        val typesColumnNames = typesColumns.map { it.name }.toSet()
-
-        return mutateRecordInTxn(
-            record,
-            typeInfo,
-            typesAttColumns,
-            typesColumns,
-            typesColumnNames
-        )
+        val typeAttColumns = ecosTypeService.getColumnsForTypes(listOf(typeInfo))
+        return mutateRecordInTxn(record, typeInfo, typeAttColumns)
     }
 
     private fun mutateRecordInTxn(
         record: LocalRecordAtts,
-        typeDef: TypeInfo,
-        typesAttColumns: List<EcosAttColumnDef>,
-        typesColumns: List<DbColumnDef>,
-        typesColumnNames: Set<String>
+        typeInfo: TypeInfo,
+        typeAttColumnsArg: List<EcosAttColumnDef>,
     ): String {
 
+        if (record.attributes.has(DbRecord.ATT_ASPECTS)) {
+            error(
+                "Aspects can't be changed by ${DbRecord.ATT_ASPECTS} attribute. " +
+                    "Please use att_add_${DbRecord.ATT_ASPECTS} and att_rem_${DbRecord.ATT_ASPECTS} to change aspects"
+            )
+        }
+
+        val typeAttColumns = ArrayList(typeAttColumnsArg)
+        val typeColumns = typeAttColumns.map { it.column }.toMutableList()
+        val typeColumnNames = typeColumns.map { it.name }.toMutableSet()
+        val typeAspects = typeInfo.aspects.map { it.ref }.toSet()
+
+        val runAsAuth = AuthContext.getCurrentRunAsAuth()
+        val isRunAsSystem = AuthContext.isSystemAuth(runAsAuth)
+        val isRunAsAdmin = AuthContext.isAdminAuth(runAsAuth)
+        val isRunAsSystemOrAdmin = isRunAsSystem || isRunAsAdmin
+
         if (record.attributes["__updatePermissions"].asBoolean()) {
-            if (!AuthContext.getCurrentAuthorities().contains(AuthRole.ADMIN)) {
+            if (!isRunAsSystemOrAdmin) {
                 error("Permissions update allowed only for admin. Record: $record sourceId: '${getId()}'")
             }
             updatePermissions(listOf(record.id))
             return record.id
         }
         if (record.attributes["__runAssocsMigration"].asBoolean()) {
-            if (!AuthContext.getCurrentAuthorities().contains(AuthRole.ADMIN)) {
+            if (!isRunAsSystemOrAdmin) {
                 error("Assocs migration allowed only for admin")
             }
             runMigrationByType(AssocsDbMigration.TYPE, EntityRef.EMPTY, false, ObjectData.create())
             return record.id
         }
 
-        if (!AuthContext.isRunAsSystem()) {
-            val deniedAtts = typesAttColumns.filter {
-                it.systemAtt && record.attributes.has(it.attribute.id)
-            }.map {
-                it.attribute.id
-            }
-            if (deniedAtts.isNotEmpty()) {
-                error("Permission denied. You should be in system context to change system attributes: $deniedAtts")
-            }
-        }
+        val extId = record.id.ifEmpty { record.attributes[ATT_ID].asText() }
+        val currentAspectRefs = LinkedHashSet(typeAspects)
+        val aspectRefsInDb = LinkedHashSet<EntityRef>()
 
-        val extId = record.id.ifEmpty { record.attributes["id"].asText() }
-
-        val recToMutate: DbEntity = if (extId.isEmpty()) {
+        val entityToMutate: DbEntity = if (extId.isEmpty()) {
             DbEntity()
         } else {
             var entity = findDbEntityByExtId(extId)
@@ -576,39 +671,70 @@ class DbRecordsDao(
                 } else {
                     entity = DbEntity()
                 }
+            } else {
+                val aspects = entity.attributes[DbRecord.ATT_ASPECTS]
+                if (aspects != null && aspects is Collection<*>) {
+                    val aspectIds = aspects.mapNotNull { it as? Long }
+                    aspectRefsInDb.addAll(daoCtx.recordRefService.getEntityRefsByIds(aspectIds))
+                    currentAspectRefs.addAll(aspectRefsInDb)
+                    val aspectsColumns = ecosTypeService.getColumnsForAspects(aspectRefsInDb)
+                    for (column in aspectsColumns) {
+                        typeAttColumns.add(column)
+                        typeColumns.add(column.column)
+                        typeColumnNames.add(column.column.name)
+                    }
+                }
             }
             entity
         }
-        val isNewRec = recToMutate.id == DbEntity.NEW_REC_ID
 
-        if (!isNewRec && !AuthContext.isRunAsSystem()) {
-            if (!getUpdatedInTxnIds().contains(recToMutate.extId)) {
-                val recordPerms = getRecordPerms(recToMutate.extId)
+        var customExtId = record.attributes[ATT_ID].asText()
+        if (customExtId.isBlank()) {
+            customExtId = record.attributes[ScalarType.LOCAL_ID.mirrorAtt].asText()
+        }
+        if (customExtId.isNotBlank() && entityToMutate.extId != customExtId) {
+
+            if (entityToMutate.id == DbEntity.NEW_REC_ID) {
+                entityToMutate.extId = customExtId
+            } else {
+                AuthContext.runAsSystem {
+                    if (dbDataService.findByExtId(customExtId) != null) {
+                        log.error {
+                            "Record with ID $customExtId already exists. You should mutate it directly. " +
+                                "Record: ${getId()}@$customExtId"
+                        }
+                        error("Permission denied")
+                    }
+                }
+                return daoCtx.recContentHandler.withContentDbDataAware {
+                    val attsToCopy = DbRecord(daoCtx, entityToMutate).getAttsForCopy()
+                    val newRec = LocalRecordAtts("", record.attributes.deepCopy())
+                    attsToCopy.forEach { (k, v) ->
+                        if (!newRec.hasAtt(k)) {
+                            newRec.setAtt(k, v)
+                        }
+                    }
+                    mutateRecordInTxn(
+                        newRec,
+                        typeInfo,
+                        typeAttColumns
+                    )
+                }
+            }
+        }
+
+        val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
+
+        if (!isNewEntity && !isRunAsSystem) {
+            if (!getUpdatedInTxnIds().contains(entityToMutate.extId)) {
+                val recordPerms = getRecordPerms(entityToMutate.extId)
                 if (!recordPerms.isCurrentUserHasWritePerms()) {
                     error("Permissions Denied. You can't change record '${record.id}'")
                 }
             }
         }
 
-        var customExtId = record.attributes["id"].asText()
-        if (customExtId.isBlank()) {
-            customExtId = record.attributes[ScalarType.LOCAL_ID.mirrorAtt].asText()
-        }
-        if (customExtId.isNotBlank()) {
-            if (recToMutate.extId != customExtId) {
-                AuthContext.runAsSystem {
-                    if (dbDataService.findByExtId(customExtId) != null) {
-                        error("Record with ID $customExtId already exists. You should mutate it directly")
-                    } else {
-                        // copy of existing record
-                        recToMutate.id = DbEntity.NEW_REC_ID
-                    }
-                }
-                recToMutate.extId = customExtId
-            }
-        }
-
-        if (recToMutate.id == DbEntity.NEW_REC_ID) {
+        if (entityToMutate.id == DbEntity.NEW_REC_ID) {
             if (!config.insertable) {
                 error("Records DAO doesn't support new records creation. Record ID: '${record.id}'")
             }
@@ -618,13 +744,13 @@ class DbRecordsDao(
             }
         }
 
-        if (recToMutate.extId.isEmpty()) {
-            recToMutate.extId = UUID.randomUUID().toString()
+        if (entityToMutate.extId.isEmpty()) {
+            entityToMutate.extId = UUID.randomUUID().toString()
         }
 
         val recAttributes = record.attributes.deepCopy()
 
-        if (record.attributes.has(DbRecord.ATT_NAME) || record.attributes.has(ScalarType.DISP.mirrorAtt)) {
+        if (recAttributes.has(DbRecord.ATT_NAME) || recAttributes.has(ScalarType.DISP.mirrorAtt)) {
             val newName = if (record.attributes.has(DbRecord.ATT_NAME)) {
                 record.attributes[DbRecord.ATT_NAME]
             } else {
@@ -638,7 +764,7 @@ class DbRecordsDao(
         var contentAttToExtractName = ""
         if (recAttributes.has(RecordConstants.ATT_CONTENT)) {
 
-            val targetContentAtt = DbRecord.getDefaultContentAtt(typeDef)
+            val targetContentAtt = DbRecord.getDefaultContentAtt(typeInfo)
             if (targetContentAtt.contains(".")) {
                 error("Inner content uploading is not supported. Content attribute: $targetContentAtt")
             }
@@ -646,18 +772,11 @@ class DbRecordsDao(
             recAttributes[targetContentAtt] = contentValue
             recAttributes.remove(RecordConstants.ATT_CONTENT)
 
-            val hasCustomNameAtt = typeDef.model.attributes.find { it.id == ATT_CUSTOM_NAME } != null
+            val hasCustomNameAtt = typeInfo.model.attributes.find { it.id == ATT_CUSTOM_NAME } != null
             if (hasCustomNameAtt && recAttributes[ATT_CUSTOM_NAME].isEmpty()) {
                 contentAttToExtractName = targetContentAtt
             }
         }
-
-        daoCtx.mutAssocHandler.preProcessContentAtts(
-            recAttributes,
-            recToMutate,
-            typesAttColumns,
-            typeDef.contentConfig.storageType
-        )
 
         if (contentAttToExtractName.isNotBlank()) {
             val attribute = recAttributes[contentAttToExtractName]
@@ -668,61 +787,102 @@ class DbRecordsDao(
             }
         }
 
-        daoCtx.mutAssocHandler.replaceRefsById(recAttributes, typesAttColumns)
-
         val operations = daoCtx.mutAttOperationHandler.extractAttValueOperations(recAttributes)
         operations.forEach {
             if (!recAttributes.has(it.getAttName())) {
-                val value = it.invoke(recToMutate.attributes[it.getAttName()])
+                val currentAtts = DbRecord(daoCtx, entityToMutate).getAttsForOperations()
+                val value = it.invoke(currentAtts[it.getAttName()])
                 recAttributes[it.getAttName()] = value
             }
         }
 
-        val recordEntityBeforeMutation = recToMutate.copy()
+        val newAspects = recAttributes[DbRecord.ATT_ASPECTS].asList(EntityRef::class.java).toMutableSet()
+        newAspects.addAll(
+            ecosTypeService.getAspectsForAtts(
+                recAttributes.fieldNamesList().filter { it.contains(":") }.toSet()
+            )
+        )
+        val addedAspects = newAspects.filter { !currentAspectRefs.contains(it) }
+        val aspectsColumns = ecosTypeService.getColumnsForAspects(addedAspects)
+        for (column in aspectsColumns) {
+            typeAttColumns.add(column)
+            typeColumns.add(column.column)
+            typeColumnNames.add(column.column.name)
+        }
 
-        val fullColumns = ArrayList(typesColumns)
-        val perms = if (recToMutate.id == DbEntity.NEW_REC_ID || AuthContext.isRunAsSystem()) {
+        // type aspects should not be saved in DB
+        newAspects.removeAll(typeAspects)
+        if (aspectRefsInDb.isEmpty() && newAspects.isEmpty()) {
+            recAttributes.remove(DbRecord.ATT_ASPECTS)
+        } else {
+            recAttributes[DbRecord.ATT_ASPECTS] = newAspects
+        }
+
+        if (!isRunAsSystem) {
+            val deniedAtts = typeAttColumns.filter {
+                it.systemAtt && recAttributes.has(it.attribute.id)
+            }.map {
+                it.attribute.id
+            }
+            if (deniedAtts.isNotEmpty()) {
+                error("Permission denied. You should be in system context to change system attributes: $deniedAtts")
+            }
+        }
+
+        daoCtx.mutAssocHandler.preProcessContentAtts(
+            recAttributes,
+            entityToMutate,
+            typeAttColumns,
+            typeInfo.contentConfig.storageType
+        )
+
+        daoCtx.mutAssocHandler.replaceRefsById(recAttributes, typeAttColumns)
+
+        val recordEntityBeforeMutation = entityToMutate.copy()
+
+        val fullColumns = ArrayList(typeColumns)
+        val perms = if (entityToMutate.id == DbEntity.NEW_REC_ID || isRunAsSystem) {
             null
         } else {
-            getRecordPerms(recToMutate.extId)
+            getRecordPerms(entityToMutate.extId)
         }
-        setMutationAtts(recToMutate, recAttributes, typesColumns, perms)
-        val optionalAtts = DbRecord.OPTIONAL_COLUMNS.filter { !typesColumnNames.contains(it.name) }
+        setMutationAtts(entityToMutate, recAttributes, typeColumns, perms)
+        val optionalAtts = DbRecord.OPTIONAL_COLUMNS.filter { !typeColumnNames.contains(it.name) }
         if (optionalAtts.isNotEmpty()) {
-            fullColumns.addAll(setMutationAtts(recToMutate, recAttributes, optionalAtts))
+            fullColumns.addAll(setMutationAtts(entityToMutate, recAttributes, optionalAtts))
         }
 
         if (recAttributes.has(ATT_STATE)) {
             val state = recAttributes[ATT_STATE].asText()
-            recToMutate.attributes[DbRecord.COLUMN_IS_DRAFT.name] = state == "draft"
+            entityToMutate.attributes[DbRecord.COLUMN_IS_DRAFT.name] = state == "draft"
             fullColumns.add(DbRecord.COLUMN_IS_DRAFT)
         }
 
-        recToMutate.type = typeDef.id
+        entityToMutate.type = typeInfo.id
 
         if (recAttributes.has(StatusConstants.ATT_STATUS)) {
             val newStatus = recAttributes[StatusConstants.ATT_STATUS].asText()
             if (newStatus.isNotBlank()) {
-                if (typeDef.model.statuses.any { it.id == newStatus }) {
-                    recToMutate.status = newStatus
+                if (typeInfo.model.statuses.any { it.id == newStatus }) {
+                    entityToMutate.status = newStatus
                 } else {
                     error(
                         "Unknown status: '$newStatus'. " +
-                            "Available statuses: ${typeDef.model.statuses.joinToString { it.id }}"
+                            "Available statuses: ${typeInfo.model.statuses.joinToString { it.id }}"
                     )
                 }
             }
         }
 
-        val isNewRecord = recToMutate.id == DbEntity.NEW_REC_ID
+        val isNewRecord = entityToMutate.id == DbEntity.NEW_REC_ID
         if (isNewRecord) {
             val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
             val currentAppName = serviceFactory.webappProps.appName
-            val currentRef = EntityRef.create(currentAppName, getId(), recToMutate.extId)
+            val currentRef = EntityRef.create(currentAppName, getId(), entityToMutate.extId)
             val newRecordRef = RecordRefUtils.mapAppIdAndSourceId(currentRef, currentAppName, sourceIdMapping)
-            recToMutate.refId = dbRecordRefService.getOrCreateIdByRecordRefs(listOf(newRecordRef))[0]
+            entityToMutate.refId = dbRecordRefService.getOrCreateIdByEntityRefs(listOf(newRecordRef))[0]
         }
-        var recAfterSave = dbDataService.save(recToMutate, fullColumns)
+        var recAfterSave = dbDataService.save(entityToMutate, fullColumns)
 
         recAfterSave = AuthContext.runAsSystem {
             val newEntity = if (computedAttsComponent != null) {
@@ -730,7 +890,7 @@ class DbRecordsDao(
                     computedAttsComponent,
                     recAfterSave,
                     isNewRecord,
-                    typeDef.id,
+                    typeInfo.id,
                     fullColumns
                 )
             } else {
@@ -743,7 +903,7 @@ class DbRecordsDao(
             recordEntityBeforeMutation,
             recAfterSave,
             record.attributes,
-            typesAttColumns
+            typeAttColumns
         )
         daoCtx.mutAssocHandler.processParentAfterMutation(
             recordEntityBeforeMutation,
@@ -764,7 +924,7 @@ class DbRecordsDao(
         columns: List<DbColumnDef>
     ): DbEntity {
 
-        val typeRef = TypeUtils.getTypeRef(recTypeId)
+        val typeRef = ModelUtils.getTypeRef(recTypeId)
         val atts = component.computeAttsToStore(DbRecord(daoCtx, entity), isNewRecord, typeRef)
 
         val fullColumns = ArrayList(columns)
@@ -805,8 +965,10 @@ class DbRecordsDao(
                 it.withReadOnly(true)
             },
             {
-                AuthContext.runAsSystem {
-                    permsComponent.getRecordPerms(EntityRef.create(getId(), recordId))
+                TxnContext.doInTxn(true) {
+                    AuthContext.runAsSystem {
+                        permsComponent.getRecordPerms(EntityRef.create(getId(), recordId))
+                    }
                 }
             }
         )
@@ -857,38 +1019,9 @@ class DbRecordsDao(
         this.listeners.remove(listener)
     }
 
-    override fun getJobs(): List<Job> {
-        return recordsJobs
-    }
-
-    private fun evalJobs(): List<Job> {
-        if (dbDataService !is DbJobsProvider) {
-            return emptyList()
-        }
-        val jobs = dbDataService.getJobs()
-        if (jobs.isEmpty()) {
-            return emptyList()
-        }
-        return jobs.map {
-            object : PeriodicJob {
-                override fun getInitDelay(): Long {
-                    return it.getInitDelay()
-                }
-
-                override fun execute(): Boolean {
-                    return it.execute()
-                }
-
-                override fun getPeriod(): Long {
-                    return it.getPeriod()
-                }
-            }
-        }
-    }
-
     override fun setRecordsServiceFactory(serviceFactory: RecordsServiceFactory) {
         super.setRecordsServiceFactory(serviceFactory)
-        ecosTypeService = DbEcosTypeService(ecosTypesRepo)
+        ecosTypeService = DbEcosModelService(modelServices)
         daoCtx = DbRecordsDaoCtx(
             serviceFactory.webappProps.appName,
             getId(),

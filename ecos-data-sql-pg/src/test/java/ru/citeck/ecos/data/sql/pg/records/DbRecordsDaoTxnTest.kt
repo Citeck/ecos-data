@@ -6,7 +6,8 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
-import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
+import ru.citeck.ecos.model.lib.utils.ModelUtils
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.txn.lib.TxnContext
 
@@ -137,7 +138,7 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
                 RECS_DAO_ID,
                 mapOf(
                     "textAtt" to "value",
-                    "_type" to TypeUtils.getTypeRef(testTypeId)
+                    RecordConstants.ATT_TYPE to ModelUtils.getTypeRef(testTypeId)
                 )
             )
             assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("value")

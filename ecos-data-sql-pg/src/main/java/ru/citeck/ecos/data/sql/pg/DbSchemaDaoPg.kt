@@ -6,7 +6,6 @@ import ru.citeck.ecos.data.sql.dto.*
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
 import ru.citeck.ecos.data.sql.dto.fk.FkCascadeActionOptions
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
-import ru.citeck.ecos.data.sql.utils.use
 
 class DbSchemaDaoPg(
     private val dataSource: DbDataSource,

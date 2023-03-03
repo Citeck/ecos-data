@@ -12,20 +12,20 @@ class DbRecordRefService(
     /**
      * Get or create record identifier for reference
      */
-    fun getOrCreateIdByRecordRef(ref: EntityRef): Long {
-        return getOrCreateIdByRecordRefs(listOf(ref))[0]
+    fun getOrCreateIdByEntityRef(ref: EntityRef): Long {
+        return getOrCreateIdByEntityRefs(listOf(ref))[0]
     }
 
     /**
      * Get or create record references
      */
-    fun getOrCreateIdByRecordRefs(refs: List<EntityRef>): List<Long> {
-        val refsIds = getIdByRecordRefs(refs)
+    fun getOrCreateIdByEntityRefs(refs: List<EntityRef>): List<Long> {
+        val refsIds = getIdByEntityRefs(refs)
         val result = LongArray(refs.size)
         for ((idx, id) in refsIds.withIndex()) {
             if (id == -1L) {
                 val entity = DbRecordRefEntity()
-                entity.extId = fixRecordRef(refs[idx]).toString()
+                entity.extId = fixEntityRef(refs[idx]).toString()
                 result[idx] = dataService.save(entity).id
             } else {
                 result[idx] = id
@@ -37,8 +37,8 @@ class DbRecordRefService(
     /**
      * Get record identifiers for references or -1 if reference is not registered
      */
-    fun getIdByRecordRefs(refs: List<EntityRef>): List<Long> {
-        val fixedRefs = refs.map { fixRecordRef(it) }
+    fun getIdByEntityRefs(refs: List<EntityRef>): List<Long> {
+        val fixedRefs = refs.map { fixEntityRef(it) }
         val predicate = Predicates.`in`(
             DbEntity.EXT_ID,
             fixedRefs.map { it.toString() }
@@ -48,12 +48,12 @@ class DbRecordRefService(
         return fixedRefs.map { entityByRef[it]?.id ?: -1 }
     }
 
-    fun getRecordRefsByIdsMap(ids: Collection<Long>): Map<Long, EntityRef> {
+    fun getEntityRefsByIdsMap(ids: Collection<Long>): Map<Long, EntityRef> {
         if (ids.isEmpty()) {
             return emptyMap()
         }
         val idsList = ids.toList()
-        val refs = getRecordRefsByIds(idsList)
+        val refs = getEntityRefsByIds(idsList)
         val result = HashMap<Long, EntityRef>(ids.size)
         for (idx in ids.indices) {
             result[idsList[idx]] = refs[idx]
@@ -61,11 +61,11 @@ class DbRecordRefService(
         return result
     }
 
-    fun getRecordRefById(id: Long): EntityRef {
-        return getRecordRefsByIds(listOf(id))[0]
+    fun getEntityRefById(id: Long): EntityRef {
+        return getEntityRefsByIds(listOf(id))[0]
     }
 
-    fun getRecordRefsByIds(ids: List<Long>): List<EntityRef> {
+    fun getEntityRefsByIds(ids: List<Long>): List<EntityRef> {
         val entities = dataService.findById(ids.toSet())
         if (entities.size != ids.size) {
             error("RecordRef's count doesn't match. Ids: $ids Refs: ${entities.map { it.extId }}")
@@ -78,13 +78,13 @@ class DbRecordRefService(
         return dataService.runMigrations(mock, diff, true)
     }
 
-    private fun fixRecordRef(recordRef: EntityRef): EntityRef {
-        if (recordRef.getAppName().isNotBlank()) {
-            return recordRef
+    private fun fixEntityRef(entityRef: EntityRef): EntityRef {
+        if (entityRef.getAppName().isNotBlank()) {
+            return entityRef
         }
-        if (recordRef.getLocalId().startsWith("workspace://SpacesStore/")) {
-            return EntityRef.create("alfresco", "", recordRef.getLocalId())
+        if (entityRef.getLocalId().startsWith("workspace://SpacesStore/")) {
+            return EntityRef.create("alfresco", "", entityRef.getLocalId())
         }
-        return recordRef.withDefaultAppName(appName)
+        return entityRef.withDefaultAppName(appName)
     }
 }

@@ -10,7 +10,8 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
-import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
+import ru.citeck.ecos.model.lib.utils.ModelUtils
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
@@ -108,14 +109,14 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         )
 
         assertThat(records.getAtt(ref, "textAtt").asText()).isEmpty()
-        recordsDao.runMigrations(TypeUtils.getTypeRef(testTypeId), mock = false)
+        recordsDao.runMigrations(ModelUtils.getTypeRef(testTypeId), mock = false)
         assertThat(records.getAtt(ref, "textAtt").asText()).isEmpty()
 
         val rec0Id = records.create(
             RECS_DAO_ID,
             mapOf(
                 "textAtt" to "value",
-                "_type" to TypeUtils.getTypeRef(testTypeId)
+                RecordConstants.ATT_TYPE to ModelUtils.getTypeRef(testTypeId)
             )
         )
         assertThat(records.getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
@@ -129,7 +130,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             RECS_DAO_ID,
             mapOf(
                 "textAtt" to "value2",
-                "_type" to TypeUtils.getTypeRef(testTypeId)
+                RecordConstants.ATT_TYPE to ModelUtils.getTypeRef(testTypeId)
             )
         )
         assertThat(records.getAtt(rec1Id, "textAtt").asText()).isEqualTo("value2")
@@ -160,7 +161,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             }
         )
 
-        val typeRef = TypeUtils.getTypeRef(testTypeId)
+        val typeRef = ModelUtils.getTypeRef(testTypeId)
         val commands0 = recordsDao.runMigrations(typeRef, diff = true)
         val commands1 = recordsDao.runMigrations(typeRef, diff = false)
 

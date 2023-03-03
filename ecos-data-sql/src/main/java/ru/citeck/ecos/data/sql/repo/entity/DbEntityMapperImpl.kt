@@ -78,7 +78,9 @@ class DbEntityMapperImpl<T : Any>(
         if (value == null) {
             return null
         }
-        if (value::class.java.isArray) {
+        if (value is ByteArray) {
+            return value
+        } else if (value::class.java.isArray) {
             val arraySize = Array.getLength(value)
             val list = ArrayList<Any?>(arraySize)
             for (i in 0 until arraySize) {

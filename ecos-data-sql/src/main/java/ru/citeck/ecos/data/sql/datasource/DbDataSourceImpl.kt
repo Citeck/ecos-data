@@ -1,7 +1,6 @@
 package ru.citeck.ecos.data.sql.datasource
 
 import mu.KotlinLogging
-import ru.citeck.ecos.data.sql.utils.use
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import java.sql.*
 

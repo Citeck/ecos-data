@@ -1,10 +1,10 @@
 package ru.citeck.ecos.data.sql.records
 
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 data class DbRecordsDaoConfig(
     val id: String,
-    val typeRef: RecordRef,
+    val typeRef: EntityRef,
     val insertable: Boolean,
     val updatable: Boolean,
     val deletable: Boolean,
@@ -34,7 +34,7 @@ data class DbRecordsDaoConfig(
     class Builder() {
 
         var id: String = ""
-        var typeRef: RecordRef = RecordRef.EMPTY
+        var typeRef: EntityRef = EntityRef.EMPTY
         var insertable: Boolean = true
         var updatable: Boolean = true
         var deletable: Boolean = true
@@ -56,8 +56,8 @@ data class DbRecordsDaoConfig(
             return this
         }
 
-        fun withTypeRef(typeRef: RecordRef?): Builder {
-            this.typeRef = typeRef ?: RecordRef.EMPTY
+        fun withTypeRef(typeRef: EntityRef?): Builder {
+            this.typeRef = typeRef ?: EntityRef.EMPTY
             return this
         }
 

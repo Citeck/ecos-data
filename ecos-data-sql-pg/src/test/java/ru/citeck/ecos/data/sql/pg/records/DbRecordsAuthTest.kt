@@ -10,8 +10,8 @@ import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import kotlin.collections.ArrayList
 
 class DbRecordsAuthTest : DbRecordsTestBase() {
@@ -37,7 +37,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
     @Test
     fun txnTest() {
 
-        var rec: RecordRef = RecordRef.EMPTY
+        var rec: EntityRef = EntityRef.EMPTY
         val query = createQuery()
 
         val queryRecAssert = {
@@ -70,7 +70,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
     @Test
     fun queryTest() {
 
-        val recsByUser = mutableMapOf<String, MutableList<RecordRef>>()
+        val recsByUser = mutableMapOf<String, MutableList<EntityRef>>()
 
         val users = (1..10).map { "user$it" }
         for (user in users) {
@@ -82,7 +82,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
                         "_localId" to recId,
                         "textAtt" to "123-$user-$num"
                     )
-                    assertThat(rec.id).isEqualTo(recId)
+                    assertThat(rec.getLocalId()).isEqualTo(recId)
                     setAuthoritiesWithReadPerms(rec, user)
                     recs.add(rec)
                 }
@@ -92,7 +92,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
 
         for (user in users) {
             AuthContext.runAs(user) {
-                val records = records.query(baseQuery).getRecords()
+                val records = records.query(baseQuery).getRecords() as List<EntityRef>
                 assertThat(records).containsExactlyInAnyOrderElementsOf(recsByUser[user])
             }
         }
@@ -103,7 +103,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
             setAuthoritiesWithReadPerms(refForEveryone, allUsersAuthority)
             for (user in users) {
                 AuthContext.runAs(user) {
-                    val records = records.query(baseQuery).getRecords()
+                    val records = records.query(baseQuery).getRecords() as List<EntityRef>
                     val recsWithPublicRef = recsByUser[user]!!.toMutableSet()
                     recsWithPublicRef.add(refForEveryone)
                     assertThat(records)
@@ -119,7 +119,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
 
         for (user in users) {
             AuthContext.runAs(user) {
-                val records = records.query(baseQuery).getRecords()
+                val records = records.query(baseQuery).getRecords() as List<EntityRef>
                 val recsWithPublicRef = recsByUser[user]!!.toMutableSet()
                 if (user == "user5") {
                     recsWithPublicRef.remove(refForEveryone)
@@ -150,7 +150,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
     @Test
     fun testWithoutContext() {
 
-        var rec: RecordRef = RecordRef.EMPTY
+        var rec: EntityRef = EntityRef.EMPTY
         AuthContext.runAs("user0") {
             rec = createRecord("textAtt" to "123")
             assertThat(records.getAtt(rec, "textAtt?str").asText()).isEqualTo("123")
@@ -214,7 +214,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
 
         val testId = "test-id"
         val setRecPerms = { perms: List<String> ->
-            setAuthoritiesWithReadPerms(RecordRef.create(recordsDao.getId(), testId), perms)
+            setAuthoritiesWithReadPerms(EntityRef.create(recordsDao.getId(), testId), perms)
         }
         setRecPerms(listOf("user0", "user1"))
 

@@ -2,7 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao
 
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.dto.DbTableRef
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
+import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.records.DbRecordsDeleteDao
@@ -28,7 +28,7 @@ class DbRecordsDaoCtx(
     val dataService: DbDataService<DbEntity>,
     val contentService: DbContentService?,
     val recordRefService: DbRecordRefService,
-    val ecosTypeService: DbEcosTypeService,
+    val ecosTypeService: DbEcosModelService,
     val recordsService: RecordsService,
     val contentApi: EcosContentApi?,
     val authoritiesApi: EcosAuthoritiesApi?,

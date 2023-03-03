@@ -6,10 +6,10 @@ import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
@@ -29,12 +29,12 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
             )
         )
 
-        val mainRec = RecordAtts(RecordRef.create(recordsDao.getId(), ""))
+        val mainRec = RecordAtts(EntityRef.create(recordsDao.getId(), ""))
         mainRec.setAtt("strField", "parent-test")
         mainRec.setAtt("childAssoc?assoc", "alias-123")
         mainRec.setAtt("_type", REC_TEST_TYPE_REF)
 
-        val childRec = RecordAtts(RecordRef.create(recordsDao.getId(), ""))
+        val childRec = RecordAtts(EntityRef.create(recordsDao.getId(), ""))
         childRec.setAtt("_alias", "alias-123")
         childRec.setAtt("strField", "child-test")
         childRec.setAtt("_type", REC_TEST_TYPE_REF)
@@ -42,12 +42,12 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
         val mutatedRecords = records.mutate(listOf(mainRec, childRec))
         assertThat(mutatedRecords).hasSize(2)
 
-        val childAssocs = records.getAtt(mutatedRecords[0], "childAssoc[]?id").asList(RecordRef::class.java)
+        val childAssocs = records.getAtt(mutatedRecords[0], "childAssoc[]?id").asList(EntityRef::class.java)
         assertThat(childAssocs).containsExactly(mutatedRecords[1])
 
         printQueryRes("SELECT * FROM ${tableRef.fullName}")
 
-        val parentId = records.getAtt(mutatedRecords[1], "_parent?id").getAs(RecordRef::class.java)
+        val parentId = records.getAtt(mutatedRecords[1], "_parent?id").getAs(EntityRef::class.java)
         assertThat(parentId).isEqualTo(mutatedRecords[0])
 
         // test with sourceId mapping
@@ -58,8 +58,8 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
         }) {
             records.mutate(listOf(mainRec, childRec))
         }
-        val parentId2 = records.getAtt(mutatedRecords2[1], "_parent?id").getAs(RecordRef::class.java)
-        assertThat(parentId2?.sourceId).isEqualTo(otherSourceId)
+        val parentId2 = records.getAtt(mutatedRecords2[1], "_parent?id").getAs(EntityRef::class.java)
+        assertThat(parentId2?.getSourceId()).isEqualTo(otherSourceId)
     }
 
     @Test
@@ -78,7 +78,7 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
             )
         )
 
-        val refs = mutableListOf<RecordRef>()
+        val refs = mutableListOf<EntityRef>()
 
         AuthContext.runAs("user") {
             val parentRec = TxnContext.doInTxn {
@@ -112,7 +112,7 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
             printQueryRes("SELECT * from \"${tableRef.schema}\".\"ecos_record_ref\";")
 
             printQueryRes("SELECT * FROM ${tableRef.fullName}")
-            val childRefs = records.getAtt(parentRec, "childAssoc[]?id").asList(RecordRef::class.java)
+            val childRefs = records.getAtt(parentRec, "childAssoc[]?id").asList(EntityRef::class.java)
             assertThat(childRefs).containsExactlyElementsOf(refs)
         }
     }

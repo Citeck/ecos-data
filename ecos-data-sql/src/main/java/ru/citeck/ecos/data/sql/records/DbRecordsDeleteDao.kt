@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.records
 
-import ru.citeck.ecos.data.sql.ecostype.DbEcosTypeService
+import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.listener.DbRecordDeletedEvent
@@ -32,8 +32,8 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
                 val parentAtt = entity.attributes[RecordConstants.ATT_PARENT_ATT] as? String
 
                 if (parentRefId != null && !parentAtt.isNullOrBlank()) {
-                    val childRef = ctx.recordRefService.getRecordRefById(entity.refId)
-                    val parentRef = ctx.recordRefService.getRecordRefById(parentRefId)
+                    val childRef = ctx.recordRefService.getEntityRefById(entity.refId)
+                    val parentRef = ctx.recordRefService.getEntityRefById(parentRefId)
                     if (parentRef.getAppName() != AppName.ALFRESCO && EntityRef.isEmpty(parentRef)) {
                         ctx.recordsService.mutate(
                             parentRef,
@@ -69,7 +69,7 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
     }
 
     private fun isTempStorage(): Boolean {
-        val typeId = ctx.config.typeRef.id
+        val typeId = ctx.config.typeRef.getLocalId()
         if (typeId.isEmpty()) {
             return false
         }
@@ -77,7 +77,7 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
         var typeDef: TypeInfo? = typeService.getTypeInfoNotNull(typeId)
         var iterations = 5
         while (typeDef != null && --iterations > 0) {
-            if (typeDef.id == DbEcosTypeService.TYPE_ID_TEMP_FILE) {
+            if (typeDef.id == DbEcosModelService.TYPE_ID_TEMP_FILE) {
                 isTempStorage = true
                 break
             }

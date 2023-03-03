@@ -6,10 +6,11 @@ import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
+import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.OperationType
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
+import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
@@ -93,7 +94,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             val typeInfo = ctx.ecosTypeService.getTypeInfoNotNull(typeId)
 
             val childAttributes = ObjectData.create()
-            childAttributes[RecordConstants.ATT_TYPE] = TypeUtils.getTypeRef(typeId)
+            childAttributes[RecordConstants.ATT_TYPE] = ModelUtils.getTypeRef(typeId)
             childAttributes[RecordConstants.ATT_CONTENT] = listOf(value)
 
             val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
@@ -122,6 +123,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         if (recAttributes.has(RecordConstants.ATT_PARENT)) {
             assocAtts.add(RecordConstants.ATT_PARENT)
         }
+        if (recAttributes.has(DbRecord.ATT_ASPECTS)) {
+            assocAtts.add(DbRecord.ATT_ASPECTS)
+        }
 
         if (assocAtts.isNotEmpty()) {
             val assocRefs = mutableSetOf<EntityRef>()
@@ -138,7 +142,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             val idByRef = mutableMapOf<EntityRef, Long>()
             if (assocRefs.isNotEmpty()) {
                 val refsList = assocRefs.toList()
-                val refsId = ctx.recordRefService.getOrCreateIdByRecordRefs(refsList)
+                val refsId = ctx.recordRefService.getOrCreateIdByEntityRefs(refsList)
                 for ((idx, ref) in refsList.withIndex()) {
                     idByRef[ref] = refsId[idx]
                 }
@@ -200,7 +204,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         if (!attributes.has(RecordConstants.ATT_PARENT) || attributes.get(MUTATION_FROM_PARENT_FLAG, false)) {
             return
         }
-        val currentRef = ctx.recordRefService.getRecordRefById(recAfterSave.refId)
+        val currentRef = ctx.recordRefService.getEntityRefById(recAfterSave.refId)
         if (EntityRef.isEmpty(currentRef)) {
             return
         }
@@ -214,7 +218,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             return
         }
         val parentRefBefore = parentRefIdBefore?.let {
-            ctx.recordRefService.getRecordRefById(it)
+            ctx.recordRefService.getEntityRefById(it)
         } ?: EntityRef.EMPTY
 
         if (EntityRef.isNotEmpty(parentRefBefore)) {
@@ -245,7 +249,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         }
 
         val parentRefAfter = parentRefIdAfter?.let {
-            ctx.recordRefService.getRecordRefById(it)
+            ctx.recordRefService.getEntityRefById(it)
         } ?: EntityRef.EMPTY
 
         if (parentRefIdBefore == parentRefIdAfter || EntityRef.isEmpty(parentRefAfter) || parentAttAfter.isEmpty()) {
@@ -306,9 +310,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             }
         }
 
-        val parentRef = ctx.recordRefService.getRecordRefById(recAfterSave.refId)
+        val parentRef = ctx.recordRefService.getEntityRefById(recAfterSave.refId)
 
-        val childRefsById = ctx.recordRefService.getRecordRefsByIdsMap(changedChildren)
+        val childRefsById = ctx.recordRefService.getEntityRefsByIdsMap(changedChildren)
         val addOrRemoveParentRef = { attId: String, children: Set<Long>, add: Boolean ->
             for (childId in children) {
                 val childRef = childRefsById[childId]

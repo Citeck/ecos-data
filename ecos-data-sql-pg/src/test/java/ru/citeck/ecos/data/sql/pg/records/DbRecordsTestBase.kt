@@ -33,16 +33,18 @@ import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
-import ru.citeck.ecos.data.sql.utils.use
 import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.api.EcosModelAppApi
+import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
+import ru.citeck.ecos.model.lib.aspect.repo.AspectsRepo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.model.lib.num.repo.NumTemplatesRepo
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
-import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
+import ru.citeck.ecos.model.lib.utils.ModelUtils
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
@@ -68,7 +70,7 @@ abstract class DbRecordsTestBase {
         const val RECS_DAO_ID = "test"
         const val REC_TEST_TYPE_ID = "test-type"
 
-        val REC_TEST_TYPE_REF = TypeUtils.getTypeRef(REC_TEST_TYPE_ID)
+        val REC_TEST_TYPE_REF = ModelUtils.getTypeRef(REC_TEST_TYPE_ID)
 
         const val COLUMN_TYPE_NAME = "TYPE_NAME"
         const val COLUMN_COLUMN_NAME = "COLUMN_NAME"
@@ -79,13 +81,14 @@ abstract class DbRecordsTestBase {
     }
 
     private val typesInfo = mutableMapOf<String, TypeInfo>()
+    private val aspectsInfo = mutableMapOf<String, AspectInfo>()
     private val numTemplates = mutableMapOf<String, NumTemplateDef>()
 
-    private val recReadPerms = mutableMapOf<RecordRef, Set<String>>()
-    private val recWritePerms = mutableMapOf<RecordRef, Set<String>>()
+    private val recReadPerms = mutableMapOf<EntityRef, Set<String>>()
+    private val recWritePerms = mutableMapOf<EntityRef, Set<String>>()
 
-    private val recAttReadPerms = mutableMapOf<Pair<RecordRef, String>, Set<String>>()
-    private val recAttWritePerms = mutableMapOf<Pair<RecordRef, String>, Set<String>>()
+    private val recAttReadPerms = mutableMapOf<Pair<EntityRef, String>, Set<String>>()
+    private val recAttWritePerms = mutableMapOf<Pair<EntityRef, String>, Set<String>>()
 
     lateinit var recordsDao: DbRecordsDao
     lateinit var records: RecordsService
@@ -93,7 +96,6 @@ abstract class DbRecordsTestBase {
     lateinit var dbDataSource: DbDataSource
     lateinit var tableRef: DbTableRef
     lateinit var dbSchemaDao: DbSchemaDao
-    lateinit var ecosTypeRepo: TypesRepo
     lateinit var dataService: DbDataService<DbEntity>
     lateinit var dbRecordRefDataService: DbDataService<DbRecordRefEntity>
     lateinit var dbRecordRefService: DbRecordRefService
@@ -111,6 +113,7 @@ abstract class DbRecordsTestBase {
     fun beforeEachBase() {
 
         typesInfo.clear()
+        aspectsInfo.clear()
         numTemplates.clear()
         recReadPerms.clear()
         recWritePerms.clear()
@@ -127,46 +130,46 @@ abstract class DbRecordsTestBase {
         dataSource.close()
     }
 
-    fun setAuthoritiesWithAttReadPerms(rec: RecordRef, att: String, vararg authorities: String) {
+    fun setAuthoritiesWithAttReadPerms(rec: EntityRef, att: String, vararg authorities: String) {
         recAttReadPerms[rec to att] = authorities.toSet()
     }
 
-    fun setAuthoritiesWithAttWritePerms(rec: RecordRef, att: String, vararg authorities: String) {
+    fun setAuthoritiesWithAttWritePerms(rec: EntityRef, att: String, vararg authorities: String) {
         recAttWritePerms[rec to att] = authorities.toSet()
     }
 
-    fun setAuthoritiesWithWritePerms(rec: RecordRef, vararg authorities: String) {
+    fun setAuthoritiesWithWritePerms(rec: EntityRef, vararg authorities: String) {
         setAuthoritiesWithWritePerms(rec, authorities.toList())
     }
 
-    fun setAuthoritiesWithWritePerms(rec: RecordRef, authorities: Collection<String>) {
+    fun setAuthoritiesWithWritePerms(rec: EntityRef, authorities: Collection<String>) {
         recWritePerms[rec] = authorities.toSet()
         addAuthoritiesWithReadPerms(rec, authorities)
     }
 
-    fun setAuthoritiesWithReadPerms(rec: RecordRef, authorities: Collection<String>) {
+    fun setAuthoritiesWithReadPerms(rec: EntityRef, authorities: Collection<String>) {
         recReadPerms[rec] = authorities.toSet()
-        recordsDao.updatePermissions(listOf(rec.id))
+        recordsDao.updatePermissions(listOf(rec.getLocalId()))
     }
 
-    fun setAuthoritiesWithReadPerms(rec: RecordRef, vararg authorities: String) {
+    fun setAuthoritiesWithReadPerms(rec: EntityRef, vararg authorities: String) {
         setAuthoritiesWithReadPerms(rec, authorities.toSet())
     }
 
-    fun addAuthoritiesWithReadPerms(rec: RecordRef, authorities: Collection<String>) {
+    fun addAuthoritiesWithReadPerms(rec: EntityRef, authorities: Collection<String>) {
         val readPerms = recReadPerms[rec]?.toMutableSet() ?: mutableSetOf()
         readPerms.addAll(authorities)
         setAuthoritiesWithReadPerms(rec, readPerms)
     }
 
-    fun addAuthoritiesWithReadPerms(rec: RecordRef, vararg authorities: String) {
+    fun addAuthoritiesWithReadPerms(rec: EntityRef, vararg authorities: String) {
         addAuthoritiesWithReadPerms(rec, authorities.toSet())
     }
 
     fun initServices(
         tableRef: DbTableRef = DEFAULT_TABLE,
         authEnabled: Boolean = false,
-        typeRef: RecordRef = RecordRef.EMPTY,
+        typeRef: EntityRef = EntityRef.EMPTY,
         inheritParentPerms: Boolean = true,
         appName: String = ""
     ) {
@@ -211,9 +214,24 @@ abstract class DbRecordsTestBase {
         }
         val numCounters = mutableMapOf<EntityRef, AtomicLong>()
         val modelServiceFactory = object : ModelServiceFactory() {
+
+            override fun createAspectsRepo(): AspectsRepo {
+                return object : AspectsRepo {
+                    override fun getAspectInfo(aspectRef: EntityRef): AspectInfo? {
+                        return aspectsInfo[aspectRef.getLocalId()]
+                    }
+                    override fun getAspectsForAtts(attributes: Set<String>): List<EntityRef> {
+                        return aspectsInfo.values.filter { aspect ->
+                            aspect.attributes.any { attributes.contains(it.id) } ||
+                                aspect.systemAttributes.any { attributes.contains(it.id) }
+                        }.map { ModelUtils.getAspectRef(it.id) }
+                    }
+                }
+            }
+
             override fun createTypesRepo(): TypesRepo {
                 return object : TypesRepo {
-                    override fun getChildren(typeRef: EntityRef) = emptyList<RecordRef>()
+                    override fun getChildren(typeRef: EntityRef) = emptyList<EntityRef>()
                     override fun getTypeInfo(typeRef: EntityRef): TypeInfo? {
                         return typesInfo[typeRef.getLocalId()]
                     }
@@ -241,7 +259,6 @@ abstract class DbRecordsTestBase {
             }
         }
         modelServiceFactory.setRecordsServices(recordsServiceFactory)
-        ecosTypeRepo = modelServiceFactory.typesRepo
 
         records = recordsServiceFactory.recordsServiceV1
         RequestContext.setDefaultServices(recordsServiceFactory)
@@ -267,12 +284,16 @@ abstract class DbRecordsTestBase {
 
                     override fun isCurrentUserHasAttWritePerms(name: String): Boolean {
                         val writePerms = recAttWritePerms[recordRef to name]
-                        return writePerms.isNullOrEmpty() || writePerms.contains(name)
+                        return writePerms.isNullOrEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
+                            writePerms.contains(it)
+                        }
                     }
 
                     override fun isCurrentUserHasAttReadPerms(name: String): Boolean {
                         val readPerms = recAttReadPerms[recordRef to name]
-                        return readPerms.isNullOrEmpty() || readPerms.contains(name)
+                        return readPerms.isNullOrEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
+                            readPerms.contains(it)
+                        }
                     }
                 }
             }
@@ -325,16 +346,16 @@ abstract class DbRecordsTestBase {
                 withTypeRef(typeRef)
                 withInheritParentPerms(inheritParentPerms)
             },
-            ecosTypeRepo,
+            modelServiceFactory,
             dataService,
             dbRecordRefService,
             permsComponent,
             object : DbComputedAttsComponent {
-                override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: RecordRef): ObjectData {
+                override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: EntityRef): ObjectData {
                     return modelServiceFactory.computedAttsService.computeAttsToStore(value, isNewRecord, typeRef)
                 }
 
-                override fun computeDisplayName(value: Any, typeRef: RecordRef): MLText {
+                override fun computeDisplayName(value: Any, typeRef: EntityRef): MLText {
                     return modelServiceFactory.computedAttsService.computeDisplayName(value, typeRef)
                 }
             },
@@ -356,25 +377,34 @@ abstract class DbRecordsTestBase {
         return RecordRef.create(recordsDao.getId(), id)
     }
 
-    fun updateRecord(rec: RecordRef, vararg atts: Pair<String, Any?>): RecordRef {
+    fun updateRecord(rec: EntityRef, vararg atts: Pair<String, Any?>): RecordRef {
         return records.mutate(rec, mapOf(*atts))
     }
 
+    fun createRecord(atts: ObjectData): RecordRef {
+        if (!atts.has(RecordConstants.ATT_TYPE)) {
+            atts[RecordConstants.ATT_TYPE] = REC_TEST_TYPE_REF
+        }
+        val rec = records.create(RECS_DAO_ID, atts)
+        log.info { "RECORD CREATED: $rec" }
+        return rec
+    }
+
     fun createRecord(vararg atts: Pair<String, Any?>): RecordRef {
-        val map = hashMapOf(*atts)
-        if (!map.containsKey("_type")) {
-            map["_type"] = REC_TEST_TYPE_REF
+        val map = linkedMapOf(*atts)
+        if (!map.containsKey(RecordConstants.ATT_TYPE)) {
+            map[RecordConstants.ATT_TYPE] = REC_TEST_TYPE_REF
         }
         val rec = records.create(RECS_DAO_ID, map)
         log.info { "RECORD CREATED: $rec" }
         return rec
     }
 
-    fun selectRecFromDb(rec: RecordRef, field: String): Any? {
+    fun selectRecFromDb(rec: EntityRef, field: String): Any? {
         return dbDataSource.withTransaction(true) {
             dbDataSource.query(
                 "SELECT $field as res FROM ${tableRef.fullName} " +
-                    "where __ext_id='${rec.id}'",
+                    "where __ext_id='${rec.getLocalId()}'",
                 emptyList()
             ) { res ->
                 res.next()
@@ -476,6 +506,13 @@ abstract class DbRecordsTestBase {
                 }
             }
         }
+    }
+
+    fun registerAspect(aspect: AspectInfo) {
+        if (aspect.id.isBlank()) {
+            error("aspect id is blank")
+        }
+        this.aspectsInfo[aspect.id] = aspect
     }
 
     fun registerNumTemplate(numTemplate: NumTemplateDef) {

@@ -8,9 +8,9 @@ import ru.citeck.ecos.data.sql.pg.records.DbRecordsTestBase
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class AssocsMigrationTest : DbRecordsTestBase() {
 
@@ -61,7 +61,7 @@ class AssocsMigrationTest : DbRecordsTestBase() {
             )
         }
 
-        val deletedRecords = mutableSetOf<RecordRef>()
+        val deletedRecords = mutableSetOf<EntityRef>()
 
         val checkAssocValues = {
             for ((idx, record) in createdRecords.withIndex()) {
@@ -110,7 +110,7 @@ class AssocsMigrationTest : DbRecordsTestBase() {
 
         TxnContext.doInTxn {
             AuthContext.runAs("admin", listOf(AuthRole.ADMIN)) {
-                val emptyRef = RecordRef.create(recordsDao.getId(), "")
+                val emptyRef = EntityRef.create(recordsDao.getId(), "")
                 val atts = RecordAtts(emptyRef)
                 atts.setAtt("__runAssocsMigration", true)
                 atts.setAtt("_type", REC_TEST_TYPE_ID)

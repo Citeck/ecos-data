@@ -1,9 +1,14 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
+import ecos.com.fasterxml.jackson210.databind.node.ArrayNode
+import ecos.com.fasterxml.jackson210.databind.node.ObjectNode
 import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.i18n.I18nContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
+import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
@@ -13,9 +18,8 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
-import ru.citeck.ecos.model.lib.type.service.utils.TypeUtils
+import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
@@ -24,13 +28,14 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.temporal.Temporal
 import java.util.*
 import kotlin.collections.ArrayList
-import kotlin.collections.HashMap
 import kotlin.collections.LinkedHashMap
+import kotlin.collections.LinkedHashSet
 
 class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValue {
 
     companion object {
         const val ATT_NAME = "_name"
+        const val ATT_ASPECTS = "_aspects"
         const val ATT_PERMISSIONS = "permissions"
 
         val ATTS_MAPPING = mapOf(
@@ -64,12 +69,19 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 withType(DbColumnType.JSON)
             },
             DbColumnDef.create {
-                withName("_parent")
+                withName(RecordConstants.ATT_PARENT)
                 withType(DbColumnType.LONG)
+                withIndex(DbColumnIndexDef(true))
             },
             DbColumnDef.create {
-                withName("_parentAtt")
+                withName(RecordConstants.ATT_PARENT_ATT)
                 withType(DbColumnType.TEXT)
+            },
+            DbColumnDef.create {
+                withName(ATT_ASPECTS)
+                withType(DbColumnType.LONG)
+                withMultiple(true)
+                withIndex(DbColumnIndexDef(true))
             }
         )
 
@@ -87,16 +99,18 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     private val additionalAtts: Map<String, Any?>
     private val assocMapping: Map<Long, EntityRef>
     private val typeInfo: TypeInfo?
+    private val attTypes: Map<String, AttributeType>
 
     init {
         val recData = LinkedHashMap(entity.attributes)
 
-        val attTypes = HashMap<String, AttributeType>()
+        attTypes = LinkedHashMap()
         typeInfo = ctx.ecosTypeService.getTypeInfo(entity.type)
 
         typeInfo?.model?.getAllAttributes()?.forEach {
             attTypes[it.id] = it.type
         }
+
         OPTIONAL_COLUMNS.forEach {
             if (!attTypes.containsKey(it.name)) {
                 when (it.type) {
@@ -112,11 +126,22 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                     DbColumnType.LONG -> {
                         if (it.name == RecordConstants.ATT_PARENT) {
                             attTypes[it.name] = AttributeType.ASSOC
+                        } else if (it.name == ATT_ASPECTS) {
+                            attTypes[it.name] = AttributeType.ASSOC
                         }
                     }
                     else -> {
                     }
                 }
+            }
+        }
+
+        val aspects = entity.attributes[ATT_ASPECTS]
+        if (aspects is Collection<*> && aspects.isNotEmpty()) {
+            val aspectIds = aspects.mapNotNull { it as? Long }
+            val aspectRefs = ctx.recordRefService.getEntityRefsByIds(aspectIds)
+            for (attribute in ctx.ecosTypeService.getAllAttributesForAspects(aspectRefs)) {
+                attTypes[attribute.id] = attribute.type
             }
         }
 
@@ -136,7 +161,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         }
         assocMapping = if (assocIdValues.isNotEmpty()) {
             val assocIdValuesList = assocIdValues.toList()
-            val assocRefValues = ctx.recordRefService.getRecordRefsByIds(assocIdValuesList)
+            val assocRefValues = ctx.recordRefService.getEntityRefsByIds(assocIdValuesList)
             assocIdValuesList.mapIndexed { idx, id -> id to assocRefValues[idx] }.toMap()
         } else {
             emptyMap()
@@ -147,8 +172,24 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         attTypes.forEach { (attId, attType) ->
             val value = recData[attId]
             if (DbRecordsUtils.isAssocLikeAttribute(attType)) {
-                if (value != null) {
-                    recData[attId] = toRecordRef(value)
+                if (attId == ATT_ASPECTS) {
+                    val fullAspects = LinkedHashSet<String>()
+                    typeInfo?.aspects?.forEach {
+                        fullAspects.add(it.ref.getLocalId())
+                    }
+                    if (value != null) {
+                        val refs = toEntityRef(value)
+                        if (refs is Collection<*>) {
+                            for (ref in refs) {
+                                (ref as? EntityRef)?.let { fullAspects.add(it.getLocalId()) }
+                            }
+                        } else if (refs is EntityRef) {
+                            fullAspects.add(refs.getLocalId())
+                        }
+                    }
+                    recData[attId] = DbAspectsValue(fullAspects)
+                } else if (value != null) {
+                    recData[attId] = toEntityRef(value)
                 }
             } else {
                 when (attType) {
@@ -187,13 +228,13 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         }
     }
 
-    private fun toRecordRef(value: Any): Any {
+    private fun toEntityRef(value: Any): Any {
         return when (value) {
             is Iterable<*> -> {
                 val result = ArrayList<Any>()
                 value.forEach {
                     if (it != null) {
-                        result.add(toRecordRef(it))
+                        result.add(toEntityRef(it))
                     }
                 }
                 result
@@ -204,7 +245,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     }
 
     override fun getId(): Any {
-        return RecordRef.create(ctx.appName, ctx.sourceId, entity.extId)
+        return EntityRef.create(ctx.appName, ctx.sourceId, entity.extId)
     }
 
     override fun asText(): String {
@@ -212,11 +253,24 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     }
 
     override fun getDisplayName(): Any {
-        return entity.name
+        var name: MLText = entity.name
+        if (MLText.isEmpty(name)) {
+            val typeName = typeInfo?.name
+            if (typeName != null && !MLText.isEmpty(typeName)) {
+                name = typeName
+            }
+        }
+        if (MLText.isEmpty(name)) {
+            name = MLText(
+                I18nContext.ENGLISH to "No name",
+                I18nContext.RUSSIAN to "Нет имени"
+            )
+        }
+        return name
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> filterUnknownJsonTypes(value: T): T {
+    private fun <T> filterUnknownJsonTypes(attribute: String, value: T): T {
         if (value == null) {
             return null as T
         }
@@ -228,7 +282,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             nnValue as Map<String, Any?>
             val newMap = LinkedHashMap<String, Any?>()
             nnValue.forEach { (k, v) ->
-                val filtered = filterUnknownJsonTypes(v)
+                val filtered = filterUnknownJsonTypes(attribute, v)
                 if (filtered != Unit) {
                     newMap[k] = filtered
                 }
@@ -237,23 +291,26 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         } else if (nnValue is List<Any?>) {
             val newList = ArrayList<Any?>()
             nnValue.forEach {
-                val filtered = filterUnknownJsonTypes(it)
+                val filtered = filterUnknownJsonTypes(attribute, it)
                 if (filtered != Unit) {
                     newList.add(filtered)
                 }
             }
             return newList as T
+        } else if ((nnValue is ObjectNode || nnValue is ArrayNode) && attTypes[attribute] == AttributeType.JSON) {
+            return nnValue as T
         } else if (
             nnValue::class.java.isPrimitive ||
             nnValue::class.java.isEnum ||
-            value is Boolean ||
-            value is Number ||
-            value is Char ||
-            value is String ||
-            value is EntityRef ||
-            value is Date ||
-            value is Temporal ||
-            value is ByteArray
+            nnValue is Boolean ||
+            nnValue is Number ||
+            nnValue is Char ||
+            nnValue is String ||
+            nnValue is EntityRef ||
+            nnValue is Date ||
+            nnValue is Temporal ||
+            nnValue is ByteArray ||
+            nnValue is MLText
         ) {
             return value
         }
@@ -261,19 +318,20 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     }
 
     override fun asJson(): Any {
+
+        typeInfo ?: error("TypeInfo is null")
+
         val jsonAtts = LinkedHashMap<String, Any?>()
         jsonAtts["id"] = entity.extId
 
-        if (typeInfo == null) {
-            error("TypeInfo is null")
-        }
         val nonSystemAttIds = typeInfo.model.attributes.map { it.id }.toSet()
 
-        val validAdditionalAtts = filterUnknownJsonTypes(
-            additionalAtts.entries.filter {
-                nonSystemAttIds.contains(it.key)
-            }.associate { it.key to it.value }
-        )
+        val validAdditionalAtts = mutableMapOf<String, Any?>()
+        additionalAtts.forEach { (attName, value) ->
+            if (nonSystemAttIds.contains(attName)) {
+                validAdditionalAtts[attName] = filterUnknownJsonTypes(attName, value)
+            }
+        }
         for ((k, v) in validAdditionalAtts) {
             if (isCurrentUserHasAttReadPerms(k)) {
                 jsonAtts[k] = v
@@ -282,6 +340,87 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             }
         }
         return jsonAtts
+    }
+
+    fun getAttsForOperations(): Map<String, Any?> {
+
+        typeInfo ?: error("TypeInfo is null")
+
+        fun getValueForOperations(attribute: String, value: Any?): Any? {
+            value ?: return null
+            return when (value) {
+                is Collection<*> -> {
+                    val result = ArrayList<Any?>()
+                    value.forEach {
+                        val newValue = getValueForOperations(attribute, it)
+                        if (newValue != null) {
+                            result.add(newValue)
+                        }
+                    }
+                    value
+                }
+                is DbAspectsValue -> value.getAspectRefs()
+                else -> filterUnknownJsonTypes(attribute, value)
+            }
+        }
+
+        val attIds = LinkedHashSet<String>(32)
+        typeInfo.model.attributes.mapTo(attIds) { it.id }
+        if (AuthContext.isRunAsSystem()) {
+            typeInfo.model.systemAttributes.mapTo(attIds) { it.id }
+        }
+        attIds.removeIf { !isCurrentUserHasAttReadPerms(it) }
+        attIds.add(ATT_ASPECTS)
+
+        val resultAtts = ObjectData.create()
+
+        for (attribute in attIds) {
+            resultAtts[attribute] = getValueForOperations(attribute, additionalAtts[attribute])
+        }
+
+        return resultAtts.asMap(String::class.java, Any::class.java)
+    }
+
+    fun getAttsForCopy(): Map<String, Any?> {
+
+        typeInfo ?: error("TypeInfo is null")
+
+        fun getValueForCopy(attribute: String, value: Any?): Any? {
+            value ?: return null
+            return if (value is Collection<*>) {
+                val result = ArrayList<Any?>()
+                value.forEach {
+                    val newValue = getValueForCopy(attribute, it)
+                    if (newValue != null) {
+                        result.add(newValue)
+                    }
+                }
+                value
+            } else if (value is DbContentValue) {
+                if (ctx.recContentHandler.isContentDbDataAware()) {
+                    value.contentData.getDbId()
+                } else {
+                    null
+                }
+            } else {
+                filterUnknownJsonTypes(attribute, value)
+            }
+        }
+
+        val attIds = LinkedHashSet<String>(32)
+        typeInfo.model.attributes.mapTo(attIds) { it.id }
+        val nonReadableAtts = attIds.filter { !isCurrentUserHasAttReadPerms(it) }
+        if (nonReadableAtts.isNotEmpty()) {
+            error("You can't read attributes: $nonReadableAtts of record $id")
+        }
+
+        val resultAtts = ObjectData.create()
+
+        for (attribute in attIds) {
+            resultAtts[attribute] = getValueForCopy(attribute, additionalAtts[attribute])
+        }
+
+        return resultAtts.asMap(String::class.java, Any::class.java)
     }
 
     override fun has(name: String): Boolean {
@@ -371,12 +510,12 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
     private fun getAsPersonRef(name: String): Any {
         if (name.isBlank()) {
-            return RecordRef.EMPTY
+            return EntityRef.EMPTY
         }
         return ctx.authoritiesApi?.getAuthorityRef(name) ?: return name
     }
 
-    override fun getType(): RecordRef {
-        return TypeUtils.getTypeRef(entity.type)
+    override fun getType(): EntityRef {
+        return ModelUtils.getTypeRef(entity.type)
     }
 }

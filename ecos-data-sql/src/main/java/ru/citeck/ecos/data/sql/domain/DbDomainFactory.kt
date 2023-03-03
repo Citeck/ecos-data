@@ -12,12 +12,12 @@ import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
-import ru.citeck.ecos.model.lib.type.repo.TypesRepo
+import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import java.io.OutputStream
 
 class DbDomainFactory(
-    val ecosTypeRepo: TypesRepo,
+    val modelServices: ModelServiceFactory,
     val dataSource: DbDataSource?,
     val dataServiceFactory: DbDataServiceFactory,
     val permsComponent: DbPermsComponent,
@@ -93,7 +93,7 @@ class DbDomainFactory(
 
             val recordsDao = DbRecordsDao(
                 domainConfig.recordsDao,
-                ecosTypeRepo,
+                modelServices,
                 dataService,
                 recordRefServiceSupplier.invoke(dataSource, schema),
                 permsComponent ?: this@DbDomainFactory.permsComponent,

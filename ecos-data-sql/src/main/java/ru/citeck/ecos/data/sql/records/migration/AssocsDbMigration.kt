@@ -10,8 +10,8 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.migration.DbMigration
 import ru.citeck.ecos.data.sql.service.migration.DbMigrationService
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class AssocsDbMigration(
     private val dbRecordRefService: DbRecordRefService
@@ -88,12 +88,12 @@ class AssocsDbMigration(
                 }
             }
             if (entity.refId == DbEntity.NEW_REC_ID) {
-                val entityRef = RecordRef.create(
+                val entityRef = EntityRef.create(
                     config.appName,
                     config.sourceId,
                     entity.extId
                 )
-                entity.refId = dbRecordRefService.getOrCreateIdByRecordRefs(listOf(entityRef))[0]
+                entity.refId = dbRecordRefService.getOrCreateIdByEntityRefs(listOf(entityRef))[0]
                 changed = true
             }
             if (changed) {
@@ -134,11 +134,11 @@ class AssocsDbMigration(
             return result
         }
         if (value is String) {
-            val ref = RecordRef.valueOf(value)
-            return if (RecordRef.isEmpty(ref)) {
+            val ref = EntityRef.valueOf(value)
+            return if (EntityRef.isEmpty(ref)) {
                 null
             } else {
-                dbRecordRefService.getOrCreateIdByRecordRefs(listOf(ref))[0]
+                dbRecordRefService.getOrCreateIdByEntityRefs(listOf(ref))[0]
             }
         }
         error("unknown assoc type: ${value::class.java}")

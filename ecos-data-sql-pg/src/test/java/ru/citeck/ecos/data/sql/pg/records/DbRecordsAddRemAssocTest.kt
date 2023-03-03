@@ -4,7 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsAddRemAssocTest : DbRecordsTestBase() {
 
@@ -25,22 +25,22 @@ class DbRecordsAddRemAssocTest : DbRecordsTestBase() {
             )
         )
 
-        val extRef0 = RecordRef.valueOf("emodel/sourceId@localId0")
-        val extRef1 = RecordRef.valueOf("emodel/sourceId@localId1")
-        val extRef2 = RecordRef.valueOf("emodel/sourceId@localId2")
+        val extRef0 = EntityRef.valueOf("emodel/sourceId@localId0")
+        val extRef1 = EntityRef.valueOf("emodel/sourceId@localId1")
+        val extRef2 = EntityRef.valueOf("emodel/sourceId@localId2")
 
         val assocsList = listOf(extRef0)
         val rec0 = createRecord("single_assoc" to assocsList)
 
         val getAssocsList = { name: String ->
-            records.getAtt(rec0, "$name[]?id").asStrList().map { RecordRef.valueOf(it) }
+            records.getAtt(rec0, "$name[]?id").asStrList().map { EntityRef.valueOf(it) }
         }
 
         assertThat(getAssocsList("single_assoc")).isEqualTo(listOf(extRef0))
         updateRecord(rec0, "att_rem_single_assoc" to extRef1)
         assertThat(getAssocsList("single_assoc")).isEqualTo(listOf(extRef0))
         updateRecord(rec0, "att_rem_single_assoc" to extRef0)
-        assertThat(getAssocsList("single_assoc")).isEqualTo(emptyList<RecordRef>())
+        assertThat(getAssocsList("single_assoc")).isEqualTo(emptyList<EntityRef>())
         updateRecord(rec0, "att_add_single_assoc" to extRef2)
         assertThat(getAssocsList("single_assoc")).isEqualTo(listOf(extRef2))
 
@@ -48,7 +48,7 @@ class DbRecordsAddRemAssocTest : DbRecordsTestBase() {
         updateRecord(rec0, "att_add_single_assoc" to extRef1)
         assertThat(getAssocsList("single_assoc")).isEqualTo(listOf(extRef2))
 
-        assertThat(getAssocsList("multi_assoc")).isEqualTo(emptyList<RecordRef>())
+        assertThat(getAssocsList("multi_assoc")).isEqualTo(emptyList<EntityRef>())
         updateRecord(rec0, "att_add_multi_assoc" to extRef0)
         assertThat(getAssocsList("multi_assoc")).isEqualTo(listOf(extRef0))
         updateRecord(rec0, "att_add_multi_assoc" to extRef0)
@@ -62,6 +62,6 @@ class DbRecordsAddRemAssocTest : DbRecordsTestBase() {
         updateRecord(rec0, "att_rem_multi_assoc" to extRef1)
         assertThat(getAssocsList("multi_assoc")).isEqualTo(listOf(extRef0, extRef2))
         updateRecord(rec0, "att_rem_multi_assoc" to listOf(extRef0, extRef2))
-        assertThat(getAssocsList("multi_assoc")).isEqualTo(emptyList<RecordRef>())
+        assertThat(getAssocsList("multi_assoc")).isEqualTo(emptyList<EntityRef>())
     }
 }
