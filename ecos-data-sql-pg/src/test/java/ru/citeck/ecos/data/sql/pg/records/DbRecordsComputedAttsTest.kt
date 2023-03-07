@@ -7,8 +7,41 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttDef
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttStoringType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttType
+import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 
 class DbRecordsComputedAttsTest : DbRecordsTestBase() {
+
+    @Test
+    fun docNumTest() {
+
+        registerType(
+            TypeInfo.create {
+                withId(REC_TEST_TYPE_ID)
+                withNumTemplateRef("emodel/num-template@test".toEntityRef())
+                withModel(
+                    TypeModelDef.create()
+                        .withAttributes(listOf(AttributeDef.create().withId("abc").build()))
+                        .build()
+                )
+            }
+        )
+        registerNumTemplate(
+            NumTemplateDef.create {
+                withId("test")
+            }
+        )
+
+        val record1 = createRecord("abc" to "def")
+        val docNum1 = records.getAtt(record1, "_docNum").asText()
+        assertThat(docNum1).isEqualTo("1")
+
+        val record2 = createRecord("abc" to "def")
+        val docNum2 = records.getAtt(record2, "_docNum").asText()
+        assertThat(docNum2).isEqualTo("2")
+    }
 
     @Test
     fun test() {

@@ -635,10 +635,20 @@ class DbRecordsDao(
             )
         }
 
+        val typeAspects = typeInfo.aspects.map { it.ref }.toSet()
+
+        val knownColumnIds = HashSet<String>()
         val typeAttColumns = ArrayList(typeAttColumnsArg)
         val typeColumns = typeAttColumns.map { it.column }.toMutableList()
         val typeColumnNames = typeColumns.map { it.name }.toMutableSet()
-        val typeAspects = typeInfo.aspects.map { it.ref }.toSet()
+
+        fun addTypeAttColumn(column: EcosAttColumnDef) {
+            if (knownColumnIds.add(column.attribute.id)) {
+                typeAttColumns.add(column)
+                typeColumns.add(column.column)
+                typeColumnNames.add(column.column.name)
+            }
+        }
 
         val runAsAuth = AuthContext.getCurrentRunAsAuth()
         val isRunAsSystem = AuthContext.isSystemAuth(runAsAuth)
@@ -682,9 +692,7 @@ class DbRecordsDao(
                     currentAspectRefs.addAll(aspectRefsInDb)
                     val aspectsColumns = ecosTypeService.getColumnsForAspects(aspectRefsInDb)
                     for (column in aspectsColumns) {
-                        typeAttColumns.add(column)
-                        typeColumns.add(column.column)
-                        typeColumnNames.add(column.column.name)
+                        addTypeAttColumn(column)
                     }
                 }
             }
@@ -800,9 +808,7 @@ class DbRecordsDao(
         val addedAspects = newAspects.filter { !currentAspectRefs.contains(it) }
         val aspectsColumns = ecosTypeService.getColumnsForAspects(addedAspects)
         for (column in aspectsColumns) {
-            typeAttColumns.add(column)
-            typeColumns.add(column.column)
-            typeColumnNames.add(column.column.name)
+            addTypeAttColumn(column)
         }
 
         // type aspects should not be saved in DB
@@ -949,7 +955,7 @@ class DbRecordsDao(
             return entity
         }
 
-        return dbDataService.save(entity, columns)
+        return dbDataService.save(entity, fullColumns)
     }
 
     private fun getEntityToCommit(recordId: String): DbCommitEntityDto {

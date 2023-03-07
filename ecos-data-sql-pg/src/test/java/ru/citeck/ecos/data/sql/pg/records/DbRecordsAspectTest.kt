@@ -121,6 +121,17 @@ class DbRecordsAspectTest : DbRecordsTestBase() {
         checkAssociatedAssocs()
     }
 
+    @Test
+    fun test2() {
+
+        val record = createRecord(
+            "typeText" to "typeText",
+            "aspect0:text" to "test"
+        )
+        assertThat(records.getAtt(record, "aspect0:text").asText()).isEqualTo("test")
+        assertThat(records.getAtt(record, "typeText").asText()).isEqualTo("typeText")
+    }
+
     @BeforeEach
     fun beforeEach() {
 
