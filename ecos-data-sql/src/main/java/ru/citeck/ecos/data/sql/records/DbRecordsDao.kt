@@ -6,6 +6,7 @@ import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
+import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
 import ru.citeck.ecos.data.sql.meta.dto.DbTableMetaDto
@@ -244,6 +245,10 @@ class DbRecordsDao(
         }
     }
 
+    fun getTableRef(): DbTableRef {
+        return daoCtx.tableRef
+    }
+
     fun getTableMeta(): DbTableMetaDto {
         return dbDataService.getTableMeta()
     }
@@ -304,10 +309,11 @@ class DbRecordsDao(
         return entity
     }
 
-    override fun queryRecords(recsQuery: RecordsQuery): Any? {
+    override fun queryRecords(recsQuery: RecordsQuery): RecsQueryRes<DbRecord> {
 
-        if (recsQuery.language.isNotEmpty() && recsQuery.language != PredicateService.LANGUAGE_PREDICATE) {
-            return null
+        val language = recsQuery.language
+        if (language.isNotEmpty() && language != PredicateService.LANGUAGE_PREDICATE) {
+            return RecsQueryRes()
         }
         val originalPredicate = recsQuery.getQuery(Predicate::class.java)
 
@@ -531,7 +537,7 @@ class DbRecordsDao(
             selectFunctions
         )
 
-        val queryRes = RecsQueryRes<Any>()
+        val queryRes = RecsQueryRes<DbRecord>()
         queryRes.setTotalCount(findRes.totalCount)
         queryRes.setRecords(findRes.entities.map { DbRecord(daoCtx, it) })
         queryRes.setHasMore(findRes.totalCount > findRes.entities.size + page.skipCount)
@@ -1046,7 +1052,8 @@ class DbRecordsDao(
             serviceFactory.getEcosWebAppApi()?.getAuthoritiesApi(),
             listeners,
             this,
-            serviceFactory.attValuesConverter
+            serviceFactory.attValuesConverter,
+            serviceFactory.getEcosWebAppApi()?.getWebClientApi()
         )
     }
 

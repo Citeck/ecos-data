@@ -244,7 +244,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         }
     }
 
-    override fun getId(): Any {
+    override fun getId(): EntityRef {
         return EntityRef.create(ctx.appName, ctx.sourceId, entity.extId)
     }
 

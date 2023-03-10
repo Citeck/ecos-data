@@ -61,6 +61,7 @@ class DbEntityMapperImpl<T : Any>(
                 additionalAtts[k] = convertAdditionalAttValue(v)
             } else {
                 entityAtts[entityField.fieldName] = converter.convert(v, entityField.fieldType)
+                    ?: entityField.defaultValue
             }
         }
         if (entityAtts.containsKey(DbEntity.REF_ID) && entityAtts[DbEntity.REF_ID] == null) {

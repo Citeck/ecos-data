@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao.content
 
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.utils.DataUriUtil
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
@@ -120,7 +121,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         }
         if (!contentData.isObject()) {
             if (contentData.isLong()) {
-                if (isContentDbDataAware()) {
+                if (isContentDbDataAware() || AuthContext.isRunAsSystem()) {
                     return contentService.cloneContent(contentData.asLong()).getDbId()
                 }
             } else if (contentData.isTextual()) {

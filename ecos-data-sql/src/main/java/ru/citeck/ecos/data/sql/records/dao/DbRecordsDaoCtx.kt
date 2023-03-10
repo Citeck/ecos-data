@@ -19,6 +19,7 @@ import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.value.AttValuesConverter
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
 import ru.citeck.ecos.webapp.api.content.EcosContentApi
+import ru.citeck.ecos.webapp.api.web.client.EcosWebClientApi
 
 class DbRecordsDaoCtx(
     val appName: String,
@@ -34,7 +35,8 @@ class DbRecordsDaoCtx(
     val authoritiesApi: EcosAuthoritiesApi?,
     val listeners: List<DbRecordsListener>,
     val recordsDao: DbRecordsDao,
-    val attValuesConverter: AttValuesConverter
+    val attValuesConverter: AttValuesConverter,
+    val webApiClient: EcosWebClientApi?
 ) {
     val recContentHandler: DbRecContentHandler by lazy { DbRecContentHandler(this) }
     val mutConverter = RecMutConverter()

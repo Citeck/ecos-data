@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.content
 
 import ru.citeck.ecos.commons.mime.MimeTypes
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
@@ -54,6 +55,7 @@ class DbContentServiceImpl(
         entity.mimeType = nnMimeType
         entity.encoding = nnEncoding
         entity.created = Instant.now()
+        entity.creator = AuthContext.getCurrentUser()
         entity.sha256 = sha256
         entity.size = size
         entity.uri = dataUri
@@ -86,6 +88,7 @@ class DbContentServiceImpl(
         val entity = dataService.findById(id) ?: error("Content doesn't found by id '$id'")
         entity.id = DbContentEntity.NEW_REC_ID
         entity.created = Instant.now()
+        entity.creator = AuthContext.getCurrentUser()
         return EcosContentDataImpl(dataService.save(entity))
     }
 
@@ -111,6 +114,10 @@ class DbContentServiceImpl(
 
         override fun getCreated(): Instant {
             return entity.created
+        }
+
+        override fun getCreator(): String {
+            return entity.creator
         }
 
         override fun getEncoding(): String {

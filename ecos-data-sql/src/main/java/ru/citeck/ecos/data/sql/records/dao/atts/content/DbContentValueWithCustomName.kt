@@ -44,6 +44,7 @@ class DbContentValueWithCustomName(
         private val value: DbEcosContentData
     ) : DbEcosContentData {
         override fun getCreated(): Instant = value.getCreated()
+        override fun getCreator(): String = value.getCreator()
         override fun getEncoding(): String = value.getEncoding()
         override fun getMimeType(): MimeType = value.getMimeType()
         override fun getName(): String = name

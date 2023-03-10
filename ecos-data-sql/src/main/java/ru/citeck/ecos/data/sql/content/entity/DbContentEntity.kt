@@ -23,6 +23,7 @@ class DbContentEntity {
         const val ENCODING = "__encoding"
         const val URI = "__uri"
         const val CREATED = "__created"
+        const val CREATOR = "__creator"
 
         val EMPTY_URI = URI("")
     }
@@ -49,4 +50,6 @@ class DbContentEntity {
     var uri: URI = EMPTY_URI
 
     var created: Instant = Instant.EPOCH
+
+    var creator: String = ""
 }
