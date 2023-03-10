@@ -32,6 +32,7 @@ class DbContentValue(
         const val ATT_MIME_TYPE = "mimeType"
         const val ATT_ENCODING = "encoding"
         const val ATT_CREATED = "created"
+        const val ATT_CREATOR = "creator"
         const val ATT_BYTES = "bytes"
 
         const val ATT_PREVIEW_INFO = "previewInfo"
@@ -75,6 +76,7 @@ class DbContentValue(
         data[ATT_MIME_TYPE] = contentData.getMimeType()
         data[ATT_ENCODING] = contentData.getEncoding()
         data[ATT_CREATED] = contentData.getCreated()
+        data[ATT_CREATOR] = contentData.getCreator()
         data[ATT_URL] = getAtt(ATT_URL) as? String ?: ""
         return data
     }
@@ -104,6 +106,7 @@ class DbContentValue(
             ATT_MIME_TYPE -> contentData.getMimeType()
             ATT_ENCODING -> contentData.getEncoding()
             ATT_CREATED -> contentData.getCreated()
+            ATT_CREATOR -> contentData.getCreator()
             ATT_URL -> ctx.recContentHandler.createContentUrl(currentEntityRef, attribute)
             ATT_BYTES -> contentData.readContent { it.readBytes() }
             ATT_CONVERTED_TO -> ConvertedToValue()
