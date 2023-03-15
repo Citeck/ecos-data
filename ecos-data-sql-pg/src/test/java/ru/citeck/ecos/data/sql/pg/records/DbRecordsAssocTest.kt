@@ -1,7 +1,9 @@
 package ru.citeck.ecos.data.sql.pg.records
 
+import com.github.javafaker.Faker
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -12,6 +14,9 @@ import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records3.record.dao.atts.RecordAttsDao
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
+import java.net.URLEncoder
+import java.util.*
 
 class DbRecordsAssocTest : DbRecordsTestBase() {
 
@@ -183,5 +188,82 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
             queryTest(ValuePredicate("multiAssocAtt", predType, listOf(refs[3], refs[4])), listOf())
             queryTest(ValuePredicate("multiAssocAtt", predType, listOf(refs[3], refs[0])), listOf(record))
         }
+    }
+
+    @Test
+    fun assocAsContentTest() {
+
+        registerType(
+            """
+            ---
+            id: $REC_TEST_TYPE_ID
+            model:
+              attributes:
+                  - id: assoc
+                    type: ASSOC
+                    multiple: true
+                    config:
+                      child: true
+                      typeRef: emodel/type@user-base
+            """.trimIndent()
+        )
+
+        registerType(
+            """
+            ---
+            id: user-base
+            """.trimIndent()
+        )
+
+        registerType(
+            """
+            ---
+            id: document
+            parentRef: emodel/type@user-base
+            model:
+              attributes:
+                  - id: name
+                  - id: content
+                    type: CONTENT
+            """.trimIndent()
+        )
+
+        val contentData = Faker.instance().chuckNorris().fact()
+        val contentDataBase64 = Base64.getEncoder().encodeToString(contentData.toByteArray())
+
+        val contentAttValue = DataValue.create(
+            """
+            [
+              {
+                "storage": "base64",
+                "name": "Assoc test.-ad3e182c-3aac-4d7d-b145-880dae799698.txt",
+                "url": "data:text/plain;base64,$contentDataBase64",
+                "size": ${contentData.toByteArray().size},
+                "type": "text/plain",
+                "fileType": "document",
+                "originalName": "Assoc test.txt"
+              }
+            ]
+            """.trimIndent()
+        )
+
+        val record = createRecord("assoc" to contentAttValue)
+
+        val assocRef = records.getAtt(record, "assoc?id").toEntityRef()
+        assertThat(assocRef.isEmpty()).isFalse
+        val parentRef = records.getAtt(assocRef, "_parent?id").toEntityRef()
+        assertThat(parentRef.getLocalId()).isEqualTo(record.getLocalId())
+        val parentAtt = records.getAtt(assocRef, "_parentAtt").asText()
+        assertThat(parentAtt).isEqualTo("assoc")
+
+        val assocContentBase64 = records.getAtt(record, "assoc._content.bytes").asText()
+        val assocContent = String(Base64.getDecoder().decode(assocContentBase64))
+        assertThat(assocContent).isEqualTo(contentData)
+
+        val assocAsContentData = records.getAtt(record, "assoc[]._as.content-data?json").asList(DataValue::class.java)
+
+        val refArg = "ref=${URLEncoder.encode(assocRef.toString(), "UTF-8")}"
+        assertThat(assocAsContentData.size).isEqualTo(1)
+        assertThat(assocAsContentData[0]["url"].asText()).contains(refArg)
     }
 }

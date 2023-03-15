@@ -448,8 +448,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
     override fun getAs(type: String): Any? {
         if (type == DbContentValue.CONTENT_DATA) {
-            val content = getAtt(RecordConstants.ATT_CONTENT) as? DbContentValue ?: return null
-            return content.getAs(DbContentValue.CONTENT_DATA)
+            return (getAtt(RecordConstants.ATT_CONTENT) as? AttValue)?.getAs(DbContentValue.CONTENT_DATA)
         }
         return super.getAs(type)
     }

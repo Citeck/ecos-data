@@ -7,6 +7,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbContentServiceImpl
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
@@ -522,8 +523,17 @@ abstract class DbRecordsTestBase {
         this.numTemplates[numTemplate.id] = numTemplate
     }
 
+    fun registerType(type: String) {
+        registerType(Json.mapper.readNotNull(type, TypeInfo::class.java))
+    }
+
     fun registerType(type: TypeInfo) {
-        this.typesInfo[type.id] = type
+        val fixedType = if (type.sourceId.isBlank()) {
+            type.copy().withSourceId(recordsDao.getId()).build()
+        } else {
+            type
+        }
+        this.typesInfo[fixedType.id] = fixedType
     }
 
     fun registerAtts(atts: List<AttributeDef>, systemAtts: List<AttributeDef> = emptyList()) {
