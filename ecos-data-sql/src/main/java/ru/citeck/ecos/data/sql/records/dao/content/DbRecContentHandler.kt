@@ -9,6 +9,7 @@ import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
 import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -44,6 +45,23 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         val attEnc = URLEncoder.encode(attribute, Charsets.UTF_8.name())
 
         return "/gateway/${entityRef.getAppName()}/api/ecos/webapp/content?ref=$refEnc&att=$attEnc"
+    }
+
+    fun getRefFromContentUrl(url: String?): EntityRef {
+        if (url.isNullOrBlank()) {
+            return EntityRef.EMPTY
+        }
+        val refArg = "?ref="
+        val refArgIdx = url.indexOf(refArg)
+        if (!url.startsWith("/gateway/") || refArgIdx == -1) {
+            return EntityRef.EMPTY
+        }
+        var refParamEnd = url.indexOf('&', refArgIdx)
+        if (refParamEnd == -1) {
+            refParamEnd = url.length
+        }
+        val encodedRef = url.substring(refArgIdx + refArg.length, refParamEnd)
+        return URLDecoder.decode(encodedRef, Charsets.UTF_8.name()).toEntityRef()
     }
 
     fun getRecordRefFromContentUrl(url: String): EntityRef {

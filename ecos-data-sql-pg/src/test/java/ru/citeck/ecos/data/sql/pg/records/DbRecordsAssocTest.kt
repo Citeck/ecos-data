@@ -265,5 +265,28 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
         val refArg = "ref=${URLEncoder.encode(assocRef.toString(), "UTF-8")}"
         assertThat(assocAsContentData.size).isEqualTo(1)
         assertThat(assocAsContentData[0]["url"].asText()).contains(refArg)
+
+        val newAssocContent = Faker.instance().chuckNorris().fact()
+        val newAssocContentBase64 = Base64.getEncoder().encodeToString(newAssocContent.toByteArray())
+
+        val currentContentValue = records.getAtt(record, "assoc[]._as.content-data?json")
+        currentContentValue.add(
+            """
+              {
+                "storage": "base64",
+                "name": "Assoc test2.-ad3e182c-3aac-4d7d-b145-880dae799698.txt",
+                "url": "data:text/plain;base64,$newAssocContentBase64",
+                "size": ${newAssocContent.toByteArray().size},
+                "type": "text/plain",
+                "fileType": "document",
+                "originalName": "Assoc test2.txt"
+              }
+            """.trimIndent()
+        )
+        records.mutateAtt(record, "assoc", currentContentValue)
+
+        val assocsRefs = records.getAtt(record, "assoc[]?id").asList(EntityRef::class.java)
+        assertThat(assocsRefs).hasSize(2)
+        assertThat(assocsRefs[0]).isEqualTo(assocRef)
     }
 }

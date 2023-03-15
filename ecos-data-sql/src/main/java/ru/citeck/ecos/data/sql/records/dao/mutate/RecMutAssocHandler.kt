@@ -78,7 +78,16 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             value.forEach { result.add(preProcessContentAssocBeforeMutate(recordId, attId, it)) }
             return result
         }
-        if (value.isObject() && value.has("fileType")) {
+        if (!value.isObject()) {
+            return value
+        }
+        if (value.has("url")) {
+            val entityFromUrl = ctx.recContentHandler.getRefFromContentUrl(value["url"].asText())
+            if (entityFromUrl.isNotEmpty()) {
+                return DataValue.createStr(entityFromUrl.toString())
+            }
+        }
+        if (value.has("fileType")) {
 
             val existingRef = ctx.recContentHandler.getRefForContentData(value)
             if (EntityRef.isNotEmpty(existingRef)) {
