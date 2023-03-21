@@ -51,6 +51,10 @@ class DbTableContextImpl(
         return columnsByName[name]
     }
 
+    override fun hasColumn(name: String): Boolean {
+        return columnsByName.containsKey(name)
+    }
+
     override fun hasIdColumn(): Boolean {
         return hasIdColumn
     }

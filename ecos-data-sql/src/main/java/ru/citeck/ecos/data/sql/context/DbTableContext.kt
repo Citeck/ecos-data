@@ -23,6 +23,8 @@ interface DbTableContext {
 
     fun getColumnByName(name: String): DbColumnDef?
 
+    fun hasColumn(name: String): Boolean
+
     fun hasIdColumn(): Boolean
 
     fun hasDeleteFlag(): Boolean

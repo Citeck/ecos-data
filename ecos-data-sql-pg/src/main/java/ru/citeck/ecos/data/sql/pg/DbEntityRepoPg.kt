@@ -452,7 +452,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val permsColumn = getPermsColumn(context)
 
-        if (permsColumn.isNotEmpty() && !context.getPermsService().isTableExists()) {
+        if (permsColumn.isNotEmpty() && (!context.getPermsService().isTableExists() || !context.hasColumn(permsColumn))) {
             return DbFindRes(emptyList(), 0)
         }
 
@@ -755,13 +755,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         if (userAuthorities.isEmpty()) {
             return ALWAYS_FALSE_CONDITION
         }
+        val isInheritedPerms = permsColumn == RecordConstants.ATT_PARENT
+
         val query = StringBuilder()
         query.append("\"$PERMS_TABLE_ALIAS\".\"${DbPermsEntity.AUTHORITY_ID}\" IN (")
         for (authority in userAuthorities) {
             query.append(authority).append(",")
         }
         query.setLength(query.length - 1)
-        query.append(")")
+
         return query.toString()
     }
 
