@@ -399,10 +399,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
     }
 
     private fun getPermsColumn(context: DbTableContext): String {
-        return when (DbDataReqContext.getPermsPolicy(context.getDefaultPermsPolicy())) {
+        val policy = DbDataReqContext.getPermsPolicy(
+            context.getDefaultPermsPolicy(),
+            TypePermsPolicy.OWN
+        )
+        return when (policy) {
             TypePermsPolicy.INHERITED -> RecordConstants.ATT_PARENT
             TypePermsPolicy.OWN -> DbEntity.REF_ID
             TypePermsPolicy.PUBLIC -> ""
+            else -> error("Invalid perms policy: $policy")
         }
     }
 

@@ -260,12 +260,21 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
     @Test
     fun testWithInheritedPolicy() {
 
-        registerAtts(
-            listOf(
-                AttributeDef.create()
-                    .withId("parentAtt")
-                    .build()
-            )
+        registerType(
+            TypeInfo.create {
+                withId(REC_TEST_TYPE_ID)
+                withPermsPolicy(TypePermsPolicy.OWN)
+                withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("parentAtt")
+                                    .build()
+                            )
+                        ).build()
+                ).build()
+            }
         )
         registerType(
             TypeInfo.create {
