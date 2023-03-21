@@ -1,23 +1,20 @@
 package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.params.ParameterizedTest
-import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 
 class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
 
-    @ParameterizedTest
-    @ValueSource(strings = ["true", "false"])
-    fun test(inheritParentPerms: Boolean) {
-
-        initServices(authEnabled = true, inheritParentPerms = inheritParentPerms)
+    @Test
+    fun test() {
 
         registerAtts(
             listOf(
@@ -29,6 +26,7 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
                 }
             )
         )
+        setPermsPolicy(TypePermsPolicy.OWN)
 
         val checkReadPerms = { ref: RecordRef, isReadPermsExpected: Boolean ->
             if (isReadPermsExpected) {
@@ -63,7 +61,7 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
                     checkReadPerms(parentRecord, false)
                 }
                 AuthContext.runAs("other-user") {
-                    checkReadPerms(childRecord, inheritParentPerms)
+                    checkReadPerms(childRecord, true)
                 }
             }
         }

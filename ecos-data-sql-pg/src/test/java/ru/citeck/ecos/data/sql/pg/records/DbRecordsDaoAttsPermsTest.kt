@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 import ru.citeck.ecos.records2.RecordRef
 
 class DbRecordsDaoAttsPermsTest : DbRecordsTestBase() {
@@ -12,7 +13,6 @@ class DbRecordsDaoAttsPermsTest : DbRecordsTestBase() {
     @Test
     fun test() {
 
-        initServices(authEnabled = true)
         registerAtts(
             listOf(
                 AttributeDef.create {
@@ -20,6 +20,8 @@ class DbRecordsDaoAttsPermsTest : DbRecordsTestBase() {
                 }
             )
         )
+        setPermsPolicy(TypePermsPolicy.OWN)
+
         val ref = RecordRef.create(recordsDao.getId(), "test")
 
         AuthContext.runAs("admin") {

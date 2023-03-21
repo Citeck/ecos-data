@@ -11,12 +11,12 @@ import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
@@ -186,16 +186,16 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
             }
         }
 
-        val recsByTime = mutableMapOf<String, MutableList<RecordRef>>()
-        val addRecByTime = { time: String, rec: RecordRef ->
+        val recsByTime = mutableMapOf<String, MutableList<EntityRef>>()
+        val addRecByTime = { time: String, rec: EntityRef ->
             recsByTime.computeIfAbsent(fixTime(time)) { ArrayList() }.add(rec)
         }
 
         val time01_00 = "2021-01-01T00:00:00Z"
-        val recWithDate0 = RecordRef.create(recordsDao.getId(), "$attName-01-00")
+        val recWithDate0 = EntityRef.create(APP_NAME, recordsDao.getId(), "$attName-01-00")
         if (withCreate) {
             createRecord(
-                "_localId" to recWithDate0.id,
+                "_localId" to recWithDate0.getLocalId(),
                 attName to time01_00
             )
         }
@@ -203,10 +203,10 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
         assertThat(records.getAtt(recWithDate0, attName).asText()).isEqualTo(fixTime(time01_00))
 
         val time01_10 = "2021-01-01T10:00:10Z"
-        val recWithDate1 = RecordRef.create(recordsDao.getId(), "$attName-01-10")
+        val recWithDate1 = EntityRef.create(APP_NAME, recordsDao.getId(), "$attName-01-10")
         if (withCreate) {
             createRecord(
-                "_localId" to recWithDate1.id,
+                "_localId" to recWithDate1.getLocalId(),
                 attName to time01_10
             )
         }
@@ -214,10 +214,10 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
         assertThat(records.getAtt(recWithDate1, attName).asText()).isEqualTo(fixTime(time01_10))
 
         val time02_00 = "2021-01-02T00:00:00Z"
-        val recWithDate2 = RecordRef.create(recordsDao.getId(), "$attName-02-00")
+        val recWithDate2 = EntityRef.create(APP_NAME, recordsDao.getId(), "$attName-02-00")
         if (withCreate) {
             createRecord(
-                "_localId" to recWithDate2.id,
+                "_localId" to recWithDate2.getLocalId(),
                 attName to time02_00
             )
         }
@@ -238,7 +238,7 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
                         withQuery(Predicates.eq(attName, timeToTest))
                     }
                 )
-                assertThat(result.getRecords()).describedAs(timeToTest).containsExactlyElementsOf(recsByTime[fixedTime])
+                assertThat(result.getRecords() as List<EntityRef>).describedAs(timeToTest).containsExactlyElementsOf(recsByTime[fixedTime])
             }
         }
 
@@ -248,9 +248,9 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
             }
         )
         if (withTime) {
-            assertThat(result8.getRecords()).containsExactly(recWithDate2)
+            assertThat(result8.getRecords() as List<EntityRef>).containsExactly(recWithDate2)
         } else {
-            assertThat(result8.getRecords()).containsExactly(recWithDate2)
+            assertThat(result8.getRecords()as List<EntityRef>).containsExactly(recWithDate2)
         }
 
         val result9 = records.query(
@@ -259,9 +259,9 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
             }
         )
         if (withTime) {
-            assertThat(result9.getRecords()).containsExactly(recWithDate1, recWithDate2)
+            assertThat(result9.getRecords() as List<EntityRef>).containsExactly(recWithDate1, recWithDate2)
         } else {
-            assertThat(result9.getRecords()).containsExactly(recWithDate0, recWithDate1, recWithDate2)
+            assertThat(result9.getRecords() as List<EntityRef>).containsExactly(recWithDate0, recWithDate1, recWithDate2)
         }
 
         val result10 = records.query(
@@ -269,7 +269,7 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
                 withQuery(Predicates.ge(attName, Instant.parse(time01_00)))
             }
         )
-        assertThat(result10.getRecords()).containsExactly(recWithDate0, recWithDate1, recWithDate2)
+        assertThat(result10.getRecords() as List<EntityRef>).containsExactly(recWithDate0, recWithDate1, recWithDate2)
     }
 
     @Test

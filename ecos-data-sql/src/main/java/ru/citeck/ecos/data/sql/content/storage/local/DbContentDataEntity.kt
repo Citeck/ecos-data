@@ -11,6 +11,9 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 class DbContentDataEntity {
 
     companion object {
+
+        const val TABLE = "ecos_content_data"
+
         const val NEW_REC_ID = -1L
 
         const val ID = "id"

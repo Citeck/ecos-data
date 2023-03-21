@@ -106,7 +106,7 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
     @Test
     fun testWithAlfRecords() {
 
-        initServices(appName = "integrations")
+        mainCtx = createRecordsDao()
 
         registerAtts(
             listOf(
@@ -125,7 +125,7 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
             val recRef = if (alfresco) {
                 EntityRef.create("alfresco", "", ref).toString()
             } else {
-                EntityRef.create("integrations", "", ref).toString()
+                EntityRef.create(APP_NAME, "", ref).toString()
             }
 
             assertThat(records.getAtt(ref0, "assoc?id").asText()).isEqualTo(recRef)
@@ -163,7 +163,7 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
         val queryTest = { query: Predicate, expected: List<RecordRef> ->
             val result = records.query(
                 RecordsQuery.create {
-                    withSourceId(recordsDao.getId())
+                    withSourceId(mainCtx.dao.getId())
                     withQuery(
                         Predicates.and(
                             Predicates.eq("_type", REC_TEST_TYPE_REF),
@@ -262,7 +262,7 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
 
         val assocAsContentData = records.getAtt(record, "assoc[]._as.content-data?json").asList(DataValue::class.java)
 
-        val refArg = "ref=${URLEncoder.encode(assocRef.toString(), "UTF-8")}"
+        val refArg = "ref=${URLEncoder.encode(assocRef.withoutAppName().toString(), "UTF-8")}"
         assertThat(assocAsContentData.size).isEqualTo(1)
         assertThat(assocAsContentData[0]["url"].asText()).contains(refArg)
 

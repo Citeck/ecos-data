@@ -1,15 +1,14 @@
 package ru.citeck.ecos.data.sql.service
 
-import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
+import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 
 class DbDataServiceConfig(
-    val tableRef: DbTableRef,
+    val table: String,
     val maxItemsToAllowSchemaMigration: Long,
     val fkConstraints: List<DbFkConstraint>,
-    val authEnabled: Boolean,
     val storeTableMeta: Boolean,
-    val transactional: Boolean
+    val defaultPermsPolicy: TypePermsPolicy
 ) {
 
     companion object {
@@ -32,26 +31,18 @@ class DbDataServiceConfig(
 
     class Builder() {
 
-        var tableRef: DbTableRef = DbTableRef("", "")
+        var table: String = ""
         var maxItemsToAllowSchemaMigration: Long = 1000
 
-        var authEnabled: Boolean = false
         var storeTableMeta: Boolean = false
-        var transactional: Boolean = false
         var fkConstraints: List<DbFkConstraint> = emptyList()
+        var defaultPermsPolicy: TypePermsPolicy = TypePermsPolicy.PUBLIC
 
         constructor(base: DbDataServiceConfig) : this() {
-            tableRef = base.tableRef
+            table = base.table
             maxItemsToAllowSchemaMigration = base.maxItemsToAllowSchemaMigration
-            authEnabled = base.authEnabled
             storeTableMeta = base.storeTableMeta
-            transactional = base.transactional
             fkConstraints = base.fkConstraints
-        }
-
-        fun withAuthEnabled(authEnabled: Boolean?): Builder {
-            this.authEnabled = authEnabled ?: EMPTY.authEnabled
-            return this
         }
 
         fun withMaxItemsToAllowSchemaMigration(maxItemsToAllowSchemaMigration: Long?): Builder {
@@ -64,13 +55,8 @@ class DbDataServiceConfig(
             return this
         }
 
-        fun withTransactional(transactional: Boolean?): Builder {
-            this.transactional = transactional ?: EMPTY.transactional
-            return this
-        }
-
-        fun withTableRef(tableRef: DbTableRef): Builder {
-            this.tableRef = tableRef
+        fun withTable(table: String): Builder {
+            this.table = table
             return this
         }
 
@@ -81,12 +67,11 @@ class DbDataServiceConfig(
 
         fun build(): DbDataServiceConfig {
             return DbDataServiceConfig(
-                tableRef,
+                table,
                 maxItemsToAllowSchemaMigration,
                 fkConstraints,
-                authEnabled,
                 storeTableMeta,
-                transactional
+                defaultPermsPolicy
             )
         }
     }

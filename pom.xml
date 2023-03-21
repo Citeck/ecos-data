@@ -12,7 +12,7 @@
 
     <properties>
 
-        <revision>1.24.3</revision>
+        <revision>1.25.0</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
@@ -28,7 +28,7 @@
 
         <ecos.commons.version>2.12.7</ecos.commons.version>
         <ecos.records.version>3.56.8</ecos.records.version>
-        <ecos.model-lib.version>2.19.2</ecos.model-lib.version>
+        <ecos.model-lib.version>2.19.5</ecos.model-lib.version>
         <ecos.context-lib.version>1.3.6</ecos.context-lib.version>
         <ecos.snakeyaml.version>2.2.0</ecos.snakeyaml.version>
         <ecos.webapp-api.version>1.6.6</ecos.webapp-api.version>

@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.pg
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
@@ -16,10 +17,13 @@ class SchemaDaoTest {
         schemaCommands.forEach { println(it) }
     }
 
-    private fun testImpl(dbDataSource: DbDataSource) {
+    private fun testImpl(dataSource: DbDataSource) {
 
-        val dbSchemaDao = DbSchemaDaoPg(dbDataSource, DbTableRef("some-schema", "test-table"))
-        assertThat(dbSchemaDao.getColumns()).isEmpty()
+        val dsCtx = DbDataSourceContext("test", dataSource, PgDataServiceFactory())
+        val tableRef = DbTableRef("some-schema", "test-table")
+
+        val dbSchemaDao = dsCtx.schemaDao
+        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)).isEmpty()
 
         val singleValueColumns = DbColumnType.values().mapIndexed { idx, value ->
             DbColumnDef.create {
@@ -28,8 +32,8 @@ class SchemaDaoTest {
                 withMultiple(false)
             }
         }
-        dbSchemaDao.createTable(singleValueColumns)
-        val columnsFromDb = dbSchemaDao.getColumns()
+        dbSchemaDao.createTable(dataSource, tableRef, singleValueColumns)
+        val columnsFromDb = dbSchemaDao.getColumns(dataSource, tableRef)
         assertThat(columnsFromDb).containsExactlyInAnyOrderElementsOf(singleValueColumns)
 
         val arrayColumns = DbColumnType.values()
@@ -43,15 +47,17 @@ class SchemaDaoTest {
                 }
             }
 
-        dbSchemaDao.addColumns(arrayColumns)
+        dbSchemaDao.addColumns(dataSource, tableRef, arrayColumns)
 
-        val allColumnsFromDb = dbSchemaDao.getColumns()
+        val allColumnsFromDb = dbSchemaDao.getColumns(dataSource, tableRef)
         assertThat(allColumnsFromDb).containsExactlyInAnyOrderElementsOf(
             listOf(*singleValueColumns.toTypedArray(), *arrayColumns.toTypedArray())
         )
 
-        val indexCommands = dbDataSource.watchSchemaCommands {
+        val indexCommands = dataSource.watchSchemaCommands {
             dbSchemaDao.addColumns(
+                dataSource,
+                tableRef,
                 listOf(
                     DbColumnDef.create {
                         withName("indexed_str")
@@ -79,10 +85,15 @@ class SchemaDaoTest {
         PgUtils.withDbDataSource { typeUpdateTestImpl(it) }
     }
 
-    private fun typeUpdateTestImpl(dbDataSource: DbDataSource) {
+    private fun typeUpdateTestImpl(dataSource: DbDataSource) {
 
-        val dbSchemaDao = DbSchemaDaoPg(dbDataSource, DbTableRef("some-schema", "test-table"))
+        val dsCtx = DbDataSourceContext("test", dataSource, PgDataServiceFactory())
+        val tableRef = DbTableRef("some-schema", "test-table")
+
+        val dbSchemaDao = dsCtx.schemaDao
         dbSchemaDao.createTable(
+            dataSource,
+            tableRef,
             listOf(
                 DbColumnDef.create {
                     withName("text_column")
@@ -97,17 +108,17 @@ class SchemaDaoTest {
 
         // text to json
 
-        assertThat(dbSchemaDao.getColumns()).hasSize(2)
-        assertThat(dbSchemaDao.getColumns()[0].type).isEqualTo(DbColumnType.TEXT)
-        assertThat(dbSchemaDao.getColumns()[1].type).isEqualTo(DbColumnType.DATE)
+        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)).hasSize(2)
+        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[0].type).isEqualTo(DbColumnType.TEXT)
+        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[1].type).isEqualTo(DbColumnType.DATE)
 
-        dbSchemaDao.setColumnType("text_column", false, DbColumnType.JSON)
-        assertThat(dbSchemaDao.getColumns()[0].type).isEqualTo(DbColumnType.JSON)
+        dbSchemaDao.setColumnType(dataSource, tableRef, "text_column", false, DbColumnType.JSON)
+        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[0].type).isEqualTo(DbColumnType.JSON)
 
-        dbSchemaDao.setColumnType("text_column", false, DbColumnType.TEXT)
-        assertThat(dbSchemaDao.getColumns()[0].type).isEqualTo(DbColumnType.TEXT)
+        dbSchemaDao.setColumnType(dataSource, tableRef, "text_column", false, DbColumnType.TEXT)
+        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[0].type).isEqualTo(DbColumnType.TEXT)
 
-        dbSchemaDao.setColumnType("date_column", false, DbColumnType.DATETIME)
-        assertThat(dbSchemaDao.getColumns()[1].type).isEqualTo(DbColumnType.DATETIME)
+        dbSchemaDao.setColumnType(dataSource, tableRef, "date_column", false, DbColumnType.DATETIME)
+        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[1].type).isEqualTo(DbColumnType.DATETIME)
     }
 }

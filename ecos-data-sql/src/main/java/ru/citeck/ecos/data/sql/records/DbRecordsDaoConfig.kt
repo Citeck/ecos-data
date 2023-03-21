@@ -9,7 +9,7 @@ data class DbRecordsDaoConfig(
     val updatable: Boolean,
     val deletable: Boolean,
     val queryMaxItems: Int,
-    val inheritParentPerms: Boolean
+    val authEnabled: Boolean
 ) {
 
     companion object {
@@ -39,7 +39,7 @@ data class DbRecordsDaoConfig(
         var updatable: Boolean = true
         var deletable: Boolean = true
         var queryMaxItems: Int = 5000
-        var inheritParentPerms: Boolean = true
+        var authEnabled: Boolean = false
 
         constructor(base: DbRecordsDaoConfig) : this() {
             this.id = base.id
@@ -48,7 +48,7 @@ data class DbRecordsDaoConfig(
             this.updatable = base.updatable
             this.deletable = base.deletable
             this.queryMaxItems = base.queryMaxItems
-            this.inheritParentPerms = base.inheritParentPerms
+            this.authEnabled = base.authEnabled
         }
 
         fun withId(id: String?): Builder {
@@ -81,8 +81,8 @@ data class DbRecordsDaoConfig(
             return this
         }
 
-        fun withInheritParentPerms(inheritParentPerms: Boolean?): Builder {
-            this.inheritParentPerms = inheritParentPerms ?: true
+        fun withAuthEnabled(authEnabled: Boolean?): Builder {
+            this.authEnabled = authEnabled ?: false
             return this
         }
 
@@ -94,7 +94,7 @@ data class DbRecordsDaoConfig(
                 updatable,
                 deletable,
                 queryMaxItems,
-                inheritParentPerms
+                authEnabled
             )
         }
     }

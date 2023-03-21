@@ -13,6 +13,9 @@ import java.time.Instant
 class DbContentEntity {
 
     companion object {
+
+        const val TABLE = "ecos_content"
+
         const val NEW_REC_ID = -1L
 
         const val ID = "id"

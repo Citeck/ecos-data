@@ -12,6 +12,7 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.atomic.AtomicLong
 
 class EntityRepoTest {
 
@@ -20,6 +21,8 @@ class EntityRepoTest {
         private const val STR_COLUMN_V0 = "str_column_value_0"
         private const val STR_COLUMN_V1 = "str_column_value_1"
         private const val STR_COLUMN_V2 = "str_column_value_2"
+
+        private val refIdCounter = AtomicLong()
     }
 
     @Test
@@ -28,6 +31,12 @@ class EntityRepoTest {
             testArrays(it)
             testImpl(it)
         }
+    }
+
+    private fun newEntity(): DbEntity {
+        val entity = DbEntity()
+        entity.refId = refIdCounter.getAndIncrement()
+        return entity
     }
 
     private fun testImpl(dbDataSource: DbDataSource) {
@@ -45,7 +54,7 @@ class EntityRepoTest {
 
         assertThat(findRes).isEmpty()
 
-        var newEntity = DbEntity()
+        var newEntity = newEntity()
         newEntity.attributes[STR_COLUMN] = STR_COLUMN_V0
         val instantBeforeSave = Instant.now().truncatedTo(ChronoUnit.MILLIS)
 
@@ -93,12 +102,12 @@ class EntityRepoTest {
 
         val context = SqlDataServiceTestUtils.createService(dbDataSource, "test-arrays")
 
-        var newEntity0 = DbEntity()
+        var newEntity0 = newEntity()
         newEntity0.attributes[STR_COLUMN] = STR_COLUMN_V0
 
         newEntity0 = context.service.save(newEntity0, columns)
 
-        assertThat(newEntity0.extId).isNotBlank()
+        assertThat(newEntity0.extId).isNotBlank
         assertThat(newEntity0.attributes[STR_COLUMN] as List<*>).containsExactlyInAnyOrderElementsOf(
             listOf(STR_COLUMN_V0)
         )
@@ -116,7 +125,7 @@ class EntityRepoTest {
             context.service.save(newEntity0, columns)
         }
 
-        var newEntity1 = DbEntity()
+        var newEntity1 = newEntity()
         newEntity1.attributes[STR_COLUMN] = listOf(STR_COLUMN_V0, STR_COLUMN_V1, STR_COLUMN_V2)
 
         newEntity1 = context.service.save(newEntity1, columns)

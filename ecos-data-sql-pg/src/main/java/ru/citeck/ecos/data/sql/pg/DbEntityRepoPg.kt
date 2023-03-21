@@ -2,25 +2,21 @@ package ru.citeck.ecos.data.sql.pg
 
 import mu.KotlinLogging
 import ru.citeck.ecos.context.lib.auth.AuthContext
-import ru.citeck.ecos.context.lib.auth.AuthGroup
-import ru.citeck.ecos.data.sql.datasource.DbDataSource
+import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
-import ru.citeck.ecos.data.sql.dto.DbTableRef
-import ru.citeck.ecos.data.sql.repo.DbEntityPermissionsDto
+import ru.citeck.ecos.data.sql.perms.DbPermsEntity
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
-import ru.citeck.ecos.data.sql.repo.DbEntityRepoConfig
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
-import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
-import ru.citeck.ecos.data.sql.repo.entity.auth.DbAuthorityEntity
-import ru.citeck.ecos.data.sql.repo.entity.auth.DbPermsEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.service.DbDataReqContext
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
-import ru.citeck.ecos.model.lib.role.constants.RoleConstants
+import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.*
 import java.sql.Date
 import java.sql.ResultSet
@@ -28,16 +24,9 @@ import java.sql.Timestamp
 import java.time.*
 import java.util.*
 import kotlin.collections.ArrayList
-import kotlin.collections.HashSet
 import kotlin.reflect.KClass
 
-class DbEntityRepoPg<T : Any>(
-    private val mapper: DbEntityMapper<T>,
-    private val dataSource: DbDataSource,
-    private val tableRef: DbTableRef,
-    private val typesConverter: DbTypesConverter,
-    private val config: DbEntityRepoConfig
-) : DbEntityRepo<T> {
+open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
     companion object {
         private val log = KotlinLogging.logger {}
@@ -46,7 +35,6 @@ class DbEntityRepoPg<T : Any>(
         private const val WHERE_ALWAYS_FALSE = "WHERE $ALWAYS_FALSE_CONDITION"
 
         private const val RECORD_TABLE_ALIAS = "r"
-        private const val AUTHORITIES_TABLE_ALIAS = "a"
         private const val PERMS_TABLE_ALIAS = "p"
 
         private const val IS_TRUE = "IS TRUE"
@@ -56,69 +44,23 @@ class DbEntityRepoPg<T : Any>(
         private const val COUNT_COLUMN = "COUNT(*)"
     }
 
-    private var columns: List<DbColumnDef> = ArrayList()
-    private var schemaCacheUpdateRequired = false
-
-    private val hasDeletedFlag = mapper.getEntityColumns().any { it.columnDef.name == DbEntity.DELETED }
-
-    override fun setColumns(columns: List<DbColumnDef>) {
-        val newColumns = ArrayList(columns)
-        if (this.columns == newColumns) {
-            return
-        }
-        this.columns = newColumns
-        schemaCacheUpdateRequired = true
-    }
-
-    override fun findById(ids: Set<Long>): List<T> {
-        return findByColumnAsMap(DbEntity.ID, ids, columns, false, ids.size).map {
-            mapper.convertToEntity(it)
-        }
-    }
-
-    override fun findById(id: Long, withDeleted: Boolean): T? {
-        return findOneByColumnAsMap(DbEntity.ID, id, columns, withDeleted)?.let {
-            mapper.convertToEntity(it)
-        }
-    }
-
-    override fun findByExtId(id: String, withDeleted: Boolean): T? {
-        return findOneByColumnAsMap(DbEntity.EXT_ID, id, columns, withDeleted)?.let {
-            mapper.convertToEntity(it)
-        }
-    }
-
-    private fun findByExtIdAsMap(
-        id: String,
-        columns: List<DbColumnDef>,
-        withDeleted: Boolean = false
-    ): Map<String, Any?>? {
-
-        return findOneByColumnAsMap(DbEntity.EXT_ID, id, columns, withDeleted)
-    }
-
-    private fun findOneByColumnAsMap(
+    override fun findByColumn(
+        context: DbTableContext,
         column: String,
-        value: Any,
-        columns: List<DbColumnDef>,
-        withDeleted: Boolean
-    ): Map<String, Any?>? {
-        return findByColumnAsMap(column, setOf(value), columns, withDeleted, 1).firstOrNull()
-    }
-
-    private fun findByColumnAsMap(
-        column: String,
-        values: Set<Any>,
-        columns: List<DbColumnDef>,
+        values: Collection<Any>,
         withDeleted: Boolean,
         limit: Int
     ): List<Map<String, Any?>> {
 
+        val columns = context.getColumns()
+
         if (columns.isEmpty() || values.isEmpty()) {
             return emptyList()
         }
-
-        updateSchemaCacheIfRequired()
+        val permsColumn = getPermsColumn(context)
+        if (permsColumn.isNotEmpty() && !context.getPermsService().isTableExists()) {
+            return emptyList()
+        }
 
         val condition = StringBuilder()
         appendRecordColumnName(condition, column)
@@ -132,8 +74,9 @@ class DbEntityRepoPg<T : Any>(
         }
 
         val query = createSelectQuery(
+            context,
             columns,
-            withAuth = isAuthEnabled(),
+            permsColumn,
             withDeleted,
             condition.toString(),
             page = DbFindPage(0, limit)
@@ -142,10 +85,12 @@ class DbEntityRepoPg<T : Any>(
             return emptyList()
         }
 
-        return dataSource.query(query, values.toList()) { resultSet ->
+        val typesConverter = context.getTypesConverter()
+
+        return context.getDataSource().query(query, values.toList()) { resultSet ->
             val result = mutableListOf<Map<String, Any?>>()
             while (resultSet.next()) {
-                result.add(convertRowToMap(resultSet, columns))
+                result.add(convertRowToMap(typesConverter, resultSet, columns))
             }
             result
         }
@@ -156,6 +101,7 @@ class DbEntityRepoPg<T : Any>(
     }
 
     private fun convertRowToMap(
+        typesConverter: DbTypesConverter,
         row: ResultSet,
         columns: List<DbColumnDef>,
         groupBy: List<String> = emptyList(),
@@ -203,275 +149,269 @@ class DbEntityRepoPg<T : Any>(
         return result
     }
 
-    override fun forceDelete(entity: T) {
-        if (columns.isEmpty()) {
-            return
-        }
-        forceDelete(mapper.convertToMap(entity))
-    }
-
-    override fun forceDelete(entityId: Long) {
-        if (columns.isEmpty()) {
-            return
-        }
-        forceDeleteById(entityId)
-    }
-
-    override fun delete(entity: T) {
-
-        if (columns.isEmpty()) {
-            return
-        }
-
-        val entityMap = mapper.convertToMap(entity)
-        if (hasDeletedFlag) {
-            val mutableEntity = LinkedHashMap(entityMap)
+    override fun delete(context: DbTableContext, entity: Map<String, Any?>) {
+        if (context.hasDeleteFlag()) {
+            val mutableEntity = LinkedHashMap(entity)
             mutableEntity[DbEntity.DELETED] = true
-            saveImpl(mutableEntity)
+            saveImpl(context, listOf(mutableEntity))[0]
         } else {
-            forceDelete(entity)
+            forceDelete(context, listOf(entity[DbEntity.ID] as Long))
         }
     }
 
-    override fun forceDelete(entities: List<T>) {
-        if (entities.isEmpty()) {
-            return
-        }
-        val identifiers = entities.mapNotNull { mapper.convertToMap(it)[DbEntity.ID] as? Long }
-        val identifiersStr = identifiers.joinToString(",")
-        dataSource.update(
-            "DELETE FROM ${tableRef.fullName} WHERE \"${DbEntity.ID}\" IN ($identifiersStr)",
+    override fun forceDelete(context: DbTableContext, predicate: Predicate) {
+
+        val query = StringBuilder("DELETE FROM ")
+            .append(context.getTableRef().fullName)
+            .append(" \"r\" WHERE ")
+
+        val parameters = arrayListOf<Any?>()
+        toSqlCondition(context, query, predicate, parameters)
+
+        context.getDataSource().update(query.toString(), parameters)
+    }
+
+    override fun forceDelete(context: DbTableContext, entities: List<Long>) {
+        val identifiersStr = entities.joinToString(",")
+        context.getDataSource().update(
+            "DELETE FROM ${context.getTableRef().fullName} WHERE \"${DbEntity.ID}\" IN ($identifiersStr)",
             emptyList()
         )
     }
 
-    private fun forceDelete(entity: Map<String, Any?>) {
-        forceDeleteById(entity[DbEntity.ID] as Long)
-    }
-
-    private fun forceDeleteById(entityId: Long) {
-        updateSchemaCacheIfRequired()
-        dataSource.update(
-            "DELETE FROM ${tableRef.fullName} WHERE \"${DbEntity.ID}\"=$entityId",
-            emptyList()
-        )
-    }
-
-    override fun save(entity: T): T {
-        if (columns.isEmpty()) {
+    override fun save(context: DbTableContext, entities: List<Map<String, Any?>>): List<Map<String, Any?>> {
+        if (context.getColumns().isEmpty()) {
             error("Columns is empty")
         }
-        val entityMap = LinkedHashMap(mapper.convertToMap(entity))
-        return mapper.convertToEntity(saveAndGet(entityMap))
+        return saveAndGet(context, entities)
     }
 
-    override fun setReadPerms(permissions: List<DbEntityPermissionsDto>) {
+    private fun saveAndGet(context: DbTableContext, entities: List<Map<String, Any?>>): List<Map<String, Any?>> {
+        val ids = saveImpl(context, entities)
+        if (!context.hasIdColumn()) {
+            return entities
+        }
+        return DbDataReqContext.doWithPermsPolicy(TypePermsPolicy.PUBLIC) {
+            val entitiesAfterMutation = findByColumn(
+                context,
+                DbEntity.ID,
+                ids.toList(),
+                true,
+                entities.size
+            ).associateBy { it[DbEntity.ID] as Long }
 
-        for (entity in permissions) {
-
-            val recordEntity = findByExtIdAsMap(entity.id, columns, true) ?: continue
-            val recordEntityId = recordEntity[DbEntity.ID] as Long
-
-            val permsTableName = config.permsTable.fullName
-
-            val currentPerms: List<DbPermsEntity> = dataSource.query(
-                "SELECT " +
-                    "\"${DbPermsEntity.RECORD_ID}\"," +
-                    "\"${DbPermsEntity.AUTHORITY_ID}\"," +
-                    "\"${DbPermsEntity.ALLOWED}\" " +
-                    "FROM $permsTableName WHERE \"${DbPermsEntity.RECORD_ID}\"=$recordEntityId",
-                emptyList()
-            ) { resultSet ->
-
-                val res = mutableListOf<DbPermsEntity>()
-                while (resultSet.next()) {
-                    val recordId = resultSet.getLong(DbPermsEntity.RECORD_ID)
-                    val authorityId = resultSet.getLong(DbPermsEntity.AUTHORITY_ID)
-                    val allowed = resultSet.getBoolean(DbPermsEntity.ALLOWED)
-                    res.add(DbPermsEntity(recordId, authorityId, allowed))
-                }
-                res
+            val missedEntities = ids.filter { !entitiesAfterMutation.containsKey(it) }
+            if (missedEntities.isNotEmpty()) {
+                error("Entities with ids $missedEntities was inserted or updated but can't be found")
             }
-
-            val allowedAuth = HashSet(entity.readAllowed)
-            val deniedAuth = HashSet(entity.readDenied)
-
-            val permsAuthToDelete = currentPerms.filter {
-                if (it.allowed) {
-                    !allowedAuth.contains(it.authorityId)
-                } else {
-                    !deniedAuth.contains(it.authorityId)
-                }
-            }.map {
-                it.authorityId
+            ids.map {
+                entitiesAfterMutation[it] ?: error("Entity with id $it doesn't found after updating")
             }
-            if (permsAuthToDelete.isNotEmpty()) {
-                dataSource.update(
-                    "DELETE FROM $permsTableName " +
-                        "WHERE \"${DbPermsEntity.RECORD_ID}\"=$recordEntityId " +
-                        "AND \"${DbPermsEntity.AUTHORITY_ID}\" IN (${permsAuthToDelete.joinToString(",")})",
-                    emptyList()
-                )
-            }
-
-            for (perms in currentPerms) {
-                if (perms.allowed) {
-                    allowedAuth.remove(perms.authorityId)
-                } else {
-                    deniedAuth.remove(perms.authorityId)
-                }
-            }
-
-            if (allowedAuth.isEmpty() && deniedAuth.isEmpty()) {
-                return
-            }
-
-            val query = StringBuilder()
-            query.append(
-                "INSERT INTO $permsTableName " +
-                    "(" +
-                    "\"${DbPermsEntity.RECORD_ID}\"," +
-                    "\"${DbPermsEntity.AUTHORITY_ID}\"," +
-                    "\"${DbPermsEntity.ALLOWED}\"" +
-                    ") VALUES "
-            )
-            val append = { authorities: Set<Long>, allowed: Boolean ->
-                authorities.forEach {
-                    query.append("(")
-                        .append(recordEntityId)
-                        .append(",")
-                        .append(it)
-                        .append(",")
-                        .append(allowed)
-                        .append("),")
-                }
-            }
-            append(allowedAuth, true)
-            append(deniedAuth, false)
-
-            query.setLength(query.length - 1)
-            dataSource.update(query.toString(), emptyList())
         }
     }
 
-    private fun saveAndGet(entity: Map<String, Any?>): Map<String, Any?> {
-        val id = saveImpl(entity)
-        return AuthContext.runAsSystem {
-            findOneByColumnAsMap(DbEntity.ID, id, columns, true)
-                ?: error("Entity with id $id was inserted or updated but can't be found.")
-        }
+    private fun isAuthEnabled(context: DbTableContext): Boolean {
+        return DbDataReqContext.getPermsPolicy(context.getDefaultPermsPolicy()) != TypePermsPolicy.PUBLIC
     }
 
-    private fun isAuthEnabled(): Boolean {
-        return config.authEnabled && !AuthContext.isRunAsSystem()
-    }
+    private fun saveImpl(context: DbTableContext, entities: List<Map<String, Any?>>): LongArray {
 
-    private fun saveImpl(entity: Map<String, Any?>): Long {
+        val tableRef = context.getTableRef()
 
-        if (isAuthEnabled() && AuthContext.getCurrentUser().isEmpty()) {
+        if (isAuthEnabled(context) && AuthContext.getCurrentUser().isEmpty()) {
             error("Current user is empty. Table: $tableRef")
         }
-
-        updateSchemaCacheIfRequired()
+        val hasIdColumn = context.hasIdColumn()
 
         val nowInstant = Instant.now()
-        val entityMap = LinkedHashMap(entity)
 
-        val id = entityMap[DbEntity.ID] as? Long ?: error("ID is a mandatory parameter!")
-        var extId = entityMap[DbEntity.EXT_ID] as? String ?: ""
-        val deleted = entityMap[DbEntity.DELETED] as? Boolean ?: false
+        val entitiesToInsert = mutableListOf<EntityToInsert>()
+        val entitiesToUpdate = mutableListOf<EntityToUpdate>()
+        val resultIds = LongArray(entities.size) { -1 }
 
-        if (deleted && extId.isBlank()) {
-            return -1
-        } else if (extId.isBlank() && !deleted) {
-            extId = UUID.randomUUID().toString()
-            entityMap[DbEntity.EXT_ID] = extId
-        }
+        for ((entityIdx, entity) in entities.withIndex()) {
 
-        val attsToSave = LinkedHashMap(entityMap)
-        attsToSave.remove(DbEntity.ID)
-        // if (!ExtTxnContext.isWithoutModifiedMeta()) {
-        attsToSave[DbEntity.MODIFIED] = nowInstant
-        attsToSave[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
-        // }
-        return if (id == DbEntity.NEW_REC_ID) {
-            insertImpl(attsToSave, nowInstant)
-        } else {
-            updateImpl(id, attsToSave)
-            id
-        }
-    }
+            val entityMap = LinkedHashMap(entity)
+            val entityId: Long = if (hasIdColumn) {
+                val id = entityMap[DbEntity.ID] as? Long ?: error("ID is a mandatory parameter!")
+                entityMap.remove(DbEntity.ID)
+                id
+            } else {
+                DbEntity.NEW_REC_ID
+            }
 
-    private fun insertImpl(entity: Map<String, Any?>, nowInstant: Instant): Long {
+            var extId = entityMap[DbEntity.EXT_ID] as? String ?: ""
+            val deleted = entityMap[DbEntity.DELETED] as? Boolean ?: false
 
-        val attsToInsert = LinkedHashMap(entity)
-        if (!hasDeletedFlag) {
-            attsToInsert[DbEntity.DELETED] = false
-        }
-        attsToInsert[DbEntity.UPD_VERSION] = 0L
+            if (deleted && extId.isBlank()) {
+                continue
+            } else if (extId.isBlank() && !deleted) {
+                extId = UUID.randomUUID().toString()
+                entityMap[DbEntity.EXT_ID] = extId
+            }
 
-        val currentCreator = entity[DbEntity.CREATOR]
-        if (currentCreator == null || currentCreator == "") {
-            attsToInsert[DbEntity.CREATOR] = AuthContext.getCurrentUser()
-            val currentCreated = attsToInsert[DbEntity.CREATED]
-            if (currentCreated == null || currentCreated == Instant.EPOCH) {
-                attsToInsert[DbEntity.CREATED] = nowInstant
+            if (!DbDataReqContext.withoutModifiedMeta.get()) {
+                entityMap[DbEntity.MODIFIED] = nowInstant
+                entityMap[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
+            }
+
+            if (entityId == DbEntity.NEW_REC_ID) {
+                entitiesToInsert.add(EntityToInsert(entityIdx, entityMap))
+            } else {
+                resultIds[entityIdx] = entityId
+                entitiesToUpdate.add(EntityToUpdate(entityId, entityMap))
             }
         }
 
-        val valuesForDb = prepareValuesForDb(attsToInsert)
-        val columnNames = valuesForDb.joinToString(",") { "\"${it.name}\"" }
-        val columnPlaceholders = valuesForDb.joinToString(",") { it.placeholder }
-
-        val query = "INSERT INTO ${tableRef.fullName} ($columnNames) VALUES ($columnPlaceholders) RETURNING id;"
-
-        return dataSource.update(query, valuesForDb.map { it.value })
-    }
-
-    private fun updateImpl(id: Long, attributes: Map<String, Any?>) {
-
-        val version: Long = attributes[DbEntity.UPD_VERSION] as? Long
-            ?: error("Missing attribute: ${DbEntity.UPD_VERSION}")
-
-        var newVersion = version + 1
-        if (newVersion >= Int.MAX_VALUE) {
-            newVersion = 0L
+        if (entitiesToUpdate.isNotEmpty()) {
+            updateImpl(context, entitiesToUpdate)
+        }
+        if (entitiesToInsert.isNotEmpty()) {
+            val insertIds = insertImpl(context, entitiesToInsert.map { it.data }, nowInstant)
+            if (hasIdColumn) {
+                entitiesToInsert.forEachIndexed { idx, entity -> resultIds[entity.resIdIdx] = insertIds[idx] }
+            }
         }
 
-        val attsToUpdate = LinkedHashMap(attributes)
-        attsToUpdate[DbEntity.UPD_VERSION] = newVersion
+        return resultIds
+    }
 
-        val valuesForDb = prepareValuesForDb(attsToUpdate)
-        val setPlaceholders = valuesForDb.joinToString(",") { "\"${it.name}\"=${it.placeholder}" }
+    private fun insertImpl(
+        context: DbTableContext,
+        entities: List<Map<String, Any?>>,
+        nowInstant: Instant
+    ): List<Long> {
 
-        val query = "UPDATE ${tableRef.fullName} SET $setPlaceholders " +
-            "WHERE \"${DbEntity.ID}\"='$id' " +
-            "AND \"${DbEntity.UPD_VERSION}\"=$version"
+        if (entities.isEmpty()) {
+            return emptyList()
+        }
+        val tableRef = context.getTableRef()
+        val typesConverter = context.getTypesConverter()
+        val hasDeletedFlag = context.hasDeleteFlag()
 
-        if (dataSource.update(query, valuesForDb.map { it.value }) != 1L) {
-            error("Concurrent modification of record with id: $id")
+        val entitiesToInsert = entities.map { entity ->
+
+            val attsToInsert = LinkedHashMap(entity)
+            if (hasDeletedFlag) {
+                attsToInsert[DbEntity.DELETED] = false
+            }
+            attsToInsert[DbEntity.UPD_VERSION] = 0L
+
+            val currentCreator = entity[DbEntity.CREATOR]
+            if (currentCreator == null || currentCreator == "") {
+                attsToInsert[DbEntity.CREATOR] = AuthContext.getCurrentUser()
+                val currentCreated = attsToInsert[DbEntity.CREATED]
+                if (currentCreated == null || currentCreated == Instant.EPOCH) {
+                    attsToInsert[DbEntity.CREATED] = nowInstant
+                }
+            }
+            attsToInsert
+        }
+
+        val columnNames = linkedSetOf<String>()
+        for (entity in entitiesToInsert) {
+            columnNames.addAll(entity.keys)
+        }
+        val columns = context.getColumns().filter { columnNames.contains(it.name) }
+        val preparedValues = prepareValuesForDb(columns, typesConverter, entitiesToInsert)
+
+        val query = StringBuilder("INSERT INTO ")
+            .append(tableRef.fullName)
+            .append(" (")
+
+        for (preparedValue in preparedValues) {
+            query.append("\"").append(preparedValue.name).append("\"").append(',')
+        }
+        query.setLength(query.length - 1)
+        query.append(") VALUES ")
+        for (rowIdx in entities.indices) {
+            query.append("(")
+            for (preparedValue in preparedValues) {
+                query.append(preparedValue.placeholder).append(',')
+            }
+            query.setLength(query.length - 1)
+            query.append("),")
+        }
+        query.setLength(query.length - 1)
+        if (context.hasIdColumn()) {
+            query.append(" RETURNING id")
+        }
+        query.append(";")
+
+        val values = arrayListOf<Any?>()
+        for (entityIdx in entitiesToInsert.indices) {
+            for (preparedValue in preparedValues) {
+                values.add(preparedValue.values[entityIdx])
+            }
+        }
+        return context.getDataSource().update(query.toString(), values)
+    }
+
+    private fun updateImpl(context: DbTableContext, entities: List<EntityToUpdate>) {
+
+        val tableRef = context.getTableRef()
+        val dataSource = context.getDataSource()
+        val typesConverter = context.getTypesConverter()
+
+        for (entity in entities) {
+
+            val attributes = entity.data
+            val version: Long = attributes[DbEntity.UPD_VERSION] as? Long
+                ?: error("Missing attribute: ${DbEntity.UPD_VERSION}")
+
+            var newVersion = version + 1
+            if (newVersion >= Int.MAX_VALUE) {
+                newVersion = 0L
+            }
+
+            val attsToUpdate = LinkedHashMap(attributes)
+            attsToUpdate[DbEntity.UPD_VERSION] = newVersion
+
+            val columns = context.getColumns().filter { attsToUpdate.containsKey(it.name) }
+
+            val valuesForDb = prepareValuesForDb(columns, typesConverter, listOf(attsToUpdate))
+            val setPlaceholders = valuesForDb.joinToString(",") { "\"${it.name}\"=${it.placeholder}" }
+
+            val query = "UPDATE ${tableRef.fullName} SET $setPlaceholders " +
+                "WHERE \"${DbEntity.ID}\"='${entity.id}' " +
+                "AND \"${DbEntity.UPD_VERSION}\"=$version"
+
+            if (dataSource.update(query, valuesForDb.map { it.values[0] }).first() != 1L) {
+                error("Concurrent modification of record with id: ${entity.id}")
+            }
         }
     }
 
-    override fun getCount(predicate: Predicate): Long {
+    override fun getCount(context: DbTableContext, predicate: Predicate): Long {
 
-        if (columns.isEmpty()) {
+        if (context.getColumns().isEmpty()) {
+            return 0
+        }
+        val withAuth = isAuthEnabled(context)
+        if (withAuth && !context.getPermsService().isTableExists()) {
             return 0
         }
 
         val params = mutableListOf<Any?>()
-        val sqlCondition = toSqlCondition(predicate, params, columns.associateBy { it.name })
+        val sqlCondition = toSqlCondition(context, predicate, params)
 
-        return getCountImpl(sqlCondition, params)
+        return getCountImpl(context, sqlCondition, params)
     }
 
-    private fun getCountImpl(sqlCondition: String, params: List<Any?>): Long {
+    private fun getPermsColumn(context: DbTableContext): String {
+        return when (DbDataReqContext.getPermsPolicy(context.getDefaultPermsPolicy())) {
+            TypePermsPolicy.INHERITED -> RecordConstants.ATT_PARENT
+            TypePermsPolicy.OWN -> DbEntity.REF_ID
+            TypePermsPolicy.PUBLIC -> ""
+        }
+    }
 
-        updateSchemaCacheIfRequired()
+    private fun getCountImpl(context: DbTableContext, sqlCondition: String, params: List<Any?>): Long {
 
         val selectQuery = createSelectQuery(
+            context,
             COUNT_COLUMN,
-            withAuth = isAuthEnabled(),
+            permsColumn = getPermsColumn(context),
             withDeleted = false,
             sqlCondition
         )
@@ -479,7 +419,7 @@ class DbEntityRepoPg<T : Any>(
             return 0
         }
 
-        return dataSource.query(selectQuery, params) { resultSet ->
+        return context.getDataSource().query(selectQuery, params) { resultSet ->
             if (resultSet.next()) {
                 resultSet.getLong(1)
             } else {
@@ -489,27 +429,28 @@ class DbEntityRepoPg<T : Any>(
     }
 
     override fun find(
-        predicate: Predicate,
-        sort: List<DbFindSort>,
-        page: DbFindPage,
-        withDeleted: Boolean
-    ): DbFindRes<T> {
-        return find(predicate, sort, page, withDeleted, emptyList(), emptyList())
-    }
-
-    override fun find(
+        context: DbTableContext,
         predicate: Predicate,
         sort: List<DbFindSort>,
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
         selectFunctions: List<AggregateFunc>
-    ): DbFindRes<T> {
+    ): DbFindRes<Map<String, Any?>> {
+
+        val columns = context.getColumns()
+        val typesConverter = context.getTypesConverter()
 
         if (columns.isEmpty()) {
             return DbFindRes(emptyList(), 0)
         }
-        updateSchemaCacheIfRequired()
+
+        val permsColumn = getPermsColumn(context)
+
+        if (permsColumn.isNotEmpty() && !context.getPermsService().isTableExists()) {
+            return DbFindRes(emptyList(), 0)
+        }
+
         val columnsByName = columns.associateBy { it.name }
 
         val queryGroupBy = ArrayList(groupBy)
@@ -527,10 +468,11 @@ class DbEntityRepoPg<T : Any>(
         }
 
         val params = mutableListOf<Any?>()
-        val sqlCondition = toSqlCondition(predicate, params, columnsByName)
+        val sqlCondition = toSqlCondition(context, predicate, params)
         val query = createSelectQuery(
+            context,
             columns,
-            isAuthEnabled(),
+            permsColumn,
             withDeleted,
             sqlCondition,
             sort,
@@ -539,17 +481,16 @@ class DbEntityRepoPg<T : Any>(
             selectFunctions
         )
 
-        val resultEntities = dataSource.query(query, params) { resultSet ->
-            val resultList = mutableListOf<T>()
+        val resultEntities = context.getDataSource().query(query, params) { resultSet ->
+            val resultList = mutableListOf<Map<String, Any?>>()
             while (resultSet.next()) {
                 resultList.add(
-                    mapper.convertToEntity(
-                        convertRowToMap(
-                            resultSet,
-                            columns,
-                            queryGroupBy,
-                            selectFunctions
-                        )
+                    convertRowToMap(
+                        typesConverter,
+                        resultSet,
+                        columns,
+                        queryGroupBy,
+                        selectFunctions
                     )
                 )
             }
@@ -559,14 +500,15 @@ class DbEntityRepoPg<T : Any>(
         val totalCount = if (page.maxItems == -1) {
             resultEntities.size.toLong() + page.skipCount
         } else {
-            getCountImpl(sqlCondition, params)
+            getCountImpl(context, sqlCondition, params)
         }
         return DbFindRes(resultEntities, totalCount)
     }
 
     private fun createSelectQuery(
+        context: DbTableContext,
         selectColumns: List<DbColumnDef>,
-        withAuth: Boolean,
+        permsColumn: String,
         withDeleted: Boolean = false,
         condition: String,
         sort: List<DbFindSort> = emptyList(),
@@ -599,8 +541,9 @@ class DbEntityRepoPg<T : Any>(
         selectColumnsStr.setLength(selectColumnsStr.length - 1)
 
         return createSelectQuery(
+            context,
             selectColumnsStr.toString(),
-            withAuth,
+            permsColumn,
             withDeleted,
             condition,
             sort,
@@ -610,8 +553,9 @@ class DbEntityRepoPg<T : Any>(
     }
 
     private fun createSelectQuery(
+        context: DbTableContext,
         selectColumns: String,
-        withAuth: Boolean,
+        permsColumn: String,
         withDeleted: Boolean,
         condition: String,
         sort: List<DbFindSort> = emptyList(),
@@ -620,30 +564,30 @@ class DbEntityRepoPg<T : Any>(
         innerAuthSelect: Boolean = false
     ): String {
 
-        val delCondition = if (hasDeletedFlag && !withDeleted) {
+        val delCondition = if (context.hasDeleteFlag() && !withDeleted) {
             "\"${DbEntity.DELETED}\"!=true"
         } else {
             ""
         }
 
         val query = StringBuilder()
-        query.append("SELECT $selectColumns FROM ${tableRef.fullName} \"$RECORD_TABLE_ALIAS\"")
+        query.append("SELECT $selectColumns FROM ${context.getTableRef().fullName} \"$RECORD_TABLE_ALIAS\"")
 
-        if (withAuth) {
+        if (permsColumn.isNotEmpty()) {
 
             if (innerAuthSelect) {
-                joinWithAuthorities(query)
+                joinWithAuthorities(context, query, permsColumn)
             }
             query.append(" WHERE ")
             if (innerAuthSelect) {
-                val currentAuthCondition = getCurrentUserAuthoritiesCondition()
+                val currentAuthCondition = getCurrentUserAuthoritiesCondition(context)
                 if (currentAuthCondition == ALWAYS_FALSE_CONDITION) {
                     query.append(ALWAYS_FALSE_CONDITION)
                 } else {
                     query.append(joinConditionsByAnd(delCondition, currentAuthCondition, condition))
                 }
                 query.append(" GROUP BY ")
-                appendRecordColumnName(query, "id")
+                appendRecordColumnName(query, permsColumn)
                 query.append(" HAVING bool_and(\"")
                     .append(PERMS_TABLE_ALIAS)
                     .append("\".\"")
@@ -652,8 +596,9 @@ class DbEntityRepoPg<T : Any>(
                 addSortAndPage(query, sort, page)
             } else {
                 val innerQuery = createSelectQuery(
-                    selectColumns = "\"$RECORD_TABLE_ALIAS\".\"id\"",
-                    withAuth = true,
+                    context,
+                    selectColumns = "\"$RECORD_TABLE_ALIAS\".\"$permsColumn\"",
+                    permsColumn = permsColumn,
                     withDeleted = withDeleted,
                     condition = condition,
                     sort,
@@ -663,7 +608,7 @@ class DbEntityRepoPg<T : Any>(
                 if (hasAlwaysFalseCondition(innerQuery)) {
                     query.append(ALWAYS_FALSE_CONDITION)
                 } else {
-                    appendRecordColumnName(query, "id")
+                    appendRecordColumnName(query, permsColumn)
                     query.append(" IN (")
                         .append(innerQuery)
                         .append(")")
@@ -731,16 +676,19 @@ class DbEntityRepoPg<T : Any>(
         return condition
     }
 
-    private fun prepareValuesForDb(entity: Map<String, Any?>): List<ValueForDb> {
-        return columns.mapNotNull { column ->
-            if (!entity.containsKey(column.name)) {
-                null
+    private fun prepareValuesForDb(
+        columns: List<DbColumnDef>,
+        converter: DbTypesConverter,
+        entities: List<Map<String, Any?>>
+    ): List<ValueForDb> {
+        return columns.map { column ->
+            val placeholder = if (column.type == DbColumnType.JSON) {
+                "?::jsonb"
             } else {
-                val placeholder = if (column.type == DbColumnType.JSON) {
-                    "?::jsonb"
-                } else {
-                    "?"
-                }
+                "?"
+            }
+            val values = ArrayList<Any?>(entities.size)
+            for (entity in entities) {
                 var value = entity[column.name]
                 value = if (value == null) {
                     null
@@ -748,7 +696,7 @@ class DbEntityRepoPg<T : Any>(
                     val multiple = column.multiple && column.type != DbColumnType.JSON
                     val targetType = getParamTypeForColumn(column.type, multiple)
                     try {
-                        typesConverter.convert(value, targetType)
+                        converter.convert(value, targetType)
                     } catch (exception: RuntimeException) {
                         throw RuntimeException(
                             "Column data conversion failed. Column: ${column.name} Target type: $targetType " +
@@ -757,8 +705,9 @@ class DbEntityRepoPg<T : Any>(
                         )
                     }
                 }
-                ValueForDb(column.name, placeholder, value)
+                values.add(value)
             }
+            ValueForDb(column.name, placeholder, values)
         }
     }
 
@@ -783,26 +732,27 @@ class DbEntityRepoPg<T : Any>(
         }
     }
 
-    private fun joinWithAuthorities(query: StringBuilder) {
-        query.append(" INNER JOIN ${config.permsTable.fullName} \"$PERMS_TABLE_ALIAS\" ")
-            .append("ON \"$RECORD_TABLE_ALIAS\".id=")
-            .append("\"$PERMS_TABLE_ALIAS\".\"${DbPermsEntity.RECORD_ID}\" ")
-        query.append("INNER JOIN ${config.authoritiesTable.fullName} \"$AUTHORITIES_TABLE_ALIAS\" ")
-            .append("ON \"$PERMS_TABLE_ALIAS\".\"${DbPermsEntity.AUTHORITY_ID}\"=")
-            .append("\"$AUTHORITIES_TABLE_ALIAS\".\"${DbAuthorityEntity.ID}\"")
+    private fun joinWithAuthorities(context: DbTableContext, query: StringBuilder, permsColumn: String) {
+
+        val tableRef = context.getTableRef()
+        val permsTableName = tableRef.withTable(DbPermsEntity.TABLE).fullName
+
+        query.append(" INNER JOIN $permsTableName \"$PERMS_TABLE_ALIAS\" ")
+            .append("ON \"$RECORD_TABLE_ALIAS\".\"$permsColumn\"=")
+            .append("\"$PERMS_TABLE_ALIAS\".\"${DbPermsEntity.ENTITY_REF_ID}\"")
     }
 
-    private fun getCurrentUserAuthoritiesCondition(): String {
+    private fun getCurrentUserAuthoritiesCondition(context: DbTableContext): String {
 
-        val userAuthorities = AuthContext.getCurrentUserWithAuthorities().toMutableSet()
-        // legacy "everyone" authority
-        userAuthorities.add(RoleConstants.ROLE_EVERYONE)
-        userAuthorities.add(AuthGroup.EVERYONE)
+        val userAuthorities = context.getCurrentUserAuthorityIds()
 
+        if (userAuthorities.isEmpty()) {
+            return ALWAYS_FALSE_CONDITION
+        }
         val query = StringBuilder()
-        query.append("\"$AUTHORITIES_TABLE_ALIAS\".\"${DbAuthorityEntity.EXT_ID}\" IN (")
+        query.append("\"$PERMS_TABLE_ALIAS\".\"${DbPermsEntity.AUTHORITY_ID}\" IN (")
         for (authority in userAuthorities) {
-            query.append("'").append(authority).append("'").append(",")
+            query.append(authority).append(",")
         }
         query.setLength(query.length - 1)
         query.append(")")
@@ -810,20 +760,20 @@ class DbEntityRepoPg<T : Any>(
     }
 
     private fun toSqlCondition(
+        context: DbTableContext,
         predicate: Predicate,
-        queryParams: MutableList<Any?>,
-        columnsByName: Map<String, DbColumnDef>
+        queryParams: MutableList<Any?>
     ): String {
         val sb = StringBuilder()
-        toSqlCondition(sb, predicate, queryParams, columnsByName)
+        toSqlCondition(context, sb, predicate, queryParams)
         return sb.toString()
     }
 
     private fun toSqlCondition(
+        context: DbTableContext,
         query: StringBuilder,
         predicate: Predicate,
-        queryParams: MutableList<Any?>,
-        columnsByName: Map<String, DbColumnDef>
+        queryParams: MutableList<Any?>
     ): Boolean {
 
         when (predicate) {
@@ -838,7 +788,7 @@ class DbEntityRepoPg<T : Any>(
                 query.append("(")
                 var notEmpty = false
                 for (innerPred in predicate.getPredicates()) {
-                    if (toSqlCondition(query, innerPred, queryParams, columnsByName)) {
+                    if (toSqlCondition(context, query, innerPred, queryParams)) {
                         query.append(joinOperator)
                         notEmpty = true
                     }
@@ -852,9 +802,10 @@ class DbEntityRepoPg<T : Any>(
                     false
                 }
             }
+
             is ValuePredicate -> {
 
-                val columnDef = columnsByName[predicate.getAttribute()]
+                val columnDef = context.getColumnByName(predicate.getAttribute())
                     ?: error("column is not found: ${predicate.getAttribute()}")
 
                 val type = predicate.getType()
@@ -891,6 +842,7 @@ class DbEntityRepoPg<T : Any>(
                         } else {
                             "LIKE"
                         }
+
                     ValuePredicate.Type.GT -> ">"
                     ValuePredicate.Type.GE -> ">="
                     ValuePredicate.Type.LT -> "<"
@@ -915,11 +867,19 @@ class DbEntityRepoPg<T : Any>(
                                 query.append(",")
                             }
                             query.append("?")
-                            queryParams.add(v.asText())
+                            val convertedValue = when (columnDef.type) {
+                                DbColumnType.TEXT -> v.asText()
+                                DbColumnType.LONG -> v.asLong()
+                                DbColumnType.INT -> v.asInt()
+                                DbColumnType.BOOLEAN -> v.asBoolean()
+                                else -> v.asJavaObj()
+                            }
+                            queryParams.add(convertedValue)
                             first = false
                         }
                         query.append(")")
                     }
+
                     ValuePredicate.Type.EQ,
                     ValuePredicate.Type.LIKE,
                     ValuePredicate.Type.GT,
@@ -992,18 +952,20 @@ class DbEntityRepoPg<T : Any>(
                 }
                 return true
             }
+
             is NotPredicate -> {
                 query.append("NOT ")
-                return if (toSqlCondition(query, predicate.getPredicate(), queryParams, columnsByName)) {
+                return if (toSqlCondition(context, query, predicate.getPredicate(), queryParams)) {
                     true
                 } else {
                     query.setLength(query.length - 4)
                     false
                 }
             }
+
             is EmptyPredicate -> {
 
-                val columnDef = columnsByName[predicate.getAttribute()] ?: return false
+                val columnDef = context.getColumnByName(predicate.getAttribute()) ?: return false
                 val attribute: String = predicate.getAttribute()
                 if (columnDef.multiple) {
                     query.append("array_length(")
@@ -1021,9 +983,11 @@ class DbEntityRepoPg<T : Any>(
                 }
                 return true
             }
+
             is VoidPredicate -> {
                 return false
             }
+
             else -> {
                 log.error { "Unknown predicate type: ${predicate::class}" }
                 return false
@@ -1037,20 +1001,19 @@ class DbEntityRepoPg<T : Any>(
             .append("\"")
     }
 
-    private fun updateSchemaCacheIfRequired() {
-        if (schemaCacheUpdateRequired) {
-            dataSource.updateSchema("DEALLOCATE ALL")
-            schemaCacheUpdateRequired = false
-        }
-    }
-
-    override fun getTableRef(): DbTableRef {
-        return tableRef
-    }
-
     private data class ValueForDb(
         val name: String,
         val placeholder: String,
-        val value: Any?
+        val values: List<Any?>
+    )
+
+    private data class EntityToUpdate(
+        val id: Long,
+        val data: Map<String, Any?>
+    )
+
+    private data class EntityToInsert(
+        val resIdIdx: Int,
+        val data: Map<String, Any?>
     )
 }

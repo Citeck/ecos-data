@@ -9,7 +9,7 @@ class DefaultDbPermsComponent : DbPermsComponent {
         private val AUTHORITIES_WITH_READ_PERMS = setOf(AuthGroup.EVERYONE)
     }
 
-    override fun getRecordPerms(recordRef: EntityRef): DbRecordPerms {
+    override fun getEntityPerms(entityRef: EntityRef): DbRecordPerms {
         return DefaultRecPerms()
     }
 

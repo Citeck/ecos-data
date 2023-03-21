@@ -45,7 +45,7 @@ class DbRecordsDaoJsonArrayTest : DbRecordsTestBase() {
         )
 
         dbDataSource.withTransaction(true) {
-            assertThat(dbSchemaDao.getColumns()).contains(
+            assertThat(getColumns()).contains(
                 // check that json columns created with multiple: false
                 DbColumnDef.create {
                     withName(jsonAttSingle)
@@ -105,7 +105,7 @@ class DbRecordsDaoJsonArrayTest : DbRecordsTestBase() {
         )
 
         val arrayWithFirstElement = DataValue.createArr()
-        arrayWithFirstElement.add(arrayValue.get(0))
+        arrayWithFirstElement.add(arrayValue[0])
         assertThat(multiValues.getAtt(jsonAttSingle)).isEqualTo(arrayWithFirstElement)
         assertThat(multiValues.getAtt(jsonAttMultiple)).isEqualTo(arrayValue)
 

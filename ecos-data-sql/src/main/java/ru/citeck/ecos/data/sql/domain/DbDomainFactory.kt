@@ -1,37 +1,37 @@
 package ru.citeck.ecos.data.sql.domain
 
 import ru.citeck.ecos.data.sql.content.DbContentService
-import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
-import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
+import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
+import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigrationContext
+import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
-import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.model.lib.ModelServiceFactory
-import ru.citeck.ecos.webapp.api.content.EcosContentWriter
-import java.io.OutputStream
+import ru.citeck.ecos.webapp.api.EcosWebAppApi
 
 class DbDomainFactory(
+    val dataSource: DbDataSource,
     val modelServices: ModelServiceFactory,
-    val dataSource: DbDataSource?,
-    val dataServiceFactory: DbDataServiceFactory,
     val permsComponent: DbPermsComponent,
     val computedAttsComponent: DbComputedAttsComponent,
-    val recordRefServiceSupplier: (DbDataSource, String) -> DbRecordRefService,
-    val dbContentServiceSupplier: (DbDataSource, EcosContentWriterFactory, String) -> DbContentService,
-    val defaultListeners: List<DbRecordsListener>
+    val defaultListeners: List<DbRecordsListener>,
+    dataServiceFactory: DbDataServiceFactory,
+    val webAppApi: EcosWebAppApi
 ) {
 
-    val contentWriterFactory: EcosContentWriterFactory = object : EcosContentWriterFactory {
-        override fun createWriter(output: OutputStream): EcosContentWriter {
-            return EcosContentWriterImpl(output)
-        }
-    }
+    private val dataSourceContext = DbDataSourceContext(
+        webAppApi.getProperties().appName,
+        dataSource,
+        dataServiceFactory
+    )
+
+    private val migrationService = DbMigrationService()
 
     fun create(domainConfig: DbDomainConfig): Builder {
         return Builder(domainConfig)
@@ -39,18 +39,12 @@ class DbDomainFactory(
 
     inner class Builder(val domainConfig: DbDomainConfig) {
 
-        var dataSource: DbDataSource? = null
+        var schema: String = ""
         var permsComponent: DbPermsComponent? = null
         var computedAttsComponent: DbComputedAttsComponent? = null
         var dbContentService: DbContentService? = null
         var listeners: List<DbRecordsListener>? = null
         var excludeDefaultListeners: Boolean = false
-        var contentWriterFactory: EcosContentWriterFactory? = null
-
-        fun withDataSource(dataSource: DbDataSource): Builder {
-            this.dataSource = dataSource
-            return this
-        }
 
         fun withPermsComponent(permsComponent: DbPermsComponent): Builder {
             this.permsComponent = permsComponent
@@ -77,32 +71,27 @@ class DbDomainFactory(
             return this
         }
 
+        fun withSchema(schema: String?): Builder {
+            this.schema = schema ?: ""
+            return this
+        }
+
         fun build(): DbRecordsDao {
 
-            val dataSource = dataSource ?: this@DbDomainFactory.dataSource
-                ?: error("dataSource is null")
+            val schemaContext = dataSourceContext.getSchemaContext(schema)
 
             val dataService = DbDataServiceImpl(
                 DbEntity::class.java,
                 domainConfig.dataService,
-                dataSource,
-                dataServiceFactory
+                schemaContext
             )
-
-            val schema = domainConfig.dataService.tableRef.schema
 
             val recordsDao = DbRecordsDao(
                 domainConfig.recordsDao,
                 modelServices,
                 dataService,
-                recordRefServiceSupplier.invoke(dataSource, schema),
                 permsComponent ?: this@DbDomainFactory.permsComponent,
-                computedAttsComponent ?: this@DbDomainFactory.computedAttsComponent,
-                this.dbContentService ?: dbContentServiceSupplier.invoke(
-                    dataSource,
-                    contentWriterFactory ?: this@DbDomainFactory.contentWriterFactory,
-                    schema
-                )
+                computedAttsComponent ?: this@DbDomainFactory.computedAttsComponent
             )
 
             if (!excludeDefaultListeners) {
@@ -113,6 +102,16 @@ class DbDomainFactory(
             listeners?.forEach {
                 recordsDao.addListener(it)
             }
+
+            val migrationContext = DbDomainMigrationContext(dataService, schemaContext)
+            if (webAppApi.isReady()) {
+                migrationService.runMigrations(migrationContext)
+            } else {
+                webAppApi.doBeforeAppReady {
+                    migrationService.runMigrations(migrationContext)
+                }
+            }
+
             return recordsDao
         }
     }

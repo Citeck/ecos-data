@@ -7,10 +7,7 @@ import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
 import ru.citeck.ecos.data.sql.dto.fk.FkCascadeActionOptions
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 
-class DbSchemaDaoPg(
-    private val dataSource: DbDataSource,
-    private val tableRef: DbTableRef
-) : DbSchemaDao {
+open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
 
     companion object {
         val log = KotlinLogging.logger {}
@@ -31,7 +28,8 @@ class DbSchemaDaoPg(
         )
     }
 
-    override fun getColumns(): List<DbColumnDef> {
+    override fun getColumns(dataSource: DbDataSource, tableRef: DbTableRef): List<DbColumnDef> {
+
         return dataSource.withMetaData { metaData ->
             val schema = tableRef.schema.replace("_", "\\_").ifEmpty { "%" }
             val table = tableRef.table.replace("_", "\\_")
@@ -59,7 +57,7 @@ class DbSchemaDaoPg(
     }
 
     @Synchronized
-    override fun createTable(columns: List<DbColumnDef>) {
+    override fun createTable(dataSource: DbDataSource, tableRef: DbTableRef, columns: List<DbColumnDef>) {
 
         if (tableRef.schema.isNotBlank()) {
             dataSource.query(
@@ -87,27 +85,29 @@ class DbSchemaDaoPg(
         dataSource.updateSchema(queryBuilder.toString())
 
         columns.forEach {
-            addColumnIndex(it)
+            addColumnIndex(dataSource, tableRef, it)
         }
     }
 
     @Synchronized
-    override fun addColumns(columns: List<DbColumnDef>) {
+    override fun addColumns(dataSource: DbDataSource, tableRef: DbTableRef, columns: List<DbColumnDef>) {
 
         if (columns.isEmpty()) {
             return
         }
+
         columns.forEach { column ->
             val query = "ALTER TABLE ${tableRef.fullName} " +
                 "ADD COLUMN \"${column.name}\" " +
                 getColumnSqlType(column.type, column.multiple) +
                 getColumnSqlConstraintsWithSpaceIfNotEmpty(column.constraints)
             dataSource.updateSchema(query)
-            addColumnIndex(column)
+            addColumnIndex(dataSource, tableRef, column)
         }
     }
 
-    private fun addColumnIndex(column: DbColumnDef) {
+    private fun addColumnIndex(dataSource: DbDataSource, tableRef: DbTableRef, column: DbColumnDef) {
+
         if (!column.index.enabled || !INDEXED_COLUMN_TYPES.contains(column.type)) {
             return
         }
@@ -125,7 +125,7 @@ class DbSchemaDaoPg(
     }
 
     @Synchronized
-    override fun setColumnType(name: String, multiple: Boolean, newType: DbColumnType) {
+    override fun setColumnType(dataSource: DbDataSource, tableRef: DbTableRef, name: String, multiple: Boolean, newType: DbColumnType) {
 
         dataSource.withMetaData { metaData ->
 
@@ -179,7 +179,7 @@ class DbSchemaDaoPg(
         }
     }
 
-    override fun createFkConstraints(constraints: List<DbFkConstraint>) {
+    override fun createFkConstraints(dataSource: DbDataSource, tableRef: DbTableRef, constraints: List<DbFkConstraint>) {
 
         constraints.forEach { constraint ->
 
@@ -214,7 +214,7 @@ class DbSchemaDaoPg(
         }
     }
 
-    override fun setColumnConstraints(columnName: String, constraints: List<DbColumnConstraint>) {
+    override fun setColumnConstraints(dataSource: DbDataSource, tableRef: DbTableRef, columnName: String, constraints: List<DbColumnConstraint>) {
 
         for (constraint in constraints) {
 
@@ -230,7 +230,7 @@ class DbSchemaDaoPg(
         }
     }
 
-    override fun createIndexes(indexes: List<DbIndexDef>) {
+    override fun createIndexes(dataSource: DbDataSource, tableRef: DbTableRef, indexes: List<DbIndexDef>) {
 
         indexes.forEach { index ->
 
@@ -259,6 +259,10 @@ class DbSchemaDaoPg(
 
             dataSource.updateSchema(query.toString())
         }
+    }
+
+    override fun resetCache(dataSource: DbDataSource, tableRef: DbTableRef) {
+        dataSource.updateSchema("DEALLOCATE ALL")
     }
 
     private fun getColumnType(fullTypeName: String): Pair<DbColumnType, Boolean> {

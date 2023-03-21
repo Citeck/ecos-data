@@ -74,7 +74,7 @@ class EcosContentLocalStorage(
     }
 
     override fun runMigrations(mock: Boolean, diff: Boolean): List<String> {
-        return dataService.runMigrations(mock, diff, true)
+        return dataService.runMigrations(mock, diff)
     }
 
     override fun getType() = TYPE

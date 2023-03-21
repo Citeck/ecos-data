@@ -10,6 +10,10 @@ import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
+import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import kotlin.collections.ArrayList
@@ -31,7 +35,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
                 }
             )
         )
-        initServices(tableRef, true)
+        setPermsPolicy(TypePermsPolicy.OWN)
     }
 
     @Test
@@ -214,7 +218,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
 
         val testId = "test-id"
         val setRecPerms = { perms: List<String> ->
-            setAuthoritiesWithReadPerms(EntityRef.create(recordsDao.getId(), testId), perms)
+            setAuthoritiesWithReadPerms(EntityRef.create(mainCtx.dao.getId(), testId), perms)
         }
         setRecPerms(listOf("user0", "user1"))
 
@@ -251,5 +255,95 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         }
 
         testTextAttValueAsUser0("123456")
+    }
+
+    @Test
+    fun testWithInheritedPolicy() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("parentAtt")
+                    .build()
+            )
+        )
+        registerType(
+            TypeInfo.create {
+                withId("child")
+                withPermsPolicy(TypePermsPolicy.INHERITED)
+                withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("childAtt")
+                                    .build()
+                            )
+                        ).build()
+                ).build()
+            }
+        )
+
+        val childrenDao = createRecordsDao(
+            tableRef = DEFAULT_TABLE_REF.withTable("children"),
+            typeRef = ModelUtils.getTypeRef("child"),
+            sourceId = "children"
+        )
+
+        val parentRef = mainCtx.createRecord("parentAtt" to "parentValue")
+        val childrenRef = childrenDao.createRecord(
+            "_parent" to parentRef,
+            "childAtt" to "childValue"
+        )
+
+        val daosToTest = listOf(
+            parentRef to mainCtx,
+            childrenRef to childrenDao
+        )
+
+        fun testPermissions(description: String, shouldBeAccessible: Boolean) {
+            daosToTest.forEach { refWithDao ->
+                val fullDesc = description + "-src-${refWithDao.second.dao.getId()}"
+                val queryRes = records.queryOne(refWithDao.second.createQuery())
+                val assertion = assertThat(queryRes)
+                    .describedAs(fullDesc)
+                if (shouldBeAccessible) {
+                    assertion.isEqualTo(refWithDao.first)
+                } else {
+                    assertion.isNull()
+                }
+                val (att, value) = if (refWithDao.second.dao.getId() == mainCtx.dao.getId()) {
+                    "parentAtt" to "parentValue"
+                } else {
+                    "childAtt" to "childValue"
+                }
+                val attValue = records.getAtt(refWithDao.first, att)
+                if (shouldBeAccessible) {
+                    assertThat(attValue.asText()).describedAs(fullDesc).isEqualTo(value)
+                } else {
+                    assertThat(attValue.isNull()).describedAs(fullDesc).isTrue
+                }
+                val notExists = records.getAtt(refWithDao.first, "_notExists?bool!").asBoolean()
+                if (shouldBeAccessible) {
+                    assertThat(notExists).describedAs(fullDesc).isFalse
+                } else {
+                    assertThat(notExists).describedAs(fullDesc).isTrue
+                }
+            }
+        }
+        testPermissions("system-with-default-perms", true)
+        AuthContext.runAs(EmptyAuth) {
+            testPermissions("empty-with-default-perms", false)
+        }
+
+        mainCtx.setAuthoritiesWithReadPerms(parentRef, listOf("user0"))
+
+        testPermissions("system-with-user0-perms", true)
+        AuthContext.runAs("user1") {
+            testPermissions("as-user-1", false)
+        }
+        AuthContext.runAs("user0") {
+            testPermissions("as-user-0", true)
+        }
     }
 }

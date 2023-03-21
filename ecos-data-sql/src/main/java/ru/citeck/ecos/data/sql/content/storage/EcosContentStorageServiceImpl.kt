@@ -57,11 +57,11 @@ class EcosContentStorageServiceImpl(
         return result
     }
 
-    fun register(storage: EcosContentStorage) {
+    override fun register(storage: EcosContentStorage) {
         register(storage.getType(), storage)
     }
 
-    fun register(type: String, storage: EcosContentStorage) {
+    override fun register(type: String, storage: EcosContentStorage) {
         this.storages[type] = storage
         storage.init(contentWriterFactory)
     }

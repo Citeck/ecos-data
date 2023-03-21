@@ -47,19 +47,22 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
         }
     }
 
-    override fun update(query: String, params: List<Any?>): Long {
+    override fun update(query: String, params: List<Any?>): List<Long> {
         return withConnection { connection ->
             val queryStart = System.currentTimeMillis()
             val result = try {
                 connection.prepareStatement(query).use { statement ->
                     setParams(connection, statement, params)
                     if (query.contains("RETURNING id")) {
+                        val ids = arrayListOf<Long>()
                         statement.executeQuery().use { rs ->
-                            rs.next()
-                            rs.getLong(1)
+                            while (rs.next()) {
+                                ids.add(rs.getLong(1))
+                            }
                         }
+                        ids
                     } else {
-                        statement.executeUpdate().toLong()
+                        listOf(statement.executeUpdate().toLong())
                     }
                 }
             } finally {

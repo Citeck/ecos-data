@@ -7,6 +7,7 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.txn.lib.TxnContext
 import java.util.UUID
@@ -16,7 +17,6 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
     @Test
     fun createInTxnPermsTest() {
 
-        initServices(authEnabled = true)
         registerAtts(
             listOf(
                 AttributeDef.create {
@@ -24,6 +24,7 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
                 }
             )
         )
+        setPermsPolicy(TypePermsPolicy.OWN)
 
         val ref = RecordRef.create(recordsDao.getId(), "test")
         setAuthoritiesWithWritePerms(ref, "user0")
@@ -48,7 +49,6 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
 
     @Test
     fun test() {
-        initServices(authEnabled = true)
         registerAtts(
             listOf(
                 AttributeDef.create {
@@ -56,6 +56,7 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
                 }
             )
         )
+        setPermsPolicy(TypePermsPolicy.OWN)
 
         val ref = RecordRef.create(recordsDao.getId(), "test-rec")
         setAuthoritiesWithWritePerms(ref, listOf("user0"))

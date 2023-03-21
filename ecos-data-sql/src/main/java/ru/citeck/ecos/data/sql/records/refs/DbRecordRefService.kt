@@ -1,14 +1,26 @@
 package ru.citeck.ecos.data.sql.records.refs
 
+import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataService
+import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
+import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordRefService(
     private val appName: String,
-    private val dataService: DbDataService<DbRecordRefEntity>
+    schemaCtx: DbSchemaContext
 ) {
+
+    private val dataService: DbDataService<DbRecordRefEntity> = DbDataServiceImpl(
+        DbRecordRefEntity::class.java,
+        DbDataServiceConfig.create {
+            withTable(DbRecordRefEntity.TABLE)
+        },
+        schemaCtx
+    )
+
     /**
      * Get or create record identifier for reference
      */
@@ -66,7 +78,7 @@ class DbRecordRefService(
     }
 
     fun getEntityRefsByIds(ids: List<Long>): List<EntityRef> {
-        val entities = dataService.findById(ids.toSet())
+        val entities = dataService.findByIds(ids.toSet())
         if (entities.size != ids.size) {
             error("RecordRef's count doesn't match. Ids: $ids Refs: ${entities.map { it.extId }}")
         }
@@ -75,7 +87,7 @@ class DbRecordRefService(
     }
 
     fun runMigrations(mock: Boolean, diff: Boolean): List<String> {
-        return dataService.runMigrations(mock, diff, true)
+        return dataService.runMigrations(mock, diff)
     }
 
     private fun fixEntityRef(entityRef: EntityRef): EntityRef {

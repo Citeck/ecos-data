@@ -5,8 +5,11 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
+import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.service.DbDataService
+import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
+import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
@@ -17,9 +20,18 @@ import java.time.Instant
 import java.util.UUID
 
 class DbContentServiceImpl(
-    private val dataService: DbDataService<DbContentEntity>,
-    private val contentStorageService: EcosContentStorageService
+    private val contentStorageService: EcosContentStorageService,
+    private val schemaCtx: DbSchemaContext
 ) : DbContentService, DbMigrationsExecutor {
+
+    private val dataService: DbDataService<DbContentEntity> = DbDataServiceImpl(
+        DbContentEntity::class.java,
+        DbDataServiceConfig.create {
+            withTable(DbContentEntity.TABLE)
+            withStoreTableMeta(true)
+        },
+        schemaCtx
+    )
 
     override fun uploadContent(
         name: String?,
@@ -30,7 +42,7 @@ class DbContentServiceImpl(
     ): DbEcosContentData {
 
         val nnName = (name ?: "").ifBlank { UUID.randomUUID().toString() }
-        val nnMimeType = (mimeType ?: "").ifBlank { "application/octet-stream" }
+        val nnMimeType = (mimeType ?: "").ifBlank { MimeTypes.APP_BIN_TEXT }
         val nnEncoding = encoding ?: ""
         val nnStorage = (storage ?: "").ifBlank { EcosContentLocalStorage.TYPE }
 
@@ -93,7 +105,7 @@ class DbContentServiceImpl(
     }
 
     override fun runMigrations(mock: Boolean, diff: Boolean): List<String> {
-        var result = dataService.runMigrations(emptyList(), mock, diff, true)
+        var result = dataService.runMigrations(emptyList(), mock, diff)
         if (contentStorageService is DbMigrationsExecutor) {
             val newRes = ArrayList(result)
             newRes.addAll(contentStorageService.runMigrations(mock, diff))

@@ -6,6 +6,7 @@ import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.txn.lib.TxnContext
@@ -29,12 +30,12 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
             )
         )
 
-        val mainRec = RecordAtts(EntityRef.create(recordsDao.getId(), ""))
+        val mainRec = RecordAtts(EntityRef.create(mainCtx.dao.getId(), ""))
         mainRec.setAtt("strField", "parent-test")
         mainRec.setAtt("childAssoc?assoc", "alias-123")
         mainRec.setAtt("_type", REC_TEST_TYPE_REF)
 
-        val childRec = RecordAtts(EntityRef.create(recordsDao.getId(), ""))
+        val childRec = RecordAtts(EntityRef.create(mainCtx.dao.getId(), ""))
         childRec.setAtt("_alias", "alias-123")
         childRec.setAtt("strField", "child-test")
         childRec.setAtt("_type", REC_TEST_TYPE_REF)
@@ -54,7 +55,7 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
         val otherSourceId = "other-source-id"
         val mutatedRecords2 = RequestContext.doWithCtx({ ctxData ->
-            ctxData.withSourceIdMapping(mapOf(recordsDao.getId() to otherSourceId))
+            ctxData.withSourceIdMapping(mapOf(mainCtx.dao.getId() to otherSourceId))
         }) {
             records.mutate(listOf(mainRec, childRec))
         }
@@ -64,8 +65,6 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
     @Test
     fun createNewChildrenTest() {
-
-        initServices(authEnabled = true, appName = "testApp")
 
         registerAtts(
             listOf(
@@ -77,6 +76,7 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
                 }
             )
         )
+        setPermsPolicy(TypePermsPolicy.OWN)
 
         val refs = mutableListOf<EntityRef>()
 

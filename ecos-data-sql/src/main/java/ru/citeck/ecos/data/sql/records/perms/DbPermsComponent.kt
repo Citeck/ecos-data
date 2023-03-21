@@ -4,5 +4,7 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 interface DbPermsComponent {
 
-    fun getRecordPerms(recordRef: EntityRef): DbRecordPerms
+    // fun isInheritPermissionsForType(): Boolean
+
+    fun getEntityPerms(entityRef: EntityRef): DbRecordPerms
 }

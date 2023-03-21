@@ -9,13 +9,9 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.context.lib.auth.AuthContext
-import ru.citeck.ecos.data.sql.content.DbContentServiceImpl
-import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
-import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl
-import ru.citeck.ecos.data.sql.content.storage.local.DbContentDataEntity
-import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
-import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
-import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
+import ru.citeck.ecos.data.sql.context.DbDataSourceContext
+import ru.citeck.ecos.data.sql.context.DbSchemaContext
+import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
@@ -27,7 +23,6 @@ import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.records.perms.DefaultDbPermsComponent
-import ru.citeck.ecos.data.sql.records.refs.DbRecordRefEntity
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
@@ -43,6 +38,7 @@ import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.model.lib.num.repo.NumTemplatesRepo
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
@@ -59,15 +55,15 @@ import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.txn.lib.manager.TransactionManagerImpl
 import ru.citeck.ecos.txn.lib.resource.type.xa.JavaXaTxnManagerAdapter
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
-import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import ru.citeck.ecos.webapp.api.entity.EntityRef
-import java.io.OutputStream
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 abstract class DbRecordsTestBase {
 
     companion object {
+        const val APP_NAME = "test-app"
         const val RECS_DAO_ID = "test"
         const val REC_TEST_TYPE_ID = "test-type"
 
@@ -78,37 +74,42 @@ abstract class DbRecordsTestBase {
         const val COLUMN_TABLE_SCHEMA = "TABLE_SCHEM"
         const val COLUMN_TABLE_NAME = "TABLE_NAME"
 
-        private val DEFAULT_TABLE = DbTableRef("records-test-schema", "test-records-table")
+        val DEFAULT_TABLE_REF = DbTableRef("records-test-schema", "test-records-table")
     }
 
     private val typesInfo = mutableMapOf<String, TypeInfo>()
     private val aspectsInfo = mutableMapOf<String, AspectInfo>()
     private val numTemplates = mutableMapOf<String, NumTemplateDef>()
 
-    private val recReadPerms = mutableMapOf<EntityRef, Set<String>>()
-    private val recWritePerms = mutableMapOf<EntityRef, Set<String>>()
-
-    private val recAttReadPerms = mutableMapOf<Pair<EntityRef, String>, Set<String>>()
-    private val recAttWritePerms = mutableMapOf<Pair<EntityRef, String>, Set<String>>()
-
-    lateinit var recordsDao: DbRecordsDao
     lateinit var records: RecordsService
     lateinit var recordsServiceFactory: RecordsServiceFactory
     lateinit var dbDataSource: DbDataSource
-    lateinit var tableRef: DbTableRef
+    lateinit var dataSourceCtx: DbDataSourceContext
+
     lateinit var dbSchemaDao: DbSchemaDao
-    lateinit var dataService: DbDataService<DbEntity>
-    lateinit var dbRecordRefDataService: DbDataService<DbRecordRefEntity>
     lateinit var dbRecordRefService: DbRecordRefService
     lateinit var dataSource: BasicDataSource
+    lateinit var computedAttsComponent: DbComputedAttsComponent
+    lateinit var modelServiceFactory: ModelServiceFactory
+
+    lateinit var webAppApi: EcosWebAppApiMock
+
+    lateinit var mainCtx: RecordsDaoTestCtx
+    private var mainCtxInitialized = false
+    private val registeredRecordsDao = ArrayList<RecordsDaoTestCtx>()
+
+    private var schemaContexts = ConcurrentHashMap<String, DbSchemaContext>()
+
+    val tableRef: DbTableRef
+        get() = mainCtx.tableRef
+
+    val recordsDao: DbRecordsDao
+        get() = mainCtx.dao
 
     val log = KotlinLogging.logger {}
 
-    val baseQuery = RecordsQuery.create {
-        withSourceId(RECS_DAO_ID)
-        withLanguage(PredicateService.LANGUAGE_PREDICATE)
-        withQuery(VoidPredicate.INSTANCE)
-    }
+    val baseQuery: RecordsQuery
+        get() = mainCtx.baseQuery
 
     @BeforeEach
     fun beforeEachBase() {
@@ -116,12 +117,104 @@ abstract class DbRecordsTestBase {
         typesInfo.clear()
         aspectsInfo.clear()
         numTemplates.clear()
-        recReadPerms.clear()
-        recWritePerms.clear()
-        recAttReadPerms.clear()
-        recAttWritePerms.clear()
+        schemaContexts.clear()
 
-        initServices()
+        if (mainCtxInitialized) {
+            mainCtx.clear()
+
+            val daoToClean = ArrayList(registeredRecordsDao)
+            registeredRecordsDao.clear()
+            daoToClean.forEach {
+                records.unregister(it.dao.getId())
+            }
+        } else {
+
+            webAppApi = EcosWebAppApiMock(APP_NAME)
+
+            val dataSource = BasicManagedDataSource()
+            dataSource.transactionManager = JavaXaTxnManagerAdapter(webAppApi.getProperties())
+            dataSource.xaDataSourceInstance = TestContainers.getPostgres().getXaDataSource()
+            dataSource.defaultAutoCommit = false
+            dataSource.autoCommitOnReturn = false
+            this.dataSource = dataSource
+
+            val jdbcDataSource = object : JdbcDataSource {
+                override fun getJavaDataSource() = dataSource
+                override fun isManaged() = true
+            }
+
+            dbDataSource = DbDataSourceImpl(jdbcDataSource)
+            dataSourceCtx = DbDataSourceContext(webAppApi.appName, dbDataSource, PgDataServiceFactory())
+
+            TxnContext.setManager(TransactionManagerImpl(webAppApi))
+
+            recordsServiceFactory = object : RecordsServiceFactory() {
+                override fun getEcosWebAppApi(): EcosWebAppApi {
+                    return webAppApi
+                }
+            }
+
+            val numCounters = mutableMapOf<EntityRef, AtomicLong>()
+            modelServiceFactory = object : ModelServiceFactory() {
+
+                override fun createAspectsRepo(): AspectsRepo {
+                    return object : AspectsRepo {
+                        override fun getAspectInfo(aspectRef: EntityRef): AspectInfo? {
+                            return aspectsInfo[aspectRef.getLocalId()]
+                        }
+
+                        override fun getAspectsForAtts(attributes: Set<String>): List<EntityRef> {
+                            return aspectsInfo.values.filter { aspect ->
+                                aspect.attributes.any { attributes.contains(it.id) } ||
+                                    aspect.systemAttributes.any { attributes.contains(it.id) }
+                            }.map { ModelUtils.getAspectRef(it.id) }
+                        }
+                    }
+                }
+
+                override fun createTypesRepo(): TypesRepo {
+                    return object : TypesRepo {
+                        override fun getChildren(typeRef: EntityRef) = emptyList<EntityRef>()
+                        override fun getTypeInfo(typeRef: EntityRef): TypeInfo? {
+                            return typesInfo[typeRef.getLocalId()]
+                        }
+                    }
+                }
+
+                override fun createNumTemplatesRepo(): NumTemplatesRepo {
+                    return object : NumTemplatesRepo {
+                        override fun getNumTemplate(templateRef: EntityRef): NumTemplateDef? {
+                            return numTemplates[templateRef.getLocalId()]
+                        }
+                    }
+                }
+
+                override fun createEcosModelAppApi(): EcosModelAppApi {
+                    return object : EcosModelAppApi {
+                        override fun getNextNumberForModel(model: ObjectData, templateRef: EntityRef): Long {
+                            return numCounters.computeIfAbsent(templateRef) { AtomicLong() }.incrementAndGet()
+                        }
+                    }
+                }
+
+                override fun getEcosWebAppApi(): EcosWebAppApi {
+                    return webAppApi
+                }
+            }
+            modelServiceFactory.setRecordsServices(recordsServiceFactory)
+
+            records = recordsServiceFactory.recordsServiceV1
+            RequestContext.setDefaultServices(recordsServiceFactory)
+        }
+
+        mainCtx = createRecordsDao()
+        mainCtxInitialized = true
+    }
+
+    private fun getOrCreateSchemaCtx(schema: String): DbSchemaContext {
+        return schemaContexts.computeIfAbsent(schema) {
+            dataSourceCtx.getSchemaContext(schema)
+        }
     }
 
     @AfterEach
@@ -132,11 +225,11 @@ abstract class DbRecordsTestBase {
     }
 
     fun setAuthoritiesWithAttReadPerms(rec: EntityRef, att: String, vararg authorities: String) {
-        recAttReadPerms[rec to att] = authorities.toSet()
+        mainCtx.setAuthoritiesWithAttReadPerms(rec, att, *authorities)
     }
 
     fun setAuthoritiesWithAttWritePerms(rec: EntityRef, att: String, vararg authorities: String) {
-        recAttWritePerms[rec to att] = authorities.toSet()
+        mainCtx.setAuthoritiesWithAttWritePerms(rec, att, *authorities)
     }
 
     fun setAuthoritiesWithWritePerms(rec: EntityRef, vararg authorities: String) {
@@ -144,154 +237,82 @@ abstract class DbRecordsTestBase {
     }
 
     fun setAuthoritiesWithWritePerms(rec: EntityRef, authorities: Collection<String>) {
-        recWritePerms[rec] = authorities.toSet()
-        addAuthoritiesWithReadPerms(rec, authorities)
+        mainCtx.setAuthoritiesWithWritePerms(rec, authorities)
     }
 
     fun setAuthoritiesWithReadPerms(rec: EntityRef, authorities: Collection<String>) {
-        recReadPerms[rec] = authorities.toSet()
-        recordsDao.updatePermissions(listOf(rec.getLocalId()))
+        mainCtx.setAuthoritiesWithReadPerms(rec, authorities)
     }
 
     fun setAuthoritiesWithReadPerms(rec: EntityRef, vararg authorities: String) {
-        setAuthoritiesWithReadPerms(rec, authorities.toSet())
+        mainCtx.setAuthoritiesWithReadPerms(rec, *authorities)
     }
 
     fun addAuthoritiesWithReadPerms(rec: EntityRef, authorities: Collection<String>) {
-        val readPerms = recReadPerms[rec]?.toMutableSet() ?: mutableSetOf()
-        readPerms.addAll(authorities)
-        setAuthoritiesWithReadPerms(rec, readPerms)
+        mainCtx.addAuthoritiesWithReadPerms(rec, authorities)
     }
 
     fun addAuthoritiesWithReadPerms(rec: EntityRef, vararg authorities: String) {
-        addAuthoritiesWithReadPerms(rec, authorities.toSet())
+        mainCtx.addAuthoritiesWithReadPerms(rec, *authorities)
     }
 
-    fun initServices(
-        tableRef: DbTableRef = DEFAULT_TABLE,
-        authEnabled: Boolean = false,
-        typeRef: EntityRef = EntityRef.EMPTY,
-        inheritParentPerms: Boolean = true,
-        appName: String = ""
-    ) {
+    fun getTableCtx(): DbTableContext {
+        return mainCtx.dataService.getTableContext()
+    }
 
-        this.tableRef = tableRef
-        val webAppApi = EcosWebAppApiMock(appName)
+    fun createRecordsDao(
+        tableRef: DbTableRef = DEFAULT_TABLE_REF,
+        typeRef: EntityRef = ModelUtils.getTypeRef(REC_TEST_TYPE_ID),
+        sourceId: String = RECS_DAO_ID
+    ): RecordsDaoTestCtx {
 
-        val dataSource = BasicManagedDataSource()
-        dataSource.transactionManager = JavaXaTxnManagerAdapter(webAppApi.getProperties())
-        dataSource.xaDataSourceInstance = TestContainers.getPostgres().getXaDataSource()
-        dataSource.defaultAutoCommit = false
-        dataSource.autoCommitOnReturn = false
-        this.dataSource = dataSource
-
-        val jdbcDataSource = object : JdbcDataSource {
-            override fun getJavaDataSource() = dataSource
-            override fun isManaged() = true
-        }
-
-        dbDataSource = DbDataSourceImpl(jdbcDataSource)
-
-        val pgDataServiceFactory = PgDataServiceFactory()
+        val schemaCtx = getOrCreateSchemaCtx(tableRef.schema)
+        dbSchemaDao = dataSourceCtx.schemaDao
 
         val dataServiceConfig = DbDataServiceConfig.create {
-            withAuthEnabled(authEnabled)
-            withTransactional(true)
-            withTableRef(tableRef)
+            withTable(tableRef.table)
         }
-        dataService = DbDataServiceImpl(
+        val dataService = DbDataServiceImpl(
             DbEntity::class.java,
             dataServiceConfig,
-            dbDataSource,
-            pgDataServiceFactory
+            schemaCtx
         )
 
-        TxnContext.setManager(TransactionManagerImpl(webAppApi))
-
-        recordsServiceFactory = object : RecordsServiceFactory() {
-            override fun getEcosWebAppApi(): EcosWebAppApi {
-                return webAppApi
-            }
-        }
-        val numCounters = mutableMapOf<EntityRef, AtomicLong>()
-        val modelServiceFactory = object : ModelServiceFactory() {
-
-            override fun createAspectsRepo(): AspectsRepo {
-                return object : AspectsRepo {
-                    override fun getAspectInfo(aspectRef: EntityRef): AspectInfo? {
-                        return aspectsInfo[aspectRef.getLocalId()]
-                    }
-                    override fun getAspectsForAtts(attributes: Set<String>): List<EntityRef> {
-                        return aspectsInfo.values.filter { aspect ->
-                            aspect.attributes.any { attributes.contains(it.id) } ||
-                                aspect.systemAttributes.any { attributes.contains(it.id) }
-                        }.map { ModelUtils.getAspectRef(it.id) }
-                    }
-                }
-            }
-
-            override fun createTypesRepo(): TypesRepo {
-                return object : TypesRepo {
-                    override fun getChildren(typeRef: EntityRef) = emptyList<EntityRef>()
-                    override fun getTypeInfo(typeRef: EntityRef): TypeInfo? {
-                        return typesInfo[typeRef.getLocalId()]
-                    }
-                }
-            }
-
-            override fun createNumTemplatesRepo(): NumTemplatesRepo {
-                return object : NumTemplatesRepo {
-                    override fun getNumTemplate(templateRef: EntityRef): NumTemplateDef? {
-                        return numTemplates[templateRef.getLocalId()]
-                    }
-                }
-            }
-
-            override fun createEcosModelAppApi(): EcosModelAppApi {
-                return object : EcosModelAppApi {
-                    override fun getNextNumberForModel(model: ObjectData, templateRef: EntityRef): Long {
-                        return numCounters.computeIfAbsent(templateRef) { AtomicLong() }.incrementAndGet()
-                    }
-                }
-            }
-
-            override fun getEcosWebAppApi(): EcosWebAppApi {
-                return webAppApi
-            }
-        }
-        modelServiceFactory.setRecordsServices(recordsServiceFactory)
-
-        records = recordsServiceFactory.recordsServiceV1
-        RequestContext.setDefaultServices(recordsServiceFactory)
-
         val defaultPermsComponent = DefaultDbPermsComponent()
+
+        val recReadPerms: MutableMap<EntityRef, Set<String>> = mutableMapOf()
+        val recWritePerms: MutableMap<EntityRef, Set<String>> = mutableMapOf()
+        val recAttReadPerms: MutableMap<Pair<EntityRef, String>, Set<String>> = mutableMapOf()
+        val recAttWritePerms: MutableMap<Pair<EntityRef, String>, Set<String>> = mutableMapOf()
+
         val permsComponent = object : DbPermsComponent {
-            override fun getRecordPerms(recordRef: EntityRef): DbRecordPerms {
+            override fun getEntityPerms(entityRef: EntityRef): DbRecordPerms {
+                val globalRef = entityRef.withDefaultAppName(APP_NAME)
                 return object : DbRecordPerms {
                     override fun getAuthoritiesWithReadPermission(): Set<String> {
-                        if (recReadPerms.containsKey(recordRef)) {
-                            return recReadPerms[recordRef]!!
+                        if (recReadPerms.containsKey(globalRef)) {
+                            return recReadPerms[globalRef]!!
                         }
-                        return defaultPermsComponent.getRecordPerms(recordRef)
+                        return defaultPermsComponent.getEntityPerms(globalRef)
                             .getAuthoritiesWithReadPermission()
                     }
 
                     override fun isCurrentUserHasWritePerms(): Boolean {
-                        val perms = recWritePerms[recordRef] ?: emptySet()
+                        val perms = recWritePerms[globalRef] ?: emptySet()
                         return perms.isEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
                             perms.contains(it)
                         }
                     }
 
                     override fun isCurrentUserHasAttWritePerms(name: String): Boolean {
-                        val writePerms = recAttWritePerms[recordRef to name]
+                        val writePerms = recAttWritePerms[globalRef to name]
                         return writePerms.isNullOrEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
                             writePerms.contains(it)
                         }
                     }
 
                     override fun isCurrentUserHasAttReadPerms(name: String): Boolean {
-                        val readPerms = recAttReadPerms[recordRef to name]
+                        val readPerms = recAttReadPerms[globalRef to name]
                         return readPerms.isNullOrEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
                             readPerms.contains(it)
                         }
@@ -300,145 +321,78 @@ abstract class DbRecordsTestBase {
             }
         }
 
-        val contentStorageService = EcosContentStorageServiceImpl(object : EcosContentWriterFactory {
-            override fun createWriter(output: OutputStream): EcosContentWriter {
-                return EcosContentWriterImpl(output)
+        computedAttsComponent = object : DbComputedAttsComponent {
+            override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: EntityRef): ObjectData {
+                return modelServiceFactory.computedAttsService.computeAttsToStore(value, isNewRecord, typeRef)
             }
-        })
-        contentStorageService.register(
-            EcosContentLocalStorage(
-                DbDataServiceImpl(
-                    DbContentDataEntity::class.java,
-                    DbDataServiceConfig.create {
-                        withTableRef(tableRef.withTable("ecos_content_data"))
-                        withStoreTableMeta(true)
-                    },
-                    dbDataSource,
-                    pgDataServiceFactory
-                )
-            )
-        )
-        val contentService = DbContentServiceImpl(
-            DbDataServiceImpl(
-                DbContentEntity::class.java,
-                DbDataServiceConfig.create {
-                    withTableRef(tableRef.withTable("ecos_content"))
-                    withStoreTableMeta(true)
-                },
-                dbDataSource,
-                pgDataServiceFactory
-            ),
-            contentStorageService
-        )
 
-        dbRecordRefDataService = DbDataServiceImpl(
-            DbRecordRefEntity::class.java,
-            DbDataServiceConfig.create {
-                withTableRef(tableRef.withTable("ecos_record_ref"))
-            },
-            dbDataSource,
-            pgDataServiceFactory
-        )
-        dbRecordRefService = DbRecordRefService(appName, dbRecordRefDataService)
+            override fun computeDisplayName(value: Any, typeRef: EntityRef): MLText {
+                return modelServiceFactory.computedAttsService.computeDisplayName(value, typeRef)
+            }
+        }
 
-        recordsDao = DbRecordsDao(
+        val recordsDao = DbRecordsDao(
             DbRecordsDaoConfig.create {
-                withId(RECS_DAO_ID)
+                withId(sourceId)
                 withTypeRef(typeRef)
-                withInheritParentPerms(inheritParentPerms)
             },
             modelServiceFactory,
             dataService,
-            dbRecordRefService,
             permsComponent,
-            object : DbComputedAttsComponent {
-                override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: EntityRef): ObjectData {
-                    return modelServiceFactory.computedAttsService.computeAttsToStore(value, isNewRecord, typeRef)
-                }
-
-                override fun computeDisplayName(value: Any, typeRef: EntityRef): MLText {
-                    return modelServiceFactory.computedAttsService.computeDisplayName(value, typeRef)
-                }
-            },
-            contentService
+            computedAttsComponent
         )
-        dbSchemaDao = pgDataServiceFactory.createSchemaDao(tableRef, dbDataSource)
         records.register(recordsDao)
+
+        dbRecordRefService = schemaCtx.recordRefService
+
+        val resCtx = RecordsDaoTestCtx(
+            tableRef,
+            recordsDao,
+            typeRef,
+            dataService,
+            recReadPerms,
+            recWritePerms,
+            recAttReadPerms,
+            recAttWritePerms
+        )
+        registeredRecordsDao.add(resCtx)
+        return resCtx
     }
 
     fun createQuery(): RecordsQuery {
-        return RecordsQuery.create()
-            .withQuery(VoidPredicate.INSTANCE)
-            .withSourceId(recordsDao.getId())
-            .withLanguage(PredicateService.LANGUAGE_PREDICATE)
-            .build()
+        return mainCtx.createQuery()
     }
 
     fun createRef(id: String): RecordRef {
-        return RecordRef.create(recordsDao.getId(), id)
+        return mainCtx.createRef(id)
     }
 
     fun updateRecord(rec: EntityRef, vararg atts: Pair<String, Any?>): RecordRef {
-        return records.mutate(rec, mapOf(*atts))
+        return mainCtx.updateRecord(rec, *atts)
     }
 
     fun createRecord(atts: ObjectData): RecordRef {
-        if (!atts.has(RecordConstants.ATT_TYPE)) {
-            atts[RecordConstants.ATT_TYPE] = REC_TEST_TYPE_REF
-        }
-        val rec = records.create(RECS_DAO_ID, atts)
-        log.info { "RECORD CREATED: $rec" }
-        return rec
+        return mainCtx.createRecord(atts)
     }
 
     fun createRecord(vararg atts: Pair<String, Any?>): RecordRef {
-        val map = linkedMapOf(*atts)
-        if (!map.containsKey(RecordConstants.ATT_TYPE)) {
-            map[RecordConstants.ATT_TYPE] = REC_TEST_TYPE_REF
-        }
-        val rec = records.create(RECS_DAO_ID, map)
-        log.info { "RECORD CREATED: $rec" }
-        return rec
+        return mainCtx.createRecord(*atts)
     }
 
     fun selectRecFromDb(rec: EntityRef, field: String): Any? {
-        return dbDataSource.withTransaction(true) {
-            dbDataSource.query(
-                "SELECT $field as res FROM ${tableRef.fullName} " +
-                    "where __ext_id='${rec.getLocalId()}'",
-                emptyList()
-            ) { res ->
-                res.next()
-                res.getObject("res")
-            }
-        }
+        return mainCtx.selectRecFromDb(rec, field)
     }
 
     fun selectFieldFromDbTable(field: String, table: String, condition: String): Any? {
-        return dbDataSource.withTransaction(true) {
-            dbDataSource.query(
-                "SELECT \"$field\" as res FROM $table WHERE $condition",
-                emptyList()
-            ) { res ->
-                res.next()
-                res.getObject("res")
-            }
-        }
+        return mainCtx.selectFieldFromDbTable(field, table, condition)
     }
 
     fun getColumns(): List<DbColumnDef> {
-        return dbDataSource.withTransaction(true) {
-            dbSchemaDao.getColumns()
-        }
+        return mainCtx.getColumns()
     }
 
     fun cleanRecords() {
-        dataSource.connection.use { conn ->
-            val truncCommand = "TRUNCATE TABLE " + tableRef.fullName + " CASCADE"
-            println("EXEC: $truncCommand")
-            conn.createStatement().use { it.executeUpdate(truncCommand) }
-            conn.createStatement().use { it.executeUpdate("DEALLOCATE ALL") }
-        }
+        mainCtx.cleanRecords()
     }
 
     fun dropAllTables() {
@@ -523,13 +477,13 @@ abstract class DbRecordsTestBase {
         this.numTemplates[numTemplate.id] = numTemplate
     }
 
-    fun registerType(type: String) {
-        registerType(Json.mapper.readNotNull(type, TypeInfo::class.java))
+    fun registerType(typeDef: String) {
+        registerType(Json.mapper.readNotNull(typeDef, TypeInfo::class.java))
     }
 
     fun registerType(type: TypeInfo) {
         val fixedType = if (type.sourceId.isBlank()) {
-            type.copy().withSourceId(recordsDao.getId()).build()
+            type.copy().withSourceId(mainCtx.dao.getId()).build()
         } else {
             type
         }
@@ -552,5 +506,149 @@ abstract class DbRecordsTestBase {
                 )
             }
         )
+    }
+
+    fun setPermsPolicy(policy: TypePermsPolicy) {
+        setPermsPolicy(REC_TEST_TYPE_ID, policy)
+    }
+
+    fun setPermsPolicy(typeId: String, policy: TypePermsPolicy) {
+        val typeInfo = typesInfo[typeId] ?: error("Type is not found by id $typeId")
+        registerType(typeInfo.copy { withPermsPolicy(policy) })
+    }
+
+    inner class RecordsDaoTestCtx(
+        val tableRef: DbTableRef,
+        val dao: DbRecordsDao,
+        val typeRef: EntityRef,
+        val dataService: DbDataService<DbEntity>,
+        val recReadPerms: MutableMap<EntityRef, Set<String>> = mutableMapOf(),
+        val recWritePerms: MutableMap<EntityRef, Set<String>> = mutableMapOf(),
+        val recAttReadPerms: MutableMap<Pair<EntityRef, String>, Set<String>> = mutableMapOf(),
+        val recAttWritePerms: MutableMap<Pair<EntityRef, String>, Set<String>> = mutableMapOf()
+    ) {
+
+        val baseQuery = RecordsQuery.create {
+            withSourceId(dao.getId())
+            withLanguage(PredicateService.LANGUAGE_PREDICATE)
+            withQuery(VoidPredicate.INSTANCE)
+        }
+
+        fun clear() {
+            recReadPerms.clear()
+            recWritePerms.clear()
+            recAttReadPerms.clear()
+            recAttWritePerms.clear()
+        }
+
+        fun createQuery(): RecordsQuery {
+            return RecordsQuery.create()
+                .withQuery(VoidPredicate.INSTANCE)
+                .withSourceId(dao.getId())
+                .withLanguage(PredicateService.LANGUAGE_PREDICATE)
+                .build()
+        }
+
+        fun createRef(id: String): RecordRef {
+            return RecordRef.create(APP_NAME, dao.getId(), id)
+        }
+
+        fun updateRecord(rec: EntityRef, vararg atts: Pair<String, Any?>): RecordRef {
+            return records.mutate(rec, mapOf(*atts))
+        }
+
+        fun createRecord(atts: ObjectData): RecordRef {
+            if (!atts.has(RecordConstants.ATT_TYPE)) {
+                atts[RecordConstants.ATT_TYPE] = REC_TEST_TYPE_REF
+            }
+            val rec = records.create(dao.getId(), atts)
+            log.info { "RECORD CREATED: $rec" }
+            return rec
+        }
+
+        fun createRecord(vararg atts: Pair<String, Any?>): RecordRef {
+            val map = linkedMapOf(*atts)
+            if (!map.containsKey(RecordConstants.ATT_TYPE)) {
+                map[RecordConstants.ATT_TYPE] = typeRef
+            }
+            val rec = records.create(dao.getId(), map)
+            log.info { "RECORD CREATED: $rec" }
+            return rec
+        }
+
+        fun selectRecFromDb(rec: EntityRef, field: String): Any? {
+            return dbDataSource.withTransaction(true) {
+                dbDataSource.query(
+                    "SELECT $field as res FROM ${tableRef.fullName} " +
+                        "where __ext_id='${rec.getLocalId()}'",
+                    emptyList()
+                ) { res ->
+                    res.next()
+                    res.getObject("res")
+                }
+            }
+        }
+
+        fun selectFieldFromDbTable(field: String, table: String, condition: String): Any? {
+            return dbDataSource.withTransaction(true) {
+                dbDataSource.query(
+                    "SELECT \"$field\" as res FROM $table WHERE $condition",
+                    emptyList()
+                ) { res ->
+                    res.next()
+                    res.getObject("res")
+                }
+            }
+        }
+
+        fun getColumns(): List<DbColumnDef> {
+            return dbDataSource.withTransaction(true) {
+                dbSchemaDao.getColumns(dbDataSource, tableRef)
+            }
+        }
+
+        fun cleanRecords() {
+            dataSource.connection.use { conn ->
+                val truncCommand = "TRUNCATE TABLE " + tableRef.fullName + " CASCADE"
+                println("EXEC: $truncCommand")
+                conn.createStatement().use { it.executeUpdate(truncCommand) }
+                conn.createStatement().use { it.executeUpdate("DEALLOCATE ALL") }
+            }
+        }
+        fun setAuthoritiesWithAttReadPerms(rec: EntityRef, att: String, vararg authorities: String) {
+            recAttReadPerms[rec.withDefaultAppName(APP_NAME) to att] = authorities.toSet()
+        }
+
+        fun setAuthoritiesWithAttWritePerms(rec: EntityRef, att: String, vararg authorities: String) {
+            recAttWritePerms[rec.withDefaultAppName(APP_NAME) to att] = authorities.toSet()
+        }
+
+        fun setAuthoritiesWithWritePerms(rec: EntityRef, vararg authorities: String) {
+            setAuthoritiesWithWritePerms(rec, authorities.toList())
+        }
+
+        fun setAuthoritiesWithWritePerms(rec: EntityRef, authorities: Collection<String>) {
+            recWritePerms[rec.withDefaultAppName(APP_NAME)] = authorities.toSet()
+            addAuthoritiesWithReadPerms(rec, authorities)
+        }
+
+        fun setAuthoritiesWithReadPerms(rec: EntityRef, authorities: Collection<String>) {
+            recReadPerms[rec.withDefaultAppName(APP_NAME)] = authorities.toSet()
+            dao.updatePermissions(listOf(rec.getLocalId()))
+        }
+
+        fun setAuthoritiesWithReadPerms(rec: EntityRef, vararg authorities: String) {
+            setAuthoritiesWithReadPerms(rec, authorities.toSet())
+        }
+
+        fun addAuthoritiesWithReadPerms(rec: EntityRef, authorities: Collection<String>) {
+            val readPerms = recReadPerms[rec.withDefaultAppName(APP_NAME)]?.toMutableSet() ?: mutableSetOf()
+            readPerms.addAll(authorities)
+            setAuthoritiesWithReadPerms(rec, readPerms)
+        }
+
+        fun addAuthoritiesWithReadPerms(rec: EntityRef, vararg authorities: String) {
+            addAuthoritiesWithReadPerms(rec, authorities.toSet())
+        }
     }
 }

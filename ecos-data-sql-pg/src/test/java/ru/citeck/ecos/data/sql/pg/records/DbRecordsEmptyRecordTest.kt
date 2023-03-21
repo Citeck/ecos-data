@@ -20,7 +20,7 @@ class DbRecordsEmptyRecordTest : DbRecordsTestBase() {
                 withName(MLText(Locale.ENGLISH to name))
             }
         )
-        initServices(typeRef = testTypeRef)
+        createRecordsDao(typeRef = testTypeRef)
 
         val emptyRef = RecordRef.create(recordsDao.getId(), "")
         val emptyRecDisp = records.getAtt(emptyRef, "?disp").asText()

@@ -11,6 +11,7 @@ import ru.citeck.ecos.model.lib.role.dto.RoleDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
+import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class RolesMixinTest : DbRecordsTestBase() {
@@ -60,6 +61,9 @@ class RolesMixinTest : DbRecordsTestBase() {
                         return emptyList()
                     }
                 }
+            }
+            override fun getEcosWebAppApi(): EcosWebAppApi {
+                return webAppApi
             }
         }
         modelServiceFactory.setRecordsServices(recordsServiceFactory)

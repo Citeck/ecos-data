@@ -11,6 +11,7 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.i18n.I18nContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.RecordRef
 import java.time.Duration
@@ -41,8 +42,6 @@ class DbRecordsCreateTest : DbRecordsTestBase() {
     @Test
     fun copyTest() {
 
-        initServices(authEnabled = true)
-
         registerAtts(
             AttributeType.values().map { type ->
                 AttributeDef.create {
@@ -51,6 +50,7 @@ class DbRecordsCreateTest : DbRecordsTestBase() {
                 }
             }
         )
+        setPermsPolicy(TypePermsPolicy.OWN)
 
         val bytes = ByteArray(10) { it.toByte() }
 

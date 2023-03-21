@@ -11,4 +11,8 @@ interface EcosContentStorageService {
     fun <T> readContent(uri: URI, action: (InputStream) -> T): T
 
     fun removeContent(uri: URI)
+
+    fun register(storage: EcosContentStorage)
+
+    fun register(type: String, storage: EcosContentStorage)
 }

@@ -96,7 +96,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         val ref = RecordRef.create(RECS_DAO_ID, "test")
 
         val firstTableRef = DbTableRef("ecos-data", "test-data")
-        initServices(firstTableRef)
+        mainCtx = createRecordsDao(tableRef = firstTableRef)
 
         val testTypeId = "test-type"
         registerAttributes(
@@ -122,7 +122,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         assertThat(records.getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
 
         val secondTableRef = DbTableRef("ecos_data", "test_data")
-        initServices(secondTableRef)
+        mainCtx = createRecordsDao(tableRef = secondTableRef)
 
         assertThat(records.getAtt(rec0Id, "textAtt").asText()).isEmpty()
 
@@ -135,7 +135,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         )
         assertThat(records.getAtt(rec1Id, "textAtt").asText()).isEqualTo("value2")
 
-        initServices(firstTableRef)
+        mainCtx = createRecordsDao(tableRef = firstTableRef)
 
         assertThat(records.getAtt(rec0Id, "textAtt").asText()).isEqualTo("value")
     }
