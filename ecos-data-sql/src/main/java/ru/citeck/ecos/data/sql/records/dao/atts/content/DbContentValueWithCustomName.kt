@@ -42,7 +42,10 @@ class DbContentValueWithCustomName(
     private fun getNameWithExt(): String {
         val extension = value.getAtt(DbContentValue.ATT_EXTENSION) as? String ?: ""
         if (extension.isNotEmpty()) {
-            return "$name.$extension"
+            val extensionWithDot = ".$extension"
+            if (!name.endsWith(extensionWithDot)) {
+                return name + extensionWithDot
+            }
         }
         return name
     }
