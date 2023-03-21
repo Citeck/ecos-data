@@ -587,7 +587,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                     query.append(joinConditionsByAnd(delCondition, currentAuthCondition, condition))
                 }
                 query.append(" GROUP BY ")
-                appendRecordColumnName(query, permsColumn)
+                appendRecordColumnName(query, "id")
                 query.append(" HAVING bool_and(\"")
                     .append(PERMS_TABLE_ALIAS)
                     .append("\".\"")
@@ -640,18 +640,19 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         query.setLength(query.length - 1)
     }
 
-    private fun addSortAndPage(query: StringBuilder, sort: List<DbFindSort>, page: DbFindPage) {
+    private fun addSortAndPage(query: StringBuilder, sorting: List<DbFindSort>, page: DbFindPage) {
 
-        if (sort.isNotEmpty()) {
+        if (sorting.isNotEmpty()) {
             query.append(" ORDER BY ")
-            val orderBy = sort.joinToString {
-                "\"" + it.column + "\" " + if (it.ascending) {
-                    "ASC"
+            for (sort in sorting) {
+                appendRecordColumnName(query, sort.column)
+                if (sort.ascending) {
+                    query.append(" ASC ")
                 } else {
-                    "DESC"
+                    query.append(" DESC ")
                 }
             }
-            query.append(orderBy)
+            query.setLength(query.length - 1)
         }
 
         if (page.maxItems >= 0) {
