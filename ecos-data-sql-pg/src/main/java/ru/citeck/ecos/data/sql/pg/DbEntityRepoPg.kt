@@ -597,7 +597,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             } else {
                 val innerQuery = createSelectQuery(
                     context,
-                    selectColumns = "\"$RECORD_TABLE_ALIAS\".\"$permsColumn\"",
+                    selectColumns = "\"$RECORD_TABLE_ALIAS\".\"id\"",
                     permsColumn = permsColumn,
                     withDeleted = withDeleted,
                     condition = condition,
@@ -608,7 +608,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 if (hasAlwaysFalseCondition(innerQuery)) {
                     query.append(ALWAYS_FALSE_CONDITION)
                 } else {
-                    appendRecordColumnName(query, permsColumn)
+                    appendRecordColumnName(query, "id")
                     query.append(" IN (")
                         .append(innerQuery)
                         .append(")")

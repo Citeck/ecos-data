@@ -486,7 +486,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         return perms.isCurrentUserHasAttReadPerms(attribute)
     }
 
-    private fun getDefaultContentAtt(): String {
+    fun getDefaultContentAtt(): String {
         return getDefaultContentAtt(typeInfo)
     }
 

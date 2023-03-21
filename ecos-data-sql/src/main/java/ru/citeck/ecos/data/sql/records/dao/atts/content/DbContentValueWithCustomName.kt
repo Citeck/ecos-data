@@ -17,37 +17,44 @@ class DbContentValueWithCustomName(
     }
 
     override fun getDisplayName(): Any {
-        return name
+        return getNameWithExt()
     }
 
     override fun getContentDbData(): DbEcosContentData {
-        return DbEcosContentDataWithName(name, value.contentData)
+        return DbEcosContentDataWithName(value.contentData)
     }
 
     override fun getAs(type: String): Any? {
         val result = super.getAs(type)
         if (result is DbContentValue.ContentData) {
-            return result.copy(name = this.name)
+            return result.copy(name = getNameWithExt())
         }
         return result
     }
 
     override fun getAtt(name: String): Any? {
         if (name == "name") {
-            return this.name
+            return getNameWithExt()
         }
         return super.getAtt(name)
     }
 
-    private class DbEcosContentDataWithName(
-        private val name: String,
+    private fun getNameWithExt(): String {
+        val extension = value.getAtt(DbContentValue.ATT_EXTENSION) as? String ?: ""
+        if (extension.isNotEmpty()) {
+            return "$name.$extension"
+        }
+        return name
+    }
+
+    private inner class DbEcosContentDataWithName(
         private val value: DbEcosContentData
     ) : DbEcosContentData {
         override fun getCreated(): Instant = value.getCreated()
         override fun getCreator(): String = value.getCreator()
         override fun getEncoding(): String = value.getEncoding()
         override fun getMimeType(): MimeType = value.getMimeType()
-        override fun getName(): String = name
+        override fun getName(): String = getNameWithExt()
         override fun getSha256(): String = value.getSha256()
         override fun getSize(): Long = value.getSize()
         override fun <T> readContent(action: (InputStream) -> T): T {
