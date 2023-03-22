@@ -8,7 +8,7 @@ class DbDataServiceConfig(
     val maxItemsToAllowSchemaMigration: Long,
     val fkConstraints: List<DbFkConstraint>,
     val storeTableMeta: Boolean,
-    val defaultPermsPolicy: QueryPermsPolicy
+    val defaultQueryPermsPolicy: QueryPermsPolicy
 ) {
 
     companion object {
@@ -36,13 +36,14 @@ class DbDataServiceConfig(
 
         var storeTableMeta: Boolean = false
         var fkConstraints: List<DbFkConstraint> = emptyList()
-        var defaultPermsPolicy: QueryPermsPolicy = QueryPermsPolicy.PUBLIC
+        var defaultQueryPermsPolicy: QueryPermsPolicy = QueryPermsPolicy.PUBLIC
 
         constructor(base: DbDataServiceConfig) : this() {
             table = base.table
             maxItemsToAllowSchemaMigration = base.maxItemsToAllowSchemaMigration
             storeTableMeta = base.storeTableMeta
             fkConstraints = base.fkConstraints
+            defaultQueryPermsPolicy = base.defaultQueryPermsPolicy
         }
 
         fun withMaxItemsToAllowSchemaMigration(maxItemsToAllowSchemaMigration: Long?): Builder {
@@ -71,7 +72,7 @@ class DbDataServiceConfig(
                 maxItemsToAllowSchemaMigration,
                 fkConstraints,
                 storeTableMeta,
-                defaultPermsPolicy
+                defaultQueryPermsPolicy
             )
         }
     }

@@ -106,12 +106,20 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         schemaMeta = schemaContext.schemaMetaService
 
         metaSchemaVersionKey = listOf("table", tableRef.schema, tableRef.table, "schema-version")
-        permsPolicy = ThreadLocal.withInitial { config.defaultPermsPolicy }
+
+        if (config.defaultQueryPermsPolicy == QueryPermsPolicy.DEFAULT) {
+            error("defaultQueryPermsPolicy can't be DEFAULT. TableRef: $tableRef")
+        }
+        permsPolicy = ThreadLocal.withInitial { config.defaultQueryPermsPolicy }
     }
 
     override fun <T> doWithPermsPolicy(permsPolicy: QueryPermsPolicy?, action: () -> T): T {
         val prevPolicy = this.permsPolicy.get()
-        this.permsPolicy.set(permsPolicy ?: config.defaultPermsPolicy)
+        if (permsPolicy == null || permsPolicy == QueryPermsPolicy.DEFAULT) {
+            this.permsPolicy.set(config.defaultQueryPermsPolicy)
+        } else {
+            this.permsPolicy.set(permsPolicy)
+        }
         try {
             return action.invoke()
         } finally {
