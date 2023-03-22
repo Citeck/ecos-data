@@ -36,9 +36,9 @@ import ru.citeck.ecos.model.lib.aspect.repo.AspectsRepo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.model.lib.num.repo.NumTemplatesRepo
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
@@ -278,7 +278,7 @@ abstract class DbRecordsTestBase {
             schemaCtx
         )
 
-        val defaultPermsComponent = DefaultDbPermsComponent()
+        val defaultPermsComponent = DefaultDbPermsComponent(records)
 
         val recReadPerms: MutableMap<EntityRef, Set<String>> = mutableMapOf()
         val recWritePerms: MutableMap<EntityRef, Set<String>> = mutableMapOf()
@@ -508,13 +508,13 @@ abstract class DbRecordsTestBase {
         )
     }
 
-    fun setPermsPolicy(policy: TypePermsPolicy) {
-        setPermsPolicy(REC_TEST_TYPE_ID, policy)
+    fun setQueryPermsPolicy(policy: QueryPermsPolicy) {
+        setQueryPermsPolicy(REC_TEST_TYPE_ID, policy)
     }
 
-    fun setPermsPolicy(typeId: String, policy: TypePermsPolicy) {
+    fun setQueryPermsPolicy(typeId: String, policy: QueryPermsPolicy) {
         val typeInfo = typesInfo[typeId] ?: error("Type is not found by id $typeId")
-        registerType(typeInfo.copy { withPermsPolicy(policy) })
+        registerType(typeInfo.copy { withQueryPermsPolicy(policy) })
     }
 
     inner class RecordsDaoTestCtx(

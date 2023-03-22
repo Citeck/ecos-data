@@ -11,11 +11,10 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
-import ru.citeck.ecos.data.sql.service.DbDataReqContext
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.*
 import java.sql.Date
@@ -42,6 +41,22 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         private const val IS_NULL = "IS NULL"
 
         private const val COUNT_COLUMN = "COUNT(*)"
+
+        private const val SEARCH_DISABLED_COLUMN = "__search__disabled__"
+    }
+
+    private val disableQueryPermsCheck = ThreadLocal.withInitial { false }
+
+    private inline fun <T> doWithoutQueryPermsCheck(action: () -> T): T {
+        if (disableQueryPermsCheck.get()) {
+            return action.invoke()
+        }
+        disableQueryPermsCheck.set(true)
+        try {
+            return action.invoke()
+        } finally {
+            disableQueryPermsCheck.set(false)
+        }
     }
 
     override fun findByColumn(
@@ -58,7 +73,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             return emptyList()
         }
         val permsColumn = getPermsColumn(context)
-        if (permsColumn.isNotEmpty() && !context.getPermsService().isTableExists()) {
+        if (permsColumn.isNotEmpty() && (!context.getPermsService().isTableExists() || !context.hasColumn(permsColumn))) {
             return emptyList()
         }
 
@@ -191,7 +206,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         if (!context.hasIdColumn()) {
             return entities
         }
-        return DbDataReqContext.doWithPermsPolicy(TypePermsPolicy.PUBLIC) {
+        return doWithoutQueryPermsCheck {
             val entitiesAfterMutation = findByColumn(
                 context,
                 DbEntity.ID,
@@ -211,7 +226,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
     }
 
     private fun isAuthEnabled(context: DbTableContext): Boolean {
-        return DbDataReqContext.getPermsPolicy(context.getDefaultPermsPolicy()) != TypePermsPolicy.PUBLIC
+        return getPermsColumn(context).isNotEmpty()
     }
 
     private fun saveImpl(context: DbTableContext, entities: List<Map<String, Any?>>): LongArray {
@@ -250,10 +265,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 entityMap[DbEntity.EXT_ID] = extId
             }
 
-            if (!DbDataReqContext.withoutModifiedMeta.get()) {
-                entityMap[DbEntity.MODIFIED] = nowInstant
-                entityMap[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
-            }
+            // todo
+            // if (!DbDataReqContext.withoutModifiedMeta.get()) {
+            entityMap[DbEntity.MODIFIED] = nowInstant
+            entityMap[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
+            // }
 
             if (entityId == DbEntity.NEW_REC_ID) {
                 entitiesToInsert.add(EntityToInsert(entityIdx, entityMap))
@@ -387,36 +403,36 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         if (context.getColumns().isEmpty()) {
             return 0
         }
-        val withAuth = isAuthEnabled(context)
-        if (withAuth && !context.getPermsService().isTableExists()) {
+        val permsColumn = getPermsColumn(context)
+        if (permsColumn.isNotEmpty() && (!context.getPermsService().isTableExists() || !context.hasColumn(permsColumn))) {
             return 0
         }
 
         val params = mutableListOf<Any?>()
         val sqlCondition = toSqlCondition(context, predicate, params)
 
-        return getCountImpl(context, sqlCondition, params)
+        return getCountImpl(context, sqlCondition, params, permsColumn)
     }
 
     private fun getPermsColumn(context: DbTableContext): String {
-        val policy = DbDataReqContext.getPermsPolicy(
-            context.getDefaultPermsPolicy(),
-            TypePermsPolicy.OWN
-        )
-        return when (policy) {
-            TypePermsPolicy.INHERITED -> RecordConstants.ATT_PARENT
-            TypePermsPolicy.OWN -> DbEntity.REF_ID
-            TypePermsPolicy.PUBLIC -> ""
+        if (disableQueryPermsCheck.get()) {
+            return ""
+        }
+        return when (val policy = context.getQueryPermsPolicy()) {
+            QueryPermsPolicy.PARENT -> RecordConstants.ATT_PARENT
+            QueryPermsPolicy.OWN -> DbEntity.REF_ID
+            QueryPermsPolicy.PUBLIC -> ""
+            QueryPermsPolicy.NONE -> SEARCH_DISABLED_COLUMN
             else -> error("Invalid perms policy: $policy")
         }
     }
 
-    private fun getCountImpl(context: DbTableContext, sqlCondition: String, params: List<Any?>): Long {
+    private fun getCountImpl(context: DbTableContext, sqlCondition: String, params: List<Any?>, permsColumn: String): Long {
 
         val selectQuery = createSelectQuery(
             context,
             COUNT_COLUMN,
-            permsColumn = getPermsColumn(context),
+            permsColumn,
             withDeleted = false,
             sqlCondition
         )
@@ -505,7 +521,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val totalCount = if (page.maxItems == -1) {
             resultEntities.size.toLong() + page.skipCount
         } else {
-            getCountImpl(context, sqlCondition, params)
+            getCountImpl(context, sqlCondition, params, permsColumn)
         }
         return DbFindRes(resultEntities, totalCount)
     }
@@ -755,7 +771,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         if (userAuthorities.isEmpty()) {
             return ALWAYS_FALSE_CONDITION
         }
-        val isInheritedPerms = permsColumn == RecordConstants.ATT_PARENT
 
         val query = StringBuilder()
         query.append("\"$PERMS_TABLE_ALIAS\".\"${DbPermsEntity.AUTHORITY_ID}\" IN (")
@@ -763,6 +778,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             query.append(authority).append(",")
         }
         query.setLength(query.length - 1)
+        query.append(")")
 
         return query.toString()
     }

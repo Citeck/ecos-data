@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthGroup
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
 
 class DbRecordsSortTest : DbRecordsTestBase() {
@@ -20,7 +20,7 @@ class DbRecordsSortTest : DbRecordsTestBase() {
                     .build()
             )
         )
-        setPermsPolicy(TypePermsPolicy.OWN)
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
 
         AuthContext.runAs("admin", listOf(AuthGroup.EVERYONE)) {
 

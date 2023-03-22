@@ -1,14 +1,14 @@
 package ru.citeck.ecos.data.sql.service
 
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 
 class DbDataServiceConfig(
     val table: String,
     val maxItemsToAllowSchemaMigration: Long,
     val fkConstraints: List<DbFkConstraint>,
     val storeTableMeta: Boolean,
-    val defaultPermsPolicy: TypePermsPolicy
+    val defaultPermsPolicy: QueryPermsPolicy
 ) {
 
     companion object {
@@ -36,7 +36,7 @@ class DbDataServiceConfig(
 
         var storeTableMeta: Boolean = false
         var fkConstraints: List<DbFkConstraint> = emptyList()
-        var defaultPermsPolicy: TypePermsPolicy = TypePermsPolicy.PUBLIC
+        var defaultPermsPolicy: QueryPermsPolicy = QueryPermsPolicy.PUBLIC
 
         constructor(base: DbDataServiceConfig) : this() {
             table = base.table

@@ -25,15 +25,14 @@ import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
-import ru.citeck.ecos.data.sql.service.DbDataReqContext
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.PredicateService
@@ -115,10 +114,6 @@ class DbRecordsDao(
     private val recsUpdatedInThisTxnKey = IdentityKey()
 
     private val recsPrepareToCommitTxnKey = IdentityKey()
-
-    init {
-        // dbDataService.registerMigration(AssocsDbMigration(dbRecordRefService))
-    }
 
     fun uploadFile(
         ecosType: String? = null,
@@ -253,39 +248,17 @@ class DbRecordsDao(
 
     private fun findDbEntityByExtId(extId: String): DbEntity? {
 
-        val entity = DbDataReqContext.doWithPermsPolicy(TypePermsPolicy.PUBLIC) {
+        val entity = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
             dataService.findByExtId(extId)
         } ?: return null
 
-        if (getUpdatedInTxnIds().contains(extId)) {
+        if (getUpdatedInTxnIds().contains(extId) || AuthContext.isRunAsSystem()) {
             return entity
         }
-        val permsPolicy = if (AuthContext.isRunAsSystem()) {
-            TypePermsPolicy.PUBLIC
-        } else {
-            ecosTypeService.getTypeInfo(entity.type)?.permsPolicy ?: TypePermsPolicy.OWN
-        }
-        if (permsPolicy == TypePermsPolicy.PUBLIC) {
-            return entity
-        }
-        if (permsPolicy == TypePermsPolicy.OWN) {
-            val perms = getRecordPerms(extId)
-            val authoritiesWithReadPermissions = perms.getAuthoritiesWithReadPermission().toSet()
-            val currentAuthorities = DbRecordsUtils.getCurrentAuthorities()
-            if (currentAuthorities.any { authoritiesWithReadPermissions.contains(it) }) {
-                return entity
-            }
-        }
-        if (permsPolicy == TypePermsPolicy.OWN || permsPolicy == TypePermsPolicy.INHERITED) {
-            val parentRefId = entity.attributes[RecordConstants.ATT_PARENT] as? Long
-            if (parentRefId == null || parentRefId <= 0) {
-                return null
-            }
-            val parentRef = recordRefService.getEntityRefById(parentRefId)
-
-            if (recordsService.getAtt(parentRef, RecordConstants.ATT_NOT_EXISTS + ScalarType.BOOL_SCHEMA).asBoolean()) {
-                return null
-            }
+        val perms = getRecordPerms(extId)
+        val authoritiesWithReadPermissions = perms.getAuthoritiesWithReadPermission().toSet()
+        val currentAuthorities = DbRecordsUtils.getCurrentAuthorities()
+        if (currentAuthorities.any { authoritiesWithReadPermissions.contains(it) }) {
             return entity
         }
         return null
@@ -314,19 +287,19 @@ class DbRecordsDao(
 
         val attributesById: Map<String, AttributeDef>
         val typeAspects: Set<EntityRef>
-        var permsPolicy = TypePermsPolicy.OWN
+        var queryPermsPolicy = QueryPermsPolicy.OWN
 
         if (ecosTypeRef.isNotEmpty()) {
             val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.getLocalId())
             attributesById = typeInfo?.model?.getAllAttributes()?.associateBy { it.id } ?: emptyMap()
             typeAspects = typeInfo?.aspects?.map { it.ref }?.toSet() ?: emptySet()
-            permsPolicy = typeInfo?.permsPolicy ?: permsPolicy
+            queryPermsPolicy = typeInfo?.queryPermsPolicy ?: queryPermsPolicy
         } else {
             attributesById = emptyMap()
             typeAspects = emptySet()
         }
         if (AuthContext.isRunAsSystem()) {
-            permsPolicy = TypePermsPolicy.PUBLIC
+            queryPermsPolicy = QueryPermsPolicy.PUBLIC
         }
 
         fun replaceRefsToIds(value: DataValue): DataValue {
@@ -507,7 +480,7 @@ class DbRecordsDao(
 
         val page = recsQuery.page
 
-        val findRes = DbDataReqContext.doWithPermsPolicy(permsPolicy) {
+        val findRes = dataService.doWithPermsPolicy(queryPermsPolicy) {
             dataService.find(
                 predicate,
                 recsQuery.sortBy.map {
@@ -567,7 +540,7 @@ class DbRecordsDao(
 
         val extId = record.id.ifBlank { record.attributes[ATT_ID].asText() }
         if (extId.isNotBlank()) {
-            val typeFromRecord = DbDataReqContext.doWithPermsPolicy(TypePermsPolicy.PUBLIC) {
+            val typeFromRecord = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
                 dataService.findByExtId(extId)?.type
             }
             if (!typeFromRecord.isNullOrBlank()) {
@@ -590,25 +563,31 @@ class DbRecordsDao(
             error("Records DAO is not mutable. Record can't be mutated: '${record.id}'")
         }
         return TxnContext.doInTxn {
-            val resultRecId = mutateInTxn(record)
-            val txn = TxnContext.getTxn()
+            val resultEntity = mutateInTxn(record)
+            val resultRecId = resultEntity.extId
 
-            val prepareToCommitEntities = txn.getData(recsPrepareToCommitTxnKey) {
-                LinkedHashSet<String>()
-            }
-            if (prepareToCommitEntities.isEmpty()) {
-                TxnContext.doBeforeCommit(0f) {
-                    entityPermsService.setReadPerms(getEntitiesPerms(prepareToCommitEntities))
+            var queryPermsPolicy = QueryPermsPolicy.OWN
+            queryPermsPolicy = ecosTypeService.getTypeInfo(resultEntity.type)?.queryPermsPolicy ?: queryPermsPolicy
+
+            if (queryPermsPolicy == QueryPermsPolicy.OWN) {
+                val txn = TxnContext.getTxn()
+                val prepareToCommitEntities = txn.getData(recsPrepareToCommitTxnKey) {
+                    LinkedHashSet<String>()
                 }
+                if (prepareToCommitEntities.isEmpty()) {
+                    TxnContext.doBeforeCommit(0f) {
+                        entityPermsService.setReadPerms(getEntitiesPerms(prepareToCommitEntities))
+                    }
+                }
+                prepareToCommitEntities.add(resultRecId)
+                getUpdatedInTxnIds(txn).add(resultRecId)
             }
-            prepareToCommitEntities.add(resultRecId)
-            getUpdatedInTxnIds(txn).add(resultRecId)
 
             resultRecId
         }
     }
 
-    private fun mutateInTxn(record: LocalRecordAtts): String {
+    private fun mutateInTxn(record: LocalRecordAtts): DbEntity {
 
         val typeId = getTypeIdForRecord(record)
         val typeInfo = ecosTypeService.getTypeInfo(typeId)
@@ -622,7 +601,7 @@ class DbRecordsDao(
         record: LocalRecordAtts,
         typeInfo: TypeInfo,
         typeAttColumnsArg: List<EcosAttColumnDef>,
-    ): String {
+    ): DbEntity {
 
         if (record.attributes.has(DbRecord.ATT_ASPECTS)) {
             error(
@@ -651,14 +630,6 @@ class DbRecordsDao(
         val isRunAsAdmin = AuthContext.isAdminAuth(runAsAuth)
         val isRunAsSystemOrAdmin = isRunAsSystem || isRunAsAdmin
 
-        if (record.attributes["__updatePermissions"].asBoolean()) {
-            if (!isRunAsSystemOrAdmin) {
-                error("Permissions update allowed only for admin. Record: $record sourceId: '${getId()}'")
-            }
-            updatePermissions(listOf(record.id))
-            return record.id
-        }
-
         val extId = record.id.ifEmpty { record.attributes[ATT_ID].asText() }
         val currentAspectRefs = LinkedHashSet(typeAspects)
         val aspectRefsInDb = LinkedHashSet<EntityRef>()
@@ -684,10 +655,16 @@ class DbRecordsDao(
                         addTypeAttColumn(column)
                     }
                 }
+                if (record.attributes["__updatePermissions"].asBoolean()) {
+                    if (!isRunAsSystemOrAdmin) {
+                        error("Permissions update allowed only for admin. Record: $record sourceId: '${getId()}'")
+                    }
+                    updatePermissions(listOf(record.id))
+                    return entity
+                }
             }
             entity
         }
-
         var customExtId = record.attributes[ATT_ID].asText()
         if (customExtId.isBlank()) {
             customExtId = record.attributes[ScalarType.LOCAL_ID.mirrorAtt].asText()
@@ -697,7 +674,7 @@ class DbRecordsDao(
             if (entityToMutate.id == DbEntity.NEW_REC_ID) {
                 entityToMutate.extId = customExtId
             } else {
-                DbDataReqContext.doWithPermsPolicy(TypePermsPolicy.PUBLIC) {
+                dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
                     if (dataService.findByExtId(customExtId) != null) {
                         log.error {
                             "Record with ID $customExtId already exists. You should mutate it directly. " +
@@ -883,7 +860,7 @@ class DbRecordsDao(
         }
         var recAfterSave = dataService.save(entityToMutate, fullColumns)
 
-        recAfterSave = DbDataReqContext.doWithPermsPolicy(TypePermsPolicy.PUBLIC) {
+        recAfterSave = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
             val newEntity = if (computedAttsComponent != null) {
                 computeAttsToStore(
                     computedAttsComponent,
@@ -912,7 +889,7 @@ class DbRecordsDao(
 
         daoCtx.recEventsHandler.emitEventsAfterMutation(recordEntityBeforeMutation, recAfterSave, isNewRecord)
 
-        return recAfterSave.extId
+        return recAfterSave
     }
 
     private fun computeAttsToStore(

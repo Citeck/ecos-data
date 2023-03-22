@@ -11,7 +11,7 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.i18n.I18nContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.RecordRef
 import java.time.Duration
@@ -50,7 +50,7 @@ class DbRecordsCreateTest : DbRecordsTestBase() {
                 }
             }
         )
-        setPermsPolicy(TypePermsPolicy.OWN)
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
 
         val bytes = ByteArray(10) { it.toByte() }
 

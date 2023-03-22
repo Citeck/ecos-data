@@ -8,6 +8,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.predicate.model.Predicate
 
 interface DbDataService<T : Any> {
@@ -15,6 +16,8 @@ interface DbDataService<T : Any> {
     companion object {
         const val NEW_TABLE_SCHEMA_VERSION = 1
     }
+
+    fun <T> doWithPermsPolicy(permsPolicy: QueryPermsPolicy?, action: () -> T): T
 
     fun getSchemaVersion(): Int
 

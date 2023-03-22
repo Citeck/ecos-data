@@ -4,7 +4,9 @@ import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
+import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.*
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
@@ -14,16 +16,20 @@ import ru.citeck.ecos.data.sql.meta.table.dto.DbTableChangeSet
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaConfig
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
+import ru.citeck.ecos.data.sql.records.DbRecordsUtils
+import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapperImpl
+import ru.citeck.ecos.data.sql.repo.entity.auth.DbAuthorityEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
@@ -65,6 +71,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     private val metaSchemaVersionKey: List<String>
 
+    private val permsPolicy: ThreadLocal<QueryPermsPolicy>
+
     constructor(
         entityType: Class<T>,
         config: DbDataServiceConfig,
@@ -94,11 +102,25 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         tableCtx = DbTableContextImpl(
             config.table,
             schemaCtx = schemaContext,
-            defaultPermsPolicy = config.defaultPermsPolicy
         )
         schemaMeta = schemaContext.schemaMetaService
 
         metaSchemaVersionKey = listOf("table", tableRef.schema, tableRef.table, "schema-version")
+        permsPolicy = ThreadLocal.withInitial { config.defaultPermsPolicy }
+    }
+
+    override fun <T> doWithPermsPolicy(permsPolicy: QueryPermsPolicy?, action: () -> T): T {
+        val prevPolicy = this.permsPolicy.get()
+        this.permsPolicy.set(permsPolicy ?: config.defaultPermsPolicy)
+        try {
+            return action.invoke()
+        } finally {
+            if (prevPolicy == null) {
+                this.permsPolicy.remove()
+            } else {
+                this.permsPolicy.set(prevPolicy)
+            }
+        }
     }
 
     override fun getSchemaVersion(): Int {
@@ -312,7 +334,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
     }
 
-    override fun getTableContext(): DbTableContextImpl {
+    override fun getTableContext(): DbTableContext {
         var columns = this.columns
         if (columns == null) {
             columns = dataSource.withTransaction(true) {
@@ -624,7 +646,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     private fun <T> execReadOnlyQueryWithPredicate(
         predicate: Predicate,
         defaultRes: T,
-        action: (DbTableContextImpl, Predicate) -> T
+        action: (DbTableContext, Predicate) -> T
     ): T {
         val tableCtx = getTableContext()
         val preparedPred = preparePredicate(predicate)
@@ -650,6 +672,81 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 }
             }
             throw rootEx
+        }
+    }
+
+    private inner class DbTableContextImpl(
+        private val table: String,
+        private val columns: List<DbColumnDef> = emptyList(),
+        val schemaCtx: DbSchemaContext
+    ) : DbTableContext {
+
+        private val tableRef = DbTableRef(schemaCtx.schema, table)
+        private val columnsByName = columns.associateBy { it.name }
+        private val hasIdColumn = columnsByName.containsKey(DbEntity.ID)
+        private val hasDeleteFlag = columnsByName.containsKey(DbEntity.DELETED)
+
+        override fun getRecordRefsService(): DbRecordRefService {
+            return schemaCtx.recordRefService
+        }
+
+        override fun getContentService(): DbContentService {
+            return schemaCtx.contentService
+        }
+
+        override fun getPermsService(): DbEntityPermsService {
+            return schemaCtx.entityPermsService
+        }
+
+        override fun getTableRef(): DbTableRef {
+            return tableRef
+        }
+
+        override fun getColumns(): List<DbColumnDef> {
+            return columns
+        }
+
+        override fun getColumnByName(name: String): DbColumnDef? {
+            return columnsByName[name]
+        }
+
+        override fun hasColumn(name: String): Boolean {
+            return columnsByName.containsKey(name)
+        }
+
+        override fun hasIdColumn(): Boolean {
+            return hasIdColumn
+        }
+
+        override fun hasDeleteFlag(): Boolean {
+            return hasDeleteFlag
+        }
+
+        override fun getDataSource(): DbDataSource {
+            return schemaCtx.dataSourceCtx.dataSource
+        }
+
+        override fun getTypesConverter(): DbTypesConverter {
+            return schemaCtx.dataSourceCtx.converter
+        }
+
+        override fun getQueryPermsPolicy(): QueryPermsPolicy {
+            return permsPolicy.get()
+        }
+
+        override fun getCurrentUserAuthorityIds(): Set<Long> {
+            val authorityEntities = schemaCtx.authorityDataService.findAll(
+                Predicates.`in`(DbAuthorityEntity.EXT_ID, DbRecordsUtils.getCurrentAuthorities())
+            )
+            return authorityEntities.map { it.id }.toSet()
+        }
+
+        fun withColumns(columns: List<DbColumnDef>): DbTableContextImpl {
+            return DbTableContextImpl(
+                table,
+                columns,
+                schemaCtx
+            )
         }
     }
 }

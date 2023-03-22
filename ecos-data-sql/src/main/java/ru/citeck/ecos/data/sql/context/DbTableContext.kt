@@ -7,7 +7,7 @@ import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 
 interface DbTableContext {
 
@@ -35,5 +35,5 @@ interface DbTableContext {
 
     fun getCurrentUserAuthorityIds(): Set<Long>
 
-    fun getDefaultPermsPolicy(): TypePermsPolicy
+    fun getQueryPermsPolicy(): QueryPermsPolicy
 }

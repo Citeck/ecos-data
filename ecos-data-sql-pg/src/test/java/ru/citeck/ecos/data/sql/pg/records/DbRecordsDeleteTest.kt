@@ -4,7 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.dao.delete.DelStatus
 import ru.citeck.ecos.txn.lib.TxnContext
@@ -21,7 +21,7 @@ class DbRecordsDeleteTest : DbRecordsTestBase() {
                 }
             )
         )
-        setPermsPolicy(TypePermsPolicy.OWN)
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
 
         AuthContext.runAs("admin") {
             testAsAdmin()

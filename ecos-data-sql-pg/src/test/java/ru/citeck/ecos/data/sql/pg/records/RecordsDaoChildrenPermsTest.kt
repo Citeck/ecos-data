@@ -7,7 +7,7 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 
@@ -26,7 +26,7 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
                 }
             )
         )
-        setPermsPolicy(TypePermsPolicy.OWN)
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
 
         val checkReadPerms = { ref: RecordRef, isReadPermsExpected: Boolean ->
             if (isReadPermsExpected) {
@@ -37,7 +37,7 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
         }
 
         val childRecord = AuthContext.runAs("user") { createRecord() }
-        setAuthoritiesWithReadPerms(childRecord, "user", "parent-user")
+        // setAuthoritiesWithReadPerms(childRecord, "user", "parent-user")
 
         val parentRecord = AuthContext.runAsFull("parent-user") {
             createRecord("childAssocs" to childRecord)
@@ -48,7 +48,7 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
             AuthContext.runAs(EmptyAuth) {
                 checkReadPerms(childRecord, false)
                 AuthContext.runAs("user") {
-                    checkReadPerms(childRecord, true)
+                    checkReadPerms(childRecord, false)
                 }
                 checkReadPerms(parentRecord, false)
                 AuthContext.runAs("parent-user") {

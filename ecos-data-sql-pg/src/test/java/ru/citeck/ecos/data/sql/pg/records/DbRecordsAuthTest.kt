@@ -10,9 +10,9 @@ import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -35,7 +35,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
                 }
             )
         )
-        setPermsPolicy(TypePermsPolicy.OWN)
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
     }
 
     @Test
@@ -263,7 +263,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         registerType(
             TypeInfo.create {
                 withId(REC_TEST_TYPE_ID)
-                withPermsPolicy(TypePermsPolicy.OWN)
+                withQueryPermsPolicy(QueryPermsPolicy.OWN)
                 withModel(
                     TypeModelDef.create()
                         .withAttributes(
@@ -279,7 +279,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         registerType(
             TypeInfo.create {
                 withId("child")
-                withPermsPolicy(TypePermsPolicy.INHERITED)
+                withQueryPermsPolicy(QueryPermsPolicy.PARENT)
                 withModel(
                     TypeModelDef.create()
                         .withAttributes(

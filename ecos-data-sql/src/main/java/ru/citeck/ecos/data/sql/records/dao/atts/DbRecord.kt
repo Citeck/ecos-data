@@ -470,6 +470,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             }
             ATT_PERMISSIONS -> permsValue
             RecordConstants.ATT_CONTENT -> getDefaultContent()
+            RecordConstants.ATT_PARENT -> additionalAtts[RecordConstants.ATT_PARENT]
             "previewInfo" -> getDefaultContent()?.getContentValue()?.getAtt("previewInfo")
             else -> {
                 if (isCurrentUserHasAttReadPerms(name)) {
@@ -482,8 +483,10 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     }
 
     private fun isCurrentUserHasAttReadPerms(attribute: String): Boolean {
-        val perms = permsValue.getRecordPerms() ?: return true
-        return perms.isCurrentUserHasAttReadPerms(attribute)
+        if (AuthContext.isRunAsSystem()) {
+            return true
+        }
+        return permsValue.getRecordPerms().isCurrentUserHasAttReadPerms(attribute)
     }
 
     fun getDefaultContentAtt(): String {

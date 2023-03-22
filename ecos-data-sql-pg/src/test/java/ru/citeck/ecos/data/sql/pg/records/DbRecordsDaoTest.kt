@@ -8,9 +8,9 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
-import ru.citeck.ecos.model.lib.type.dto.TypePermsPolicy
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.RecordRef
@@ -292,7 +292,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
                         )
                     }
                 )
-                withPermsPolicy(TypePermsPolicy.PUBLIC)
+                withQueryPermsPolicy(QueryPermsPolicy.PUBLIC)
             }
         )
 
