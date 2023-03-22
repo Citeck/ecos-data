@@ -1,6 +1,5 @@
 package ru.citeck.ecos.data.sql.records.perms
 
-import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthGroup
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecPermsValue
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
@@ -18,10 +17,7 @@ class DefaultDbPermsComponent(
     }
 
     override fun getEntityPerms(entityRef: EntityRef): DbRecordPerms {
-        val parentPerms = AuthContext.runAsSystem {
-            recordsService.getAtts(entityRef, ParentPermsAtts::class.java)
-        }
-        return DefaultRecPerms(parentPerms)
+        return DefaultRecPerms(recordsService.getAtts(entityRef, ParentPermsAtts::class.java))
     }
 
     private class ParentPermsAtts(

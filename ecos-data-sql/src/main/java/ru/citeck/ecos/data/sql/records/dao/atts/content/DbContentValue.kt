@@ -146,21 +146,24 @@ class DbContentValue(
                         ATT_MIME_TYPE
                     )
 
-                    val atts = ctx.recordsService.queryOne(
-                        RecordsQuery.create {
-                            withEcosType("thumbnail")
-                            withQuery(
-                                Predicates.and(
-                                    Predicates.eq(RecordConstants.ATT_PARENT, currentEntityRef),
-                                    Predicates.eq("mimeType", MimeTypes.APP_PDF_TEXT),
-                                    Predicates.eq("srcAttribute", RecordConstants.ATT_CONTENT)
+                    // todo: replace runAsSystem to assoc with thumbnails
+                    val atts = AuthContext.runAsSystem {
+                        ctx.recordsService.queryOne(
+                            RecordsQuery.create {
+                                withEcosType("thumbnail")
+                                withQuery(
+                                    Predicates.and(
+                                        Predicates.eq(RecordConstants.ATT_PARENT, currentEntityRef),
+                                        Predicates.eq("mimeType", MimeTypes.APP_PDF_TEXT),
+                                        Predicates.eq("srcAttribute", RecordConstants.ATT_CONTENT)
+                                    )
                                 )
-                            )
-                        },
-                        attsToLoad.associateWith {
-                            "${RecordConstants.ATT_CONTENT}.$it"
-                        }
-                    )
+                            },
+                            attsToLoad.associateWith {
+                                "${RecordConstants.ATT_CONTENT}.$it"
+                            }
+                        )
+                    }
                     if (atts == null || attsToLoad.any { atts[it].asText().isEmpty() }) {
                         null
                     } else {

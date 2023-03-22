@@ -21,6 +21,7 @@ import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
+import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsSystemAdapter
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -957,7 +958,9 @@ class DbRecordsDao(
             {
                 TxnContext.doInTxn(true) {
                     AuthContext.runAsSystem {
-                        permsComponent.getEntityPerms(EntityRef.create(getId(), recordId))
+                        DbRecordPermsSystemAdapter(
+                            permsComponent.getEntityPerms(EntityRef.create(getId(), recordId))
+                        )
                     }
                 }
             }
