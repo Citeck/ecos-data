@@ -222,7 +222,14 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             return null
         }
         return if (ctx.contentService != null) {
-            DbContentValue(ctx, entity.extId, value, attId, isDefaultContentAtt)
+            DbContentValue(
+                ctx,
+                entity.extId,
+                typeInfo,
+                value,
+                attId,
+                isDefaultContentAtt
+            )
         } else {
             null
         }

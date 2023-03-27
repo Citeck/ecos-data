@@ -11,6 +11,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records3.record.dao.atts.RecordAttsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.util.*
 
 class DbRecordsContentAttTest : DbRecordsTestBase() {
@@ -82,10 +83,12 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
             }
             val contentNameFromAtt = records.getAtt(ref, "$contentAttName.name").asText()
 
-            assertThat(contentDataJson.size()).isEqualTo(3)
+            assertThat(contentDataJson.size()).isEqualTo(5)
             assertThat(contentDataJson["name"].asText()).isEqualTo(expectedName).isEqualTo(contentNameFromAtt)
             assertThat(contentDataJson["size"].asInt()).isEqualTo(expectedContentSize)
             assertThat(contentDataJson["url"].asText()).isNotBlank
+            assertThat(contentDataJson["recordRef"].toEntityRef()).isEqualTo(ref)
+            assertThat(contentDataJson["fileType"].asText()).isEqualTo(REC_TEST_TYPE_ID)
 
             assertThat(records.getAtt(ref, "$contentAttName.size").asInt()).isEqualTo(expectedContentSize)
         }

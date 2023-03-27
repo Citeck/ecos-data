@@ -5,10 +5,13 @@ import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbEcosContentData
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
+import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.records3.utils.RecordRefUtils
 import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.mime.MimeType
@@ -16,6 +19,7 @@ import ru.citeck.ecos.webapp.api.mime.MimeType
 class DbContentValue(
     private val ctx: DbRecordsDaoCtx,
     private val recId: String,
+    private val recType: TypeInfo?,
     private val contentDbId: Long,
     private val attribute: String,
     private val isDefaultContent: Boolean
@@ -48,7 +52,13 @@ class DbContentValue(
         private const val TRANSFORM_WEBAPI_PATH = "/tfm/transform"
     }
 
-    private val currentEntityRef = EntityRef.create(ctx.appName, ctx.sourceId, recId)
+    private val currentEntityRef: EntityRef = run {
+        RecordRefUtils.mapAppIdAndSourceId(
+            EntityRef.create(ctx.appName, ctx.sourceId, recId),
+            ctx.appName,
+            RequestContext.getCurrent()?.ctxData?.sourceIdMapping
+        )
+    }
 
     val contentData: DbEcosContentData by lazy {
         val service = ctx.contentService ?: error("Content service is null")
@@ -194,7 +204,9 @@ class DbContentValue(
             return ContentData(
                 ctx.recContentHandler.createContentUrl(recId, attribute),
                 contentData.getName(),
-                contentData.getSize()
+                contentData.getSize(),
+                currentEntityRef,
+                recType?.id ?: ""
             )
         }
         return null
@@ -246,7 +258,9 @@ class DbContentValue(
     data class ContentData(
         val url: String,
         val name: String,
-        val size: Long
+        val size: Long,
+        val recordRef: EntityRef,
+        val fileType: String
     )
 
     private data class PreviewData(

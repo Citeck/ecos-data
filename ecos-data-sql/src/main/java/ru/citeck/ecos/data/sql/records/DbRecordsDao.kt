@@ -760,13 +760,21 @@ class DbRecordsDao(
         val operations = daoCtx.mutAttOperationHandler.extractAttValueOperations(recAttributes)
         operations.forEach {
             if (!recAttributes.has(it.getAttName())) {
-                val currentAtts = DbRecord(daoCtx, entityToMutate).getAttsForOperations()
+                val currentAtts: Map<String, Any?> = if (entityToMutate.id == DbEntity.NEW_REC_ID) {
+                    emptyMap()
+                } else {
+                    DbRecord(daoCtx, entityToMutate).getAttsForOperations()
+                }
                 val value = it.invoke(currentAtts[it.getAttName()])
                 recAttributes[it.getAttName()] = value
             }
         }
 
-        val newAspects = recAttributes[DbRecord.ATT_ASPECTS].asList(EntityRef::class.java).toMutableSet()
+        val newAspects = if (recAttributes.has(DbRecord.ATT_ASPECTS)) {
+            recAttributes[DbRecord.ATT_ASPECTS].asList(EntityRef::class.java)
+        } else {
+            currentAspectRefs
+        }.toMutableSet()
         newAspects.addAll(
             ecosTypeService.getAspectsForAtts(
                 recAttributes.fieldNamesList().filter { it.contains(":") }.toSet()
