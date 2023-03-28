@@ -570,8 +570,8 @@ class DbRecordsDao(
             var queryPermsPolicy = QueryPermsPolicy.OWN
             queryPermsPolicy = ecosTypeService.getTypeInfo(resultEntity.type)?.queryPermsPolicy ?: queryPermsPolicy
 
+            val txn = TxnContext.getTxn()
             if (queryPermsPolicy == QueryPermsPolicy.OWN) {
-                val txn = TxnContext.getTxn()
                 val prepareToCommitEntities = txn.getData(recsPrepareToCommitTxnKey) {
                     LinkedHashSet<String>()
                 }
@@ -581,8 +581,8 @@ class DbRecordsDao(
                     }
                 }
                 prepareToCommitEntities.add(resultRecId)
-                getUpdatedInTxnIds(txn).add(resultRecId)
             }
+            getUpdatedInTxnIds(txn).add(resultRecId)
 
             resultRecId
         }
@@ -1052,7 +1052,7 @@ class DbRecordsDao(
     }
 
     private fun getUpdatedInTxnIds(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<String> {
-        return txn?.getData(recsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
+        return txn?.getData(AuthContext.getCurrentRunAsUser() to recsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
     }
 
     private class IdentityKey

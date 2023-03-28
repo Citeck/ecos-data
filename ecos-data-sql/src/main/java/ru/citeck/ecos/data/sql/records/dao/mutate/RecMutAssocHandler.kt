@@ -15,6 +15,7 @@ import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.records3.utils.RecordRefUtils
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
@@ -106,10 +107,11 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             childAttributes[RecordConstants.ATT_TYPE] = ModelUtils.getTypeRef(typeId)
             childAttributes[RecordConstants.ATT_CONTENT] = listOf(value)
 
-            val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
-            val sourceId = sourceIdMapping.getOrDefault(ctx.sourceId, ctx.sourceId)
-
-            childAttributes[RecordConstants.ATT_PARENT] = EntityRef.create(ctx.appName, sourceId, recordId)
+            childAttributes[RecordConstants.ATT_PARENT] = RecordRefUtils.mapAppIdAndSourceId(
+                EntityRef.create(ctx.appName, ctx.sourceId, recordId),
+                ctx.appName,
+                RequestContext.getCurrent()?.ctxData?.sourceIdMapping
+            )
 
             val name = value["originalName"]
             if (name.isNotNull()) {
