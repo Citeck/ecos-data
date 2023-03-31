@@ -17,8 +17,11 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.value.AttValuesConverter
+import ru.citeck.ecos.records3.record.request.RequestContext
+import ru.citeck.ecos.records3.utils.RecordRefUtils
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
 import ru.citeck.ecos.webapp.api.content.EcosContentApi
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.web.client.EcosWebClientApi
 
 class DbRecordsDaoCtx(
@@ -44,4 +47,16 @@ class DbRecordsDaoCtx(
     val mutAttOperationHandler: RecMutAttOperationsHandler by lazy { RecMutAttOperationsHandler() }
     val recEventsHandler: DbRecEventsHandler by lazy { DbRecEventsHandler(this) }
     val deleteDao: DbRecordsDeleteDao by lazy { DbRecordsDeleteDao(this) }
+
+    fun getLocalRef(extId: String): EntityRef {
+        return EntityRef.create(appName, sourceId, extId)
+    }
+
+    fun getGlobalRef(extId: String): EntityRef {
+        return RecordRefUtils.mapAppIdAndSourceId(
+            getLocalRef(extId),
+            appName,
+            RequestContext.getCurrent()?.ctxData?.sourceIdMapping
+        )
+    }
 }

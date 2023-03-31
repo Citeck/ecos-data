@@ -645,10 +645,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         this.columns = columns
 
         val notNullColumns = columns ?: emptyList()
-
-        if (notNullColumns.isNotEmpty()) {
-            this.tableCtx = this.tableCtx.withColumns(notNullColumns)
-        }
+        this.tableCtx = this.tableCtx.withColumns(notNullColumns)
     }
 
     private fun <T> execReadOnlyQueryWithPredicate(

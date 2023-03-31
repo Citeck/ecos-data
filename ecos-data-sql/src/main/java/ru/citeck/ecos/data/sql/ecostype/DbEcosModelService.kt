@@ -5,6 +5,7 @@ import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.model.lib.ModelServiceFactory
+import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttStoringType
@@ -47,6 +48,10 @@ class DbEcosModelService(modelServices: ModelServiceFactory) {
             return null
         }
         return typesRepo.getTypeInfo(ModelUtils.getTypeRef(typeId))
+    }
+
+    fun getAspectsInfo(aspectRefs: Collection<EntityRef>): List<AspectInfo> {
+        return aspectRefs.map { aspectsRepo.getAspectInfo(it) ?: AspectInfo.EMPTY }
     }
 
     fun getAllAttributesForAspects(aspectRefs: List<EntityRef>): List<AttributeDef> {

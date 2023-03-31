@@ -2,8 +2,6 @@ package ru.citeck.ecos.data.sql.records
 
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
-import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
-import ru.citeck.ecos.data.sql.records.listener.DbRecordDeletedEvent
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -55,13 +53,7 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
                 } else {
                     dataService.delete(entity)
                 }
-                val typeInfo = typeService.getTypeInfo(entity.type)
-                if (typeInfo != null) {
-                    val event = DbRecordDeletedEvent(DbRecord(ctx, entity), typeInfo)
-                    ctx.listeners.forEach {
-                        it.onDeleted(event)
-                    }
-                }
+                ctx.recEventsHandler.emitDeleteEvent(entity)
             }
         }
 

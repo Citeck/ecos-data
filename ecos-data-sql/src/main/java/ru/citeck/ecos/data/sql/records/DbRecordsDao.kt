@@ -14,6 +14,7 @@ import ru.citeck.ecos.data.sql.perms.DbEntityPermsDto
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
+import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
 import ru.citeck.ecos.data.sql.records.dao.atts.DbEmptyRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
@@ -67,6 +68,7 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Pattern
 import kotlin.collections.ArrayList
 import kotlin.collections.HashSet
@@ -106,6 +108,7 @@ class DbRecordsDao(
 
     private lateinit var ecosTypeService: DbEcosModelService
     private lateinit var daoCtx: DbRecordsDaoCtx
+    private val daoCtxInitialized = AtomicBoolean(false)
 
     private val recordRefService: DbRecordRefService = dataService.getTableContext().getRecordRefsService()
     private val contentService: DbContentService = dataService.getTableContext().getContentService()
@@ -1021,14 +1024,19 @@ class DbRecordsDao(
 
     override fun getId() = config.id
 
+    @Synchronized
     fun addListener(listener: DbRecordsListener) {
         this.listeners.add(listener)
+        if (daoCtxInitialized.get() && listener is DbRecordsDaoCtxAware) {
+            listener.setRecordsDaoCtx(daoCtx)
+        }
     }
 
     fun removeListener(listener: DbRecordsListener) {
         this.listeners.remove(listener)
     }
 
+    @Synchronized
     override fun setRecordsServiceFactory(serviceFactory: RecordsServiceFactory) {
         super.setRecordsServiceFactory(serviceFactory)
         ecosTypeService = DbEcosModelService(modelServices)
@@ -1049,9 +1057,17 @@ class DbRecordsDao(
             serviceFactory.attValuesConverter,
             serviceFactory.getEcosWebAppApi()?.getWebClientApi()
         )
+        daoCtxInitialized.set(true)
+        listeners.forEach {
+            if (it is DbRecordsDaoCtxAware) {
+                it.setRecordsDaoCtx(daoCtx)
+            }
+        }
     }
 
     private fun getUpdatedInTxnIds(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<String> {
+        // If user has already modified a record in this transaction,
+        // he can modify it again until commit without checking permissions.
         return txn?.getData(AuthContext.getCurrentRunAsUser() to recsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
     }
 

@@ -4,11 +4,38 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
+
+    private fun getLongsList(value: Any?): List<Long> {
+        value ?: return emptyList()
+        if (value is Long) {
+            return listOf(value)
+        }
+        if (value is Iterable<*>) {
+            return value.mapNotNull { it as? Long }
+        }
+        return emptyList()
+    }
+
+    fun emitDeleteEvent(entity: DbEntity) {
+        val meta = getEntityMeta(entity)
+        val event = DbRecordDeletedEvent(
+            meta.localRef,
+            meta.globalRef,
+            DbRecord(ctx, entity),
+            meta.typeInfo,
+            meta.aspectsInfo
+        )
+        ctx.listeners.forEach {
+            it.onDeleted(event)
+        }
+    }
 
     fun emitEventsAfterMutation(before: DbEntity, after: DbEntity, isNewRecord: Boolean) {
 
@@ -16,10 +43,21 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             return
         }
 
-        val typeInfo = ctx.ecosTypeService.getTypeInfoNotNull(after.type)
+        val (
+            typeInfo,
+            aspectsInfo,
+            localRef,
+            globalRef
+        ) = getEntityMeta(after)
 
         if (isNewRecord) {
-            val event = DbRecordCreatedEvent(DbRecord(ctx, after), typeInfo)
+            val event = DbRecordCreatedEvent(
+                localRef,
+                globalRef,
+                DbRecord(ctx, after),
+                typeInfo,
+                aspectsInfo
+            )
             ctx.listeners.forEach {
                 it.onCreated(event)
             }
@@ -38,7 +76,15 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         }
 
         if (attsBefore != attsAfter) {
-            val recChangedEvent = DbRecordChangedEvent(recAfter, typeInfo, attsBefore, attsAfter)
+            val recChangedEvent = DbRecordChangedEvent(
+                localRef,
+                globalRef,
+                recAfter,
+                typeInfo,
+                aspectsInfo,
+                attsBefore,
+                attsAfter
+            )
             ctx.listeners.forEach {
                 it.onChanged(recChangedEvent)
             }
@@ -49,7 +95,15 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
 
         if (contentBefore != null || contentAfter != null) {
             if (contentBefore?.getContentDbData()?.getUri() != contentAfter?.getContentDbData()?.getUri()) {
-                val contentChangedEvent = DbRecordContentChangedEvent(recAfter, typeInfo, contentBefore, contentAfter)
+                val contentChangedEvent = DbRecordContentChangedEvent(
+                    localRef,
+                    globalRef,
+                    recAfter,
+                    typeInfo,
+                    aspectsInfo,
+                    contentBefore,
+                    contentAfter
+                )
                 ctx.listeners.forEach {
                     it.onContentChanged(contentChangedEvent)
                 }
@@ -64,7 +118,15 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             val statusBeforeDef = getStatusDef(statusBefore, typeInfo)
             val statusAfterDef = getStatusDef(statusAfter, typeInfo)
 
-            val statusChangedEvent = DbRecordStatusChangedEvent(recAfter, typeInfo, statusBeforeDef, statusAfterDef)
+            val statusChangedEvent = DbRecordStatusChangedEvent(
+                localRef,
+                globalRef,
+                recAfter,
+                typeInfo,
+                aspectsInfo,
+                statusBeforeDef,
+                statusAfterDef
+            )
             ctx.listeners.forEach {
                 it.onStatusChanged(statusChangedEvent)
             }
@@ -73,11 +135,36 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         val isDraftBefore = before.attributes[DbRecord.COLUMN_IS_DRAFT.name] as? Boolean
         val isDraftAfter = after.attributes[DbRecord.COLUMN_IS_DRAFT.name] as? Boolean
         if (isDraftBefore != null && isDraftAfter != null && isDraftBefore != isDraftAfter) {
-            val event = DbRecordDraftStatusChangedEvent(recAfter, typeInfo, isDraftBefore, isDraftAfter)
+            val event = DbRecordDraftStatusChangedEvent(
+                localRef,
+                globalRef,
+                recAfter,
+                typeInfo,
+                aspectsInfo,
+                isDraftBefore,
+                isDraftAfter
+            )
             ctx.listeners.forEach {
                 it.onDraftStatusChanged(event)
             }
         }
+    }
+
+    private fun getEntityMeta(entity: DbEntity): EntityMeta {
+
+        val typeInfo = ctx.ecosTypeService.getTypeInfoNotNull(entity.type)
+
+        val aspectsIds = getLongsList(entity.attributes[DbRecord.ATT_ASPECTS])
+        val aspectsRefs = ctx.recordRefService.getEntityRefsByIds(aspectsIds).toMutableSet()
+        typeInfo.aspects.forEach {
+            aspectsRefs.add(it.ref)
+        }
+        val aspectsInfo = ctx.ecosTypeService.getAspectsInfo(aspectsRefs)
+
+        val localRef = ctx.getLocalRef(entity.extId)
+        val globalRef = ctx.getGlobalRef(entity.extId)
+
+        return EntityMeta(typeInfo, aspectsInfo, localRef, globalRef)
     }
 
     private fun getStatusDef(id: String, typeInfo: TypeInfo): StatusDef {
@@ -88,4 +175,11 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             withId(id)
         }
     }
+
+    private data class EntityMeta(
+        val typeInfo: TypeInfo,
+        val aspectsInfo: List<AspectInfo>,
+        val localRef: EntityRef,
+        val globalRef: EntityRef
+    )
 }

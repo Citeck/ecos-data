@@ -20,6 +20,7 @@ import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
+import ru.citeck.ecos.data.sql.records.listener.DbIntegrityCheckListener
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.records.perms.DefaultDbPermsComponent
@@ -341,6 +342,7 @@ abstract class DbRecordsTestBase {
             permsComponent,
             computedAttsComponent
         )
+        recordsDao.addListener(DbIntegrityCheckListener())
         records.register(recordsDao)
 
         dbRecordRefService = schemaCtx.recordRefService

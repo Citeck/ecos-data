@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigrationContext
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
+import ru.citeck.ecos.data.sql.records.listener.DbIntegrityCheckListener
 import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -102,6 +103,8 @@ class DbDomainFactory(
             listeners?.forEach {
                 recordsDao.addListener(it)
             }
+
+            recordsDao.addListener(DbIntegrityCheckListener())
 
             val migrationContext = DbDomainMigrationContext(dataService, schemaContext)
             if (webAppApi.isReady()) {
