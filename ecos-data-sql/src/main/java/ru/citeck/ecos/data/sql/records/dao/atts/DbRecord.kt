@@ -15,6 +15,7 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValue
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValueWithCustomName
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
@@ -100,15 +101,18 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     private val assocMapping: Map<Long, EntityRef>
     private val typeInfo: TypeInfo?
     private val attTypes: Map<String, AttributeType>
+    private val attDefs: Map<String, AttributeDef>
 
     init {
         val recData = LinkedHashMap(entity.attributes)
 
         attTypes = LinkedHashMap()
+        attDefs = LinkedHashMap()
         typeInfo = ctx.ecosTypeService.getTypeInfo(entity.type)
 
         typeInfo?.model?.getAllAttributes()?.forEach {
             attTypes[it.id] = it.type
+            attDefs[it.id] = it
         }
 
         OPTIONAL_COLUMNS.forEach {
@@ -142,6 +146,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             val aspectRefs = ctx.recordRefService.getEntityRefsByIds(aspectIds)
             for (attribute in ctx.ecosTypeService.getAllAttributesForAspects(aspectRefs)) {
                 attTypes[attribute.id] = attribute.type
+                attDefs[attribute.id] = attribute
             }
         }
 
@@ -524,7 +529,15 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         if (name == StatusConstants.ATT_STATUS) {
             return DbStatusEdge(ctx, type)
         }
-        return DbRecordAttEdge(this, name, permsValue.getRecordPerms())
+        return DbRecordAttEdge(
+            this,
+            name,
+            attDefs[name] ?: AttributeDef.create {
+                withId(name)
+                withName(MLText(name))
+            },
+            permsValue.getRecordPerms()
+        )
     }
 
     private fun getAsPersonRef(name: String): Any {
