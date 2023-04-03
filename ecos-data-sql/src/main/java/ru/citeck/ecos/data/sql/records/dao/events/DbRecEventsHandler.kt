@@ -28,6 +28,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         val event = DbRecordDeletedEvent(
             meta.localRef,
             meta.globalRef,
+            meta.draft,
             DbRecord(ctx, entity),
             meta.typeInfo,
             meta.aspectsInfo
@@ -47,13 +48,15 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             typeInfo,
             aspectsInfo,
             localRef,
-            globalRef
+            globalRef,
+            isDraft
         ) = getEntityMeta(after)
 
         if (isNewRecord) {
             val event = DbRecordCreatedEvent(
                 localRef,
                 globalRef,
+                isDraft,
                 DbRecord(ctx, after),
                 typeInfo,
                 aspectsInfo
@@ -79,6 +82,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             val recChangedEvent = DbRecordChangedEvent(
                 localRef,
                 globalRef,
+                isDraft,
                 recAfter,
                 typeInfo,
                 aspectsInfo,
@@ -98,6 +102,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
                 val contentChangedEvent = DbRecordContentChangedEvent(
                     localRef,
                     globalRef,
+                    isDraft,
                     recAfter,
                     typeInfo,
                     aspectsInfo,
@@ -121,6 +126,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             val statusChangedEvent = DbRecordStatusChangedEvent(
                 localRef,
                 globalRef,
+                isDraft,
                 recAfter,
                 typeInfo,
                 aspectsInfo,
@@ -138,6 +144,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             val event = DbRecordDraftStatusChangedEvent(
                 localRef,
                 globalRef,
+                isDraft,
                 recAfter,
                 typeInfo,
                 aspectsInfo,
@@ -164,7 +171,9 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         val localRef = ctx.getLocalRef(entity.extId)
         val globalRef = ctx.getGlobalRef(entity.extId)
 
-        return EntityMeta(typeInfo, aspectsInfo, localRef, globalRef)
+        val isDraft = entity.attributes[DbRecord.COLUMN_IS_DRAFT.name] == true
+
+        return EntityMeta(typeInfo, aspectsInfo, localRef, globalRef, isDraft)
     }
 
     private fun getStatusDef(id: String, typeInfo: TypeInfo): StatusDef {
@@ -180,6 +189,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         val typeInfo: TypeInfo,
         val aspectsInfo: List<AspectInfo>,
         val localRef: EntityRef,
-        val globalRef: EntityRef
+        val globalRef: EntityRef,
+        val draft: Boolean
     )
 }

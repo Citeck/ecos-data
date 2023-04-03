@@ -53,5 +53,8 @@ class DbRecordsMandatoryAttsTest : DbRecordsTestBase() {
         assertThrows<Exception> {
             updateRecord(rec, "att_rem_mandatoryAssoc" to refs[1])
         }
+
+        val newRec = createRecord("notMandatory" to "abc", "_state" to "draft")
+        assertThat(records.getAtt(newRec, "notMandatory").asText()).isEqualTo("abc")
     }
 }

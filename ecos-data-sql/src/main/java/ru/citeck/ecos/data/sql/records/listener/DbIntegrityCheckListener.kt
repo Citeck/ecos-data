@@ -20,7 +20,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         val data = txn.getData(
             TxnDataKey(event.localRef)
         ) {
-            RecordData(event.typeDef, event.aspects, created = true)
+            RecordData(event.typeDef, event.aspects, created = true, draft = event.draft)
         }
         txn.addAction(TxnActionType.BEFORE_COMMIT, 0f, false) {
             checkIntegrity(event.localRef, data)
@@ -35,7 +35,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             TxnDataKey(event.localRef)
         ) {
             isNewRecData.set(true)
-            RecordData(event.typeDef, event.aspects)
+            RecordData(event.typeDef, event.aspects, draft = event.draft)
         }
         data.typeInfo = event.typeDef
         data.aspectsInfo = event.aspects
@@ -55,7 +55,19 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         }
     }
 
+    override fun onDeleted(event: DbRecordDeletedEvent) {
+        val txn = TxnContext.getTxn()
+        val data = txn.getData<RecordData>(TxnDataKey(event.localRef))
+        if (data != null) {
+            data.deleted = true
+        }
+    }
+
     private fun checkIntegrity(recordRef: EntityRef, data: RecordData) {
+
+        if (data.deleted || data.draft) {
+            return
+        }
 
         val attsById = LinkedHashMap<String, AttributeDef>()
         fun registerAtts(atts: Collection<AttributeDef>) {
@@ -115,7 +127,9 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         var typeInfo: TypeInfo,
         var aspectsInfo: List<AspectInfo>,
         val changedAtts: MutableSet<String> = LinkedHashSet(),
-        var created: Boolean = false
+        var created: Boolean = false,
+        var draft: Boolean = false,
+        var deleted: Boolean = false
     )
 
     override fun setRecordsDaoCtx(recordsDaoCtx: DbRecordsDaoCtx) {
