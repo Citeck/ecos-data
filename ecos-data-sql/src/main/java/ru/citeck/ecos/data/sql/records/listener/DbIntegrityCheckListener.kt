@@ -105,7 +105,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             recordAtts[it].isEmpty()
         }
         if (emptyMandatoryAtts.isNotEmpty()) {
-            error("Mandatory attributes is empty: ${emptyMandatoryAtts.joinToString(", ")}")
+            error("Mandatory attributes are empty: ${emptyMandatoryAtts.joinToString(", ")}")
         }
     }
 
