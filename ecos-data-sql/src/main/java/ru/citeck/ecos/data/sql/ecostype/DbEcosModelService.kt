@@ -54,11 +54,11 @@ class DbEcosModelService(modelServices: ModelServiceFactory) {
         return aspectRefs.map { aspectsRepo.getAspectInfo(it) ?: AspectInfo.EMPTY }
     }
 
-    fun getAllAttributesForAspects(aspectRefs: List<EntityRef>): List<AttributeDef> {
+    fun getAllAttributesForAspects(aspectRefs: Collection<EntityRef>): List<AttributeDef> {
         return getAttributesForAspects(aspectRefs, true)
     }
 
-    fun getAttributesForAspects(aspectRefs: List<EntityRef>, includeSystem: Boolean): List<AttributeDef> {
+    fun getAttributesForAspects(aspectRefs: Collection<EntityRef>, includeSystem: Boolean): List<AttributeDef> {
         val attributes = ArrayList<AttributeDef>(32)
         for (aspectRef in aspectRefs) {
             val aspectInfo = aspectsRepo.getAspectInfo(aspectRef)

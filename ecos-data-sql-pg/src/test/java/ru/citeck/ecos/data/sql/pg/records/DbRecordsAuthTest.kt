@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthGroup
 import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
@@ -270,6 +271,11 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
                             listOf(
                                 AttributeDef.create()
                                     .withId("parentAtt")
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("childAssoc")
+                                    .withType(AttributeType.ASSOC)
+                                    .withConfig(ObjectData.create().set("child", true))
                                     .build()
                             )
                         ).build()
@@ -302,6 +308,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         val parentRef = mainCtx.createRecord("parentAtt" to "parentValue")
         val childrenRef = childrenDao.createRecord(
             "_parent" to parentRef,
+            "_parentAtt" to "childAssoc",
             "childAtt" to "childValue"
         )
 

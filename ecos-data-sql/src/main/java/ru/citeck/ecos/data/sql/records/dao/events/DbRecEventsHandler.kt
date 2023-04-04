@@ -1,34 +1,21 @@
 package ru.citeck.ecos.data.sql.records.dao.events
 
+import ru.citeck.ecos.data.sql.records.dao.DbEntityMeta
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
-import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
-import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
 
-    private fun getLongsList(value: Any?): List<Long> {
-        value ?: return emptyList()
-        if (value is Long) {
-            return listOf(value)
-        }
-        if (value is Iterable<*>) {
-            return value.mapNotNull { it as? Long }
-        }
-        return emptyList()
-    }
-
-    fun emitDeleteEvent(entity: DbEntity) {
-        val meta = getEntityMeta(entity)
+    fun emitDeleteEvent(entity: DbEntity, meta: DbEntityMeta) {
         val event = DbRecordDeletedEvent(
             meta.localRef,
             meta.globalRef,
-            meta.draft,
+            meta.isDraft,
             DbRecord(ctx, entity),
             meta.typeInfo,
             meta.aspectsInfo
@@ -44,13 +31,12 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             return
         }
 
-        val (
-            typeInfo,
-            aspectsInfo,
-            localRef,
-            globalRef,
-            isDraft
-        ) = getEntityMeta(after)
+        val meta = ctx.getEntityMeta(after)
+        val typeInfo = meta.typeInfo
+        val aspectsInfo = meta.aspectsInfo
+        val localRef = meta.localRef
+        val globalRef = meta.globalRef
+        val isDraft = meta.isDraft
 
         if (isNewRecord) {
             val event = DbRecordCreatedEvent(
@@ -157,25 +143,6 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         }
     }
 
-    private fun getEntityMeta(entity: DbEntity): EntityMeta {
-
-        val typeInfo = ctx.ecosTypeService.getTypeInfoNotNull(entity.type)
-
-        val aspectsIds = getLongsList(entity.attributes[DbRecord.ATT_ASPECTS])
-        val aspectsRefs = ctx.recordRefService.getEntityRefsByIds(aspectsIds).toMutableSet()
-        typeInfo.aspects.forEach {
-            aspectsRefs.add(it.ref)
-        }
-        val aspectsInfo = ctx.ecosTypeService.getAspectsInfo(aspectsRefs)
-
-        val localRef = ctx.getLocalRef(entity.extId)
-        val globalRef = ctx.getGlobalRef(entity.extId)
-
-        val isDraft = entity.attributes[DbRecord.COLUMN_IS_DRAFT.name] == true
-
-        return EntityMeta(typeInfo, aspectsInfo, localRef, globalRef, isDraft)
-    }
-
     private fun getStatusDef(id: String, typeInfo: TypeInfo): StatusDef {
         if (id.isBlank()) {
             return StatusDef.create {}
@@ -184,12 +151,4 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             withId(id)
         }
     }
-
-    private data class EntityMeta(
-        val typeInfo: TypeInfo,
-        val aspectsInfo: List<AspectInfo>,
-        val localRef: EntityRef,
-        val globalRef: EntityRef,
-        val draft: Boolean
-    )
 }

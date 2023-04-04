@@ -6,6 +6,7 @@ import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.records.DbRecordsDeleteDao
+import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.content.DbRecContentHandler
 import ru.citeck.ecos.data.sql.records.dao.events.DbRecEventsHandler
 import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler
@@ -13,8 +14,10 @@ import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutConverter
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.RecMutAttOperationsHandler
 import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
+import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataService
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.value.AttValuesConverter
 import ru.citeck.ecos.records3.record.request.RequestContext
@@ -57,6 +60,43 @@ class DbRecordsDaoCtx(
             getLocalRef(extId),
             appName,
             RequestContext.getCurrent()?.ctxData?.sourceIdMapping
+        )
+    }
+
+    fun getEntityMeta(entity: DbEntity): DbEntityMeta {
+
+        val aspectsIds = DbAttValueUtils.collectLongValues(entity.attributes[DbRecord.ATT_ASPECTS])
+        val aspectsRefs = recordRefService.getEntityRefsByIds(aspectsIds).toMutableSet()
+        val typeId = entity.type.ifBlank {
+            config.typeRef.getLocalId()
+        }
+        val typeInfo = ecosTypeService.getTypeInfoNotNull(typeId)
+        typeInfo.aspects.forEach {
+            aspectsRefs.add(it.ref)
+        }
+        val allAttributes = mutableMapOf<String, AttributeDef>()
+        val aspectsInfo = ecosTypeService.getAspectsInfo(aspectsRefs)
+
+        aspectsInfo.forEach { aspectInfo ->
+            aspectInfo.attributes.forEach { allAttributes[it.id] = it }
+            aspectInfo.systemAttributes.forEach { allAttributes[it.id] = it }
+        }
+        typeInfo.model.getAllAttributes().forEach {
+            allAttributes[it.id] = it
+        }
+
+        val localRef = getLocalRef(entity.extId)
+        val globalRef = getGlobalRef(entity.extId)
+
+        val isDraft = entity.attributes[DbRecord.COLUMN_IS_DRAFT.name] == true
+
+        return DbEntityMeta(
+            localRef,
+            globalRef,
+            isDraft,
+            typeInfo,
+            aspectsInfo,
+            allAttributes
         )
     }
 }

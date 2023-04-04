@@ -61,4 +61,8 @@ class AttAddOrRemOperation(
     }
 
     override fun getAttName() = att
+
+    fun isAdd(): Boolean {
+        return add
+    }
 }

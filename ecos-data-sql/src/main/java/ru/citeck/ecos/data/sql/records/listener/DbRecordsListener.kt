@@ -32,7 +32,7 @@ interface DbRecordsListener {
 class DbRecordDraftStatusChangedEvent(
     val localRef: EntityRef,
     val globalRef: EntityRef,
-    val draft: Boolean,
+    val isDraft: Boolean,
     val record: Any,
     val typeDef: TypeInfo,
     val aspects: List<AspectInfo>,
@@ -43,7 +43,7 @@ class DbRecordDraftStatusChangedEvent(
 class DbRecordStatusChangedEvent(
     val localRef: EntityRef,
     val globalRef: EntityRef,
-    val draft: Boolean,
+    val isDraft: Boolean,
     val record: Any,
     val typeDef: TypeInfo,
     val aspects: List<AspectInfo>,
@@ -54,7 +54,7 @@ class DbRecordStatusChangedEvent(
 class DbRecordDeletedEvent(
     val localRef: EntityRef,
     val globalRef: EntityRef,
-    val draft: Boolean,
+    val isDraft: Boolean,
     val record: Any,
     val typeDef: TypeInfo,
     val aspects: List<AspectInfo>
@@ -63,7 +63,7 @@ class DbRecordDeletedEvent(
 class DbRecordCreatedEvent(
     val localRef: EntityRef,
     val globalRef: EntityRef,
-    val draft: Boolean,
+    val isDraft: Boolean,
     val record: Any,
     val typeDef: TypeInfo,
     val aspects: List<AspectInfo>
@@ -72,7 +72,7 @@ class DbRecordCreatedEvent(
 class DbRecordChangedEvent(
     val localRef: EntityRef,
     val globalRef: EntityRef,
-    val draft: Boolean,
+    val isDraft: Boolean,
     val record: Any,
     val typeDef: TypeInfo,
     val aspects: List<AspectInfo>,
@@ -83,7 +83,7 @@ class DbRecordChangedEvent(
 class DbRecordContentChangedEvent(
     val localRef: EntityRef,
     val globalRef: EntityRef,
-    val draft: Boolean,
+    val isDraft: Boolean,
     val record: Any,
     val typeDef: TypeInfo,
     val aspects: List<AspectInfo>,

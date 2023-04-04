@@ -2,8 +2,8 @@ package ru.citeck.ecos.data.sql.records
 
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
+import ru.citeck.ecos.data.sql.records.dao.mutate.operation.OperationType
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
-import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
@@ -21,8 +21,6 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
 
         val forceDeleteRequired = isTempStorage()
 
-        // todo: add children deletion
-        val typesInfo = HashMap<String, DbRecordDeleteTypeInfo>()
         for (recordId in recordIds) {
             dataService.findByExtId(recordId)?.let { entity ->
 
@@ -36,24 +34,35 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
                         ctx.recordsService.mutate(
                             parentRef,
                             mapOf(
-                                "att_rem_$parentAtt" to childRef
+                                "${OperationType.ATT_REMOVE.prefix}$parentAtt" to childRef
                             )
                         )
                     }
                 }
-
+                val meta = ctx.getEntityMeta(entity)
+                val idsToDelete = LinkedHashSet<Long>()
+                meta.allAttributes.forEach {
+                    if (DbRecordsUtils.isChildAssocAttribute(it.value)) {
+                        DbAttValueUtils.collectLongValues(entity.attributes[it.key], idsToDelete)
+                    }
+                }
+                if (idsToDelete.isNotEmpty()) {
+                    val refsToDelete = ctx.recordRefService.getEntityRefsByIds(idsToDelete.toList())
+                    ctx.recordsService.delete(refsToDelete)
+                }
                 if (forceDeleteRequired) {
-                    val info = typesInfo.computeIfAbsent(entity.type) { getRecordTypeInfo(it) }
-                    info.contentAtts.forEach { contentAtt ->
-                        DbAttValueUtils.forEachLongValue(entity.attributes[contentAtt]) {
-                            contentService!!.removeContent(it)
+                    meta.allAttributes.forEach { (attId, attDef) ->
+                        if (attDef.type == AttributeType.CONTENT) {
+                            DbAttValueUtils.forEachLongValue(entity.attributes[attId]) {
+                                contentService!!.removeContent(it)
+                            }
                         }
                     }
                     dataService.forceDelete(entity)
                 } else {
                     dataService.delete(entity)
                 }
-                ctx.recEventsHandler.emitDeleteEvent(entity)
+                ctx.recEventsHandler.emitDeleteEvent(entity, meta)
             }
         }
 
@@ -77,31 +86,4 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
         }
         return isTempStorage
     }
-
-    private fun getRecordTypeInfo(typeId: String): DbRecordDeleteTypeInfo {
-        val contentAtts = mutableListOf<String>()
-        val childAssocs = mutableListOf<AttributeDef>()
-        forEachAttribute(typeId) {
-            if (it.type == AttributeType.CONTENT) {
-                contentAtts.add(it.id)
-            }
-            if (it.type == AttributeType.ASSOC) {
-                if (it.config["child"].asBoolean(false)) {
-                    childAssocs.add(it)
-                }
-            }
-        }
-        return DbRecordDeleteTypeInfo(contentAtts, childAssocs)
-    }
-
-    private fun forEachAttribute(typeId: String, action: (AttributeDef) -> Unit) {
-        val typeInfo = typeService.getTypeInfoNotNull(typeId)
-        typeInfo.model.attributes.forEach { action(it) }
-        typeInfo.model.systemAttributes.forEach { action(it) }
-    }
-
-    private class DbRecordDeleteTypeInfo(
-        val contentAtts: List<String>,
-        val childAssocs: List<AttributeDef>
-    )
 }

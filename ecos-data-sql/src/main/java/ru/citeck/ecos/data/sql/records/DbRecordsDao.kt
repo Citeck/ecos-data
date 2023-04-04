@@ -522,7 +522,7 @@ class DbRecordsDao(
                 recordIds.forEach {
                     val recordPerms = getRecordPerms(it)
                     if (!recordPerms.isCurrentUserHasWritePerms()) {
-                        error("Permissions Denied. You can't delete record '$it'")
+                        error("Permissions Denied. You can't delete record '${daoCtx.getGlobalRef(it)}'")
                     }
                 }
             }
@@ -684,7 +684,7 @@ class DbRecordsDao(
                             "Record with ID $customExtId already exists. You should mutate it directly. " +
                                 "Record: ${getId()}@$customExtId"
                         }
-                        error("Permission denied")
+                        error("Read permission denied for ${daoCtx.getGlobalRef(customExtId)}")
                     }
                 }
                 return daoCtx.recContentHandler.withContentDbDataAware {
@@ -711,7 +711,7 @@ class DbRecordsDao(
             if (!getUpdatedInTxnIds().contains(entityToMutate.extId)) {
                 recordPerms = getRecordPerms(entityToMutate.extId)
                 if (!recordPerms.isCurrentUserHasWritePerms()) {
-                    error("Permissions Denied. You can't change record '${record.id}'")
+                    error("Permissions Denied. You can't change record '${daoCtx.getGlobalRef(record.id)}'")
                 }
             }
         }
@@ -760,16 +760,22 @@ class DbRecordsDao(
             }
         }
 
+        val changedByOperationsAtts = mutableSetOf<String>()
         val operations = daoCtx.mutAttOperationHandler.extractAttValueOperations(recAttributes)
-        operations.forEach {
-            if (!recAttributes.has(it.getAttName())) {
-                val currentAtts: Map<String, Any?> = if (entityToMutate.id == DbEntity.NEW_REC_ID) {
-                    emptyMap()
-                } else {
-                    DbRecord(daoCtx, entityToMutate).getAttsForOperations()
+            .filter { !recAttributes.has(it.getAttName()) }
+        if (operations.isNotEmpty()) {
+            val currentAtts: Map<String, Any?> = if (entityToMutate.id == DbEntity.NEW_REC_ID) {
+                emptyMap()
+            } else {
+                DbRecord(daoCtx, entityToMutate).getAttsForOperations()
+            }
+            operations.forEach {
+                val currentValue = currentAtts[it.getAttName()]
+                val newValue = it.invoke(currentValue)
+                if (newValue != currentValue) {
+                    changedByOperationsAtts.add(it.getAttName())
+                    recAttributes[it.getAttName()] = newValue
                 }
-                val value = it.invoke(currentAtts[it.getAttName()])
-                recAttributes[it.getAttName()] = value
             }
         }
 
@@ -891,7 +897,8 @@ class DbRecordsDao(
             recordEntityBeforeMutation,
             recAfterSave,
             record.attributes,
-            typeAttColumns
+            typeAttColumns,
+            changedByOperationsAtts
         )
         daoCtx.mutAssocHandler.processParentAfterMutation(
             recordEntityBeforeMutation,

@@ -11,6 +11,7 @@ import ru.citeck.ecos.txn.lib.action.TxnActionType
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.util.concurrent.atomic.AtomicBoolean
 
+// todo: add checking of parent ref recursion based on ecos_associations
 class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAware {
 
     private lateinit var ctx: DbRecordsDaoCtx
@@ -20,7 +21,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         val data = txn.getData(
             TxnDataKey(event.localRef)
         ) {
-            RecordData(event.typeDef, event.aspects, created = true, draft = event.draft)
+            RecordData(event.typeDef, event.aspects, created = true, isDraft = event.isDraft)
         }
         txn.addAction(TxnActionType.BEFORE_COMMIT, 0f, false) {
             checkIntegrity(event.localRef, data)
@@ -35,7 +36,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             TxnDataKey(event.localRef)
         ) {
             isNewRecData.set(true)
-            RecordData(event.typeDef, event.aspects, draft = event.draft)
+            RecordData(event.typeDef, event.aspects, isDraft = event.isDraft)
         }
         data.typeInfo = event.typeDef
         data.aspectsInfo = event.aspects
@@ -65,7 +66,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
 
     private fun checkIntegrity(recordRef: EntityRef, data: RecordData) {
 
-        if (data.deleted || data.draft) {
+        if (data.deleted || data.isDraft) {
             return
         }
 
@@ -128,7 +129,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         var aspectsInfo: List<AspectInfo>,
         val changedAtts: MutableSet<String> = LinkedHashSet(),
         var created: Boolean = false,
-        var draft: Boolean = false,
+        var isDraft: Boolean = false,
         var deleted: Boolean = false
     )
 

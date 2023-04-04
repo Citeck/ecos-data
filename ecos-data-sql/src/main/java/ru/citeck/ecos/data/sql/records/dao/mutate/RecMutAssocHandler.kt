@@ -8,14 +8,14 @@ import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.OperationType
+import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
-import ru.citeck.ecos.records3.record.request.RequestContext
-import ru.citeck.ecos.records3.utils.RecordRefUtils
+import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
@@ -23,8 +23,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
     companion object {
         private val log = KotlinLogging.logger {}
 
-        private const val MUTATION_FROM_PARENT_FLAG = "__mutationFromParent"
-        private const val MUTATION_FROM_CHILD_FLAG = "__mutationFromChild"
+        const val MUTATION_FROM_PARENT_FLAG = "__mutationFromParent"
+        const val MUTATION_FROM_CHILD_FLAG = "__mutationFromChild"
     }
 
     fun preProcessContentAtts(
@@ -106,12 +106,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             val childAttributes = ObjectData.create()
             childAttributes[RecordConstants.ATT_TYPE] = ModelUtils.getTypeRef(typeId)
             childAttributes[RecordConstants.ATT_CONTENT] = listOf(value)
-
-            childAttributes[RecordConstants.ATT_PARENT] = RecordRefUtils.mapAppIdAndSourceId(
-                EntityRef.create(ctx.appName, ctx.sourceId, recordId),
-                ctx.appName,
-                RequestContext.getCurrent()?.ctxData?.sourceIdMapping
-            )
+            childAttributes[RecordConstants.ATT_PARENT] = ctx.getGlobalRef(recordId)
+            childAttributes[RecordConstants.ATT_PARENT_ATT] = attId
+            childAttributes[MUTATION_FROM_PARENT_FLAG] = true
 
             val name = value["originalName"]
             if (name.isNotNull()) {
@@ -212,12 +209,30 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         recAfterSave: DbEntity,
         attributes: ObjectData
     ) {
-        if (!attributes.has(RecordConstants.ATT_PARENT) || attributes.get(MUTATION_FROM_PARENT_FLAG, false)) {
+        if (attributes.get(MUTATION_FROM_PARENT_FLAG, false)) {
             return
+        }
+        val hasParent = attributes[RecordConstants.ATT_PARENT].isNotEmpty()
+        val hasParentAtt = attributes[RecordConstants.ATT_PARENT_ATT].isNotEmpty()
+        if (!hasParent && !hasParentAtt) {
+            // parent reference doesn't changed
+            return
+        } else if (hasParent && !hasParentAtt) {
+            error(
+                "You should supply parent attribute (_parentAtt) for parent ref (_parent). " +
+                    "RecordRef: '${ctx.getGlobalRef(recAfterSave.extId)}' " +
+                    "ParentRef: '${attributes[RecordConstants.ATT_PARENT].asText()}'"
+            )
+        } else if (!hasParent) {
+            error(
+                "You should supply parent ref (_parent) for parent attribute (_parentAtt). " +
+                    "RecordRef: '${ctx.getGlobalRef(recAfterSave.extId)}' " +
+                    "ParentAtt: '${attributes[RecordConstants.ATT_PARENT_ATT].asText()}'"
+            )
         }
         val currentRef = ctx.recordRefService.getEntityRefById(recAfterSave.refId)
         if (EntityRef.isEmpty(currentRef)) {
-            return
+            error("Current ref is empty. RecordRef: ${ctx.getGlobalRef(recAfterSave.extId)}")
         }
 
         val parentAttBefore = recBeforeSave.attributes[RecordConstants.ATT_PARENT_ATT] as? String ?: ""
@@ -263,6 +278,10 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             ctx.recordRefService.getEntityRefById(it)
         } ?: EntityRef.EMPTY
 
+        if (parentRefAfter.getAppName() == AppName.ALFRESCO) {
+            return
+        }
+
         if (parentRefIdBefore == parentRefIdAfter || EntityRef.isEmpty(parentRefAfter) || parentAttAfter.isEmpty()) {
             return
         }
@@ -277,10 +296,32 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         recBeforeSave: DbEntity,
         recAfterSave: DbEntity,
         attributes: ObjectData,
-        columns: List<EcosAttColumnDef>
+        columns: List<EcosAttColumnDef>,
+        changedByOperationsAtts: Set<String>
     ) {
 
-        if (recAfterSave.refId < 0 || attributes.get(MUTATION_FROM_CHILD_FLAG, false)) {
+        if (recAfterSave.refId < 0) {
+            return
+        }
+
+        if (attributes.get(MUTATION_FROM_CHILD_FLAG, false)) {
+            if (changedByOperationsAtts.isEmpty()) {
+                error(
+                    "Mutation from child without operations... " +
+                        "RecordRef: '${ctx.getGlobalRef(recAfterSave.extId)}'"
+                )
+            }
+            val columnsById = columns.associateBy { it.attribute.id }
+            changedByOperationsAtts.forEach {
+                val column = columnsById[it]
+                if (column == null ||
+                    column.attribute.type != AttributeType.ASSOC ||
+                    !column.attribute.config.get("child", false)
+                ) {
+
+                    error("'$it' is not a child association. RecordRef: '${ctx.getGlobalRef(recAfterSave.extId)}'")
+                }
+            }
             return
         }
 
@@ -292,8 +333,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
 
         for (att in childAssociations) {
             val attributeId = att.attribute.id
-            val before = anyToSetOfLong(recBeforeSave.attributes[attributeId])
-            val after = anyToSetOfLong(recAfterSave.attributes[attributeId])
+            val before = DbAttValueUtils.anyToSetOfLongs(recBeforeSave.attributes[attributeId])
+            val after = DbAttValueUtils.anyToSetOfLongs(recAfterSave.attributes[attributeId])
 
             val changes = AddedRemovedAssocs(
                 after.subtract(before),
@@ -348,23 +389,6 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             addOrRemoveParentRef.invoke(it.key, it.value.removed, false)
             addOrRemoveParentRef.invoke(it.key, it.value.added, true)
         }
-    }
-
-    private fun anyToSetOfLong(value: Any?): Set<Long> {
-        value ?: return emptySet()
-        if (value is Collection<*>) {
-            val res = hashSetOf<Long>()
-            for (item in value) {
-                if (item is Long) {
-                    res.add(item)
-                }
-            }
-            return res
-        }
-        if (value is Long) {
-            return setOf(value)
-        }
-        return emptySet()
     }
 
     private data class AddedRemovedAssocs(

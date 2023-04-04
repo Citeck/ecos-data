@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
@@ -11,6 +12,7 @@ import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import java.lang.RuntimeException
 
 class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
@@ -115,5 +117,40 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
             val childRefs = records.getAtt(parentRec, "childAssoc[]?id").asList(EntityRef::class.java)
             assertThat(childRefs).containsExactlyElementsOf(refs)
         }
+    }
+
+    @Test
+    fun notExistentAssocTest() {
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("notAssoc")
+                },
+                AttributeDef.create {
+                    withId("notChildAssoc")
+                    withType(AttributeType.ASSOC)
+                },
+                AttributeDef.create {
+                    withId("childAssoc")
+                    withType(AttributeType.ASSOC)
+                    withConfig(ObjectData.create().set("child", true))
+                }
+            )
+        )
+
+        val parent = createRecord()
+        fun check(attribute: String, errorExpected: Boolean) {
+            if (errorExpected) {
+                assertThrows<RuntimeException> {
+                    createRecord("_parent" to parent, "_parentAtt" to attribute)
+                }
+            } else {
+                createRecord("_parent" to parent, "_parentAtt" to attribute)
+            }
+        }
+        check("unknown", true)
+        check("notAssoc", true)
+        check("notChildAssoc", true)
+        check("childAssoc", false)
     }
 }

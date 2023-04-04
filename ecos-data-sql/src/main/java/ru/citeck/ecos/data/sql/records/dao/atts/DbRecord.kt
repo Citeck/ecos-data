@@ -99,6 +99,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     private val permsValue by lazy { DbRecPermsValue(ctx, entity.extId) }
     private val additionalAtts: Map<String, Any?>
     private val assocMapping: Map<Long, EntityRef>
+
     private val typeInfo: TypeInfo?
     private val attTypes: Map<String, AttributeType>
     private val attDefs: Map<String, AttributeDef>
@@ -106,13 +107,13 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     init {
         val recData = LinkedHashMap(entity.attributes)
 
-        attTypes = LinkedHashMap()
-        attDefs = LinkedHashMap()
-        typeInfo = ctx.ecosTypeService.getTypeInfo(entity.type)
+        val meta = ctx.getEntityMeta(entity)
+        typeInfo = meta.typeInfo
 
-        typeInfo?.model?.getAllAttributes()?.forEach {
-            attTypes[it.id] = it.type
-            attDefs[it.id] = it
+        attTypes = LinkedHashMap()
+        attDefs = meta.allAttributes
+        meta.allAttributes.forEach {
+            attTypes[it.key] = it.value.type
         }
 
         OPTIONAL_COLUMNS.forEach {
@@ -137,16 +138,6 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                     else -> {
                     }
                 }
-            }
-        }
-
-        val aspects = entity.attributes[ATT_ASPECTS]
-        if (aspects is Collection<*> && aspects.isNotEmpty()) {
-            val aspectIds = aspects.mapNotNull { it as? Long }
-            val aspectRefs = ctx.recordRefService.getEntityRefsByIds(aspectIds)
-            for (attribute in ctx.ecosTypeService.getAllAttributesForAspects(aspectRefs)) {
-                attTypes[attribute.id] = attribute.type
-                attDefs[attribute.id] = attribute
             }
         }
 
@@ -179,7 +170,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             if (DbRecordsUtils.isAssocLikeAttribute(attType)) {
                 if (attId == ATT_ASPECTS) {
                     val fullAspects = LinkedHashSet<String>()
-                    typeInfo?.aspects?.forEach {
+                    typeInfo.aspects.forEach {
                         fullAspects.add(it.ref.getLocalId())
                     }
                     if (value != null) {
