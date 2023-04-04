@@ -732,6 +732,12 @@ class DbRecordsDao(
 
         val recAttributes = record.attributes.deepCopy()
 
+        if (isNewEntity) {
+            if (typeInfo.defaultStatus.isNotBlank()) {
+                recAttributes[StatusConstants.ATT_STATUS] = typeInfo.defaultStatus
+            }
+        }
+
         if (recAttributes.has(DbRecord.ATT_NAME) || recAttributes.has(ScalarType.DISP.mirrorAtt)) {
             val newName = if (record.attributes.has(DbRecord.ATT_NAME)) {
                 record.attributes[DbRecord.ATT_NAME]
