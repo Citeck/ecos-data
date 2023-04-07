@@ -93,7 +93,9 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
                     typeInfo,
                     aspectsInfo,
                     contentBefore,
-                    contentAfter
+                    contentAfter,
+                    attsBefore,
+                    attsAfter
                 )
                 ctx.listeners.forEach {
                     it.onContentChanged(contentChangedEvent)

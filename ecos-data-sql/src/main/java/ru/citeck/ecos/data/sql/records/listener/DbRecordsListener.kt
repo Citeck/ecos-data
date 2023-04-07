@@ -88,5 +88,7 @@ class DbRecordContentChangedEvent(
     val typeDef: TypeInfo,
     val aspects: List<AspectInfo>,
     val before: Any?,
-    val after: Any?
+    val after: Any?,
+    val attsBefore: Map<String, Any?>,
+    val attsAfter: Map<String, Any?>
 )
