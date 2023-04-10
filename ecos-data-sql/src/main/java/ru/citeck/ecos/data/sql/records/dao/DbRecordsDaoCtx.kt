@@ -75,13 +75,24 @@ class DbRecordsDaoCtx(
             aspectsRefs.add(it.ref)
         }
         val allAttributes = mutableMapOf<String, AttributeDef>()
+        val nonSystemAtts = mutableMapOf<String, AttributeDef>()
+
         val aspectsInfo = ecosTypeService.getAspectsInfo(aspectsRefs)
 
         aspectsInfo.forEach { aspectInfo ->
-            aspectInfo.attributes.forEach { allAttributes[it.id] = it }
-            aspectInfo.systemAttributes.forEach { allAttributes[it.id] = it }
+            aspectInfo.attributes.forEach {
+                allAttributes[it.id] = it
+                nonSystemAtts[it.id] = it
+            }
+            aspectInfo.systemAttributes.forEach {
+                allAttributes[it.id] = it
+            }
         }
-        typeInfo.model.getAllAttributes().forEach {
+        typeInfo.model.attributes.forEach {
+            allAttributes[it.id] = it
+            nonSystemAtts[it.id] = it
+        }
+        typeInfo.model.systemAttributes.forEach {
             allAttributes[it.id] = it
         }
 
@@ -96,6 +107,7 @@ class DbRecordsDaoCtx(
             isDraft,
             typeInfo,
             aspectsInfo,
+            nonSystemAtts,
             allAttributes
         )
     }

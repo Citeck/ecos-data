@@ -4,6 +4,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
+import ru.citeck.ecos.data.sql.records.listener.DbRecordContentChangedEvent
+import ru.citeck.ecos.data.sql.records.listener.DbRecordsListenerAdapter
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 
@@ -57,5 +59,19 @@ class DbContentVersionTest : DbRecordsTestBase() {
         updateRecord(rec0, "content" to contentData0)
         assertThat(records.getAtt(rec0, DbRecord.ATT_CONTENT_VERSION_COMMENT).asText()).isEqualTo("")
         assertThat(records.getAtt(rec0, DbRecord.ATT_CONTENT_VERSION).asText()).isEqualTo("6.0")
+
+        val contentChangedEvents = mutableListOf<DbRecordContentChangedEvent>()
+        mainCtx.dao.addListener(object : DbRecordsListenerAdapter() {
+            override fun onContentChanged(event: DbRecordContentChangedEvent) {
+                contentChangedEvents.add(event)
+            }
+        })
+
+        updateRecord(rec0, "content" to contentData1, DbRecord.ATT_CONTENT_VERSION_COMMENT to "comment")
+        assertThat(contentChangedEvents).hasSize(1)
+        assertThat(contentChangedEvents[0].attsBefore[DbRecord.ATT_CONTENT_VERSION]).isEqualTo("6.0")
+        assertThat(contentChangedEvents[0].attsBefore[DbRecord.ATT_CONTENT_VERSION_COMMENT]).isEqualTo("")
+        assertThat(contentChangedEvents[0].attsAfter[DbRecord.ATT_CONTENT_VERSION]).isEqualTo("7.0")
+        assertThat(contentChangedEvents[0].attsAfter[DbRecord.ATT_CONTENT_VERSION_COMMENT]).isEqualTo("comment")
     }
 }

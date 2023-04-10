@@ -58,7 +58,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         val attsBefore = mutableMapOf<String, Any?>()
         val attsAfter = mutableMapOf<String, Any?>()
 
-        val attsDef = typeInfo.model.attributes
+        val attsDef = meta.nonSystemAtts.values
         attsDef.forEach {
             attsBefore[it.id] = recBefore.getAtt(it.id)
             attsAfter[it.id] = recAfter.getAtt(it.id)
