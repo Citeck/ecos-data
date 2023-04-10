@@ -862,8 +862,7 @@ class DbRecordsDao(
                 uriBefore != uriAfter
             }
             if (contentWasChanged) {
-                val newVersionFromAtts = recAttributes[DbRecord.ATT_CONTENT_VERSION].asText()
-                if (newVersionFromAtts.isBlank()) {
+                if (recAttributes[DbRecord.ATT_CONTENT_VERSION].asText().isBlank()) {
                     if (contentBefore == -1L) {
                         recAttributes[DbRecord.ATT_CONTENT_VERSION] = "1.0"
                     } else {
@@ -872,6 +871,9 @@ class DbRecordsDao(
                         val newVersion = Version.valueOf(currentVersionStr) + Version.valueOf("1.0")
                         recAttributes[DbRecord.ATT_CONTENT_VERSION] = newVersion.toString()
                     }
+                }
+                if (!recAttributes.has(DbRecord.ATT_CONTENT_VERSION_COMMENT)) {
+                    recAttributes[DbRecord.ATT_CONTENT_VERSION_COMMENT] = ""
                 }
             }
         }

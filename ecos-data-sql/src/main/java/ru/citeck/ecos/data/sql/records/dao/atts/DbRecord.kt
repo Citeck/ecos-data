@@ -39,6 +39,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         const val ATT_ASPECTS = "_aspects"
         const val ATT_PERMISSIONS = "permissions"
         const val ATT_CONTENT_VERSION = "version:version"
+        const val ATT_CONTENT_VERSION_COMMENT = "version:comment"
 
         val ATTS_MAPPING = mapOf(
             "id" to DbEntity.EXT_ID,
