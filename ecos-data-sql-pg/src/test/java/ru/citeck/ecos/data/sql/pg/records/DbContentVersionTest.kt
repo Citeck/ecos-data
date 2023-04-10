@@ -47,5 +47,15 @@ class DbContentVersionTest : DbRecordsTestBase() {
         assertThrows<RuntimeException> {
             updateRecord(rec0, "version:version" to "abc")
         }
+
+        updateRecord(rec0, "version:version" to "5.0", "version:comment" to "version comment")
+        assertThat(records.getAtt(rec0, DbRecord.ATT_CONTENT_VERSION_COMMENT).asText()).isEqualTo("version comment")
+        updateRecord(rec0, "version:version" to "5.1")
+        assertThat(records.getAtt(rec0, DbRecord.ATT_CONTENT_VERSION_COMMENT).asText()).isEmpty()
+        updateRecord(rec0, "version:version" to "5.2", "version:comment" to "version comment")
+        assertThat(records.getAtt(rec0, DbRecord.ATT_CONTENT_VERSION_COMMENT).asText()).isEqualTo("version comment")
+        updateRecord(rec0, "content" to contentData0)
+        assertThat(records.getAtt(rec0, DbRecord.ATT_CONTENT_VERSION_COMMENT).asText()).isEqualTo("")
+        assertThat(records.getAtt(rec0, DbRecord.ATT_CONTENT_VERSION).asText()).isEqualTo("6.0")
     }
 }

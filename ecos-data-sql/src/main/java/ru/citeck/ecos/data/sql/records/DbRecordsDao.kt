@@ -739,6 +739,7 @@ class DbRecordsDao(
             recAttributes[StatusConstants.ATT_STATUS] = typeInfo.defaultStatus
         }
 
+        var contentVersionWasChanged = false
         if (!isNewEntity && recAttributes.has(DbRecord.ATT_CONTENT_VERSION)) {
             val newContentVersionStr = recAttributes[DbRecord.ATT_CONTENT_VERSION].asText()
             val currentVersionStr = (entityToMutate.attributes[DbRecord.ATT_CONTENT_VERSION] as? String) ?: "1.0"
@@ -756,6 +757,7 @@ class DbRecordsDao(
                     )
                 }
             }
+            contentVersionWasChanged = true
         }
 
         if (recAttributes.has(DbRecord.ATT_NAME) || recAttributes.has(ScalarType.DISP.mirrorAtt)) {
@@ -850,32 +852,35 @@ class DbRecordsDao(
             typeInfo.contentConfig.storageType
         )
 
-        val contentAfter = recAttributes[mainContentAtt].asLong(-1)
-        val contentBefore = entityToMutate.attributes[mainContentAtt] as? Long ?: -1
-
-        if (contentAfter != contentBefore) {
-            val contentWasChanged = if (contentBefore == -1L || contentAfter == -1L) {
-                true
-            } else {
-                val uriBefore = daoCtx.contentService?.getContent(contentBefore)?.getUri()
-                val uriAfter = daoCtx.contentService?.getContent(contentAfter)?.getUri()
-                uriBefore != uriAfter
-            }
-            if (contentWasChanged) {
-                if (recAttributes[DbRecord.ATT_CONTENT_VERSION].asText().isBlank()) {
-                    if (contentBefore == -1L) {
-                        recAttributes[DbRecord.ATT_CONTENT_VERSION] = "1.0"
-                    } else {
-                        val currentVersionStr =
-                            entityToMutate.attributes[DbRecord.ATT_CONTENT_VERSION] as? String ?: "1.0"
-                        val newVersion = Version.valueOf(currentVersionStr) + Version.valueOf("1.0")
-                        recAttributes[DbRecord.ATT_CONTENT_VERSION] = newVersion.toString()
+        if (recAttributes.has(mainContentAtt)) {
+            val contentAfter = recAttributes[mainContentAtt].asLong(-1)
+            val contentBefore = entityToMutate.attributes[mainContentAtt] as? Long ?: -1
+            if (contentAfter != contentBefore) {
+                val contentWasChanged = if (contentBefore == -1L || contentAfter == -1L) {
+                    true
+                } else {
+                    val uriBefore = daoCtx.contentService?.getContent(contentBefore)?.getUri()
+                    val uriAfter = daoCtx.contentService?.getContent(contentAfter)?.getUri()
+                    uriBefore != uriAfter
+                }
+                if (contentWasChanged) {
+                    if (recAttributes[DbRecord.ATT_CONTENT_VERSION].asText().isBlank()) {
+                        if (contentBefore == -1L) {
+                            recAttributes[DbRecord.ATT_CONTENT_VERSION] = "1.0"
+                        } else {
+                            val currentVersionStr =
+                                entityToMutate.attributes[DbRecord.ATT_CONTENT_VERSION] as? String ?: "1.0"
+                            val currentMajorVersion = Version.valueOf(currentVersionStr).truncateTo(1)
+                            val newVersion = currentMajorVersion + Version.valueOf("1.0")
+                            recAttributes[DbRecord.ATT_CONTENT_VERSION] = newVersion.toString()
+                        }
                     }
-                }
-                if (!recAttributes.has(DbRecord.ATT_CONTENT_VERSION_COMMENT)) {
-                    recAttributes[DbRecord.ATT_CONTENT_VERSION_COMMENT] = ""
+                    contentVersionWasChanged = true
                 }
             }
+        }
+        if (contentVersionWasChanged && !recAttributes.has(DbRecord.ATT_CONTENT_VERSION_COMMENT)) {
+            recAttributes[DbRecord.ATT_CONTENT_VERSION_COMMENT] = ""
         }
 
         if (contentAttToExtractName.isNotBlank() && recordPerms.isCurrentUserHasAttWritePerms(ATT_CUSTOM_NAME)) {
