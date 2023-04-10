@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
@@ -35,6 +36,7 @@ import ru.citeck.ecos.model.lib.api.EcosModelAppApi
 import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.aspect.repo.AspectsRepo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.model.lib.num.repo.NumTemplatesRepo
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
@@ -58,6 +60,8 @@ import ru.citeck.ecos.txn.lib.resource.type.xa.JavaXaTxnManagerAdapter
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.mime.MimeType
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -68,6 +72,8 @@ abstract class DbRecordsTestBase {
         const val RECS_DAO_ID = "test"
         const val REC_TEST_TYPE_ID = "test-type"
 
+        const val TEMP_FILE_TYPE_ID = "temp-file"
+
         val REC_TEST_TYPE_REF = ModelUtils.getTypeRef(REC_TEST_TYPE_ID)
 
         const val COLUMN_TYPE_NAME = "TYPE_NAME"
@@ -76,6 +82,47 @@ abstract class DbRecordsTestBase {
         const val COLUMN_TABLE_NAME = "TABLE_NAME"
 
         val DEFAULT_TABLE_REF = DbTableRef("records-test-schema", "test-records-table")
+
+        private val DEFAULT_ASPECTS = listOf(
+            AspectInfo.create()
+                .withId("versionable")
+                .withAttributes(
+                    listOf(
+                        AttributeDef.create()
+                            .withId("version:version")
+                            .build(),
+                        AttributeDef.create()
+                            .withId("version:comment")
+                            .build(),
+                        AttributeDef.create()
+                            .withId("version:versions")
+                            .withType(AttributeType.ASSOC)
+                            .withConfig(ObjectData.create().set("child", true))
+                            .build()
+                    )
+                )
+                .build()
+        )
+        private val DEFAULT_TYPES = listOf(
+            TypeInfo.create()
+                .withId("temp-file")
+                .withSourceId(TEMP_FILE_TYPE_ID)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("name")
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("content")
+                                    .withType(AttributeType.CONTENT)
+                                    .build()
+                            )
+                        )
+                        .build()
+                ).build()
+        )
     }
 
     private val typesInfo = mutableMapOf<String, TypeInfo>()
@@ -96,6 +143,8 @@ abstract class DbRecordsTestBase {
     lateinit var webAppApi: EcosWebAppApiMock
 
     lateinit var mainCtx: RecordsDaoTestCtx
+    lateinit var tempCtx: RecordsDaoTestCtx
+
     private var mainCtxInitialized = false
     private val registeredRecordsDao = ArrayList<RecordsDaoTestCtx>()
 
@@ -119,6 +168,9 @@ abstract class DbRecordsTestBase {
         aspectsInfo.clear()
         numTemplates.clear()
         schemaContexts.clear()
+
+        DEFAULT_ASPECTS.forEach { registerAspect(it) }
+        DEFAULT_TYPES.forEach { registerType(it) }
 
         if (mainCtxInitialized) {
             mainCtx.clear()
@@ -209,6 +261,13 @@ abstract class DbRecordsTestBase {
         }
 
         mainCtx = createRecordsDao()
+
+        tempCtx = createRecordsDao(
+            DEFAULT_TABLE_REF.withTable(TEMP_FILE_TYPE_ID),
+            ModelUtils.getTypeRef(TEMP_FILE_TYPE_ID),
+            TEMP_FILE_TYPE_ID
+        )
+
         mainCtxInitialized = true
     }
 
@@ -379,6 +438,19 @@ abstract class DbRecordsTestBase {
 
     fun createRecord(vararg atts: Pair<String, Any?>): RecordRef {
         return mainCtx.createRecord(*atts)
+    }
+
+    fun createTempRecord(
+        name: String = UUID.randomUUID().toString(),
+        mimeType: MimeType = MimeTypes.APP_BIN,
+        content: ByteArray
+    ): EntityRef {
+        return RequestContext.doWithCtx {
+            tempCtx.dao.uploadFile(ecosType = TEMP_FILE_TYPE_ID, name = name, mimeType = mimeType.toString()) {
+                    writer ->
+                writer.writeBytes(content)
+            }
+        }
     }
 
     fun selectRecFromDb(rec: EntityRef, field: String): Any? {

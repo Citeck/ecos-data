@@ -84,7 +84,11 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         val contentAfter = recAfter.getDefaultContent()
 
         if (contentBefore != null || contentAfter != null) {
-            if (contentBefore?.getContentDbData()?.getUri() != contentAfter?.getContentDbData()?.getUri()) {
+
+            if (attsBefore[DbRecord.ATT_CONTENT_VERSION] != attsAfter[DbRecord.ATT_CONTENT_VERSION] ||
+                contentBefore?.getContentDbData()?.getUri() != contentAfter?.getContentDbData()?.getUri()
+            ) {
+
                 val contentChangedEvent = DbRecordContentChangedEvent(
                     localRef,
                     globalRef,

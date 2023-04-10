@@ -76,6 +76,9 @@ class DbContentServiceImpl(
     }
 
     override fun getContent(id: Long): DbEcosContentData? {
+        if (id < 0) {
+            return null
+        }
         val entity = dataService.findById(id) ?: return null
         return EcosContentDataImpl(entity)
     }

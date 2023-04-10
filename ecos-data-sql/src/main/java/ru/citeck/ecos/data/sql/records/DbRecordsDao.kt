@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.records
 import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.commons.data.Version
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
@@ -716,7 +717,7 @@ class DbRecordsDao(
             }
         }
 
-        if (entityToMutate.id == DbEntity.NEW_REC_ID) {
+        if (isNewEntity) {
             if (!config.insertable) {
                 error("Records DAO doesn't support new records creation. Record ID: '${record.id}'")
             }
@@ -732,9 +733,28 @@ class DbRecordsDao(
 
         val recAttributes = record.attributes.deepCopy()
 
-        if (isNewEntity) {
-            if (typeInfo.defaultStatus.isNotBlank()) {
-                recAttributes[StatusConstants.ATT_STATUS] = typeInfo.defaultStatus
+        if (isNewEntity && typeInfo.defaultStatus.isNotBlank() &&
+            recAttributes[StatusConstants.ATT_STATUS].isEmpty()
+        ) {
+            recAttributes[StatusConstants.ATT_STATUS] = typeInfo.defaultStatus
+        }
+
+        if (!isNewEntity && recAttributes.has(DbRecord.ATT_CONTENT_VERSION)) {
+            val newContentVersionStr = recAttributes[DbRecord.ATT_CONTENT_VERSION].asText()
+            val currentVersionStr = (entityToMutate.attributes[DbRecord.ATT_CONTENT_VERSION] as? String) ?: "1.0"
+            val currentVersion = Version.valueOf(currentVersionStr)
+            if (newContentVersionStr.startsWith("+")) {
+                val newContentVersion = Version.valueOf(newContentVersionStr.substring(1))
+                recAttributes[DbRecord.ATT_CONTENT_VERSION] = currentVersion + newContentVersion
+            } else {
+                val newContentVersion = Version.valueOf(newContentVersionStr)
+                if (newContentVersion <= currentVersion) {
+                    error(
+                        "Version downgrading is not supported. " +
+                            "Record: ${daoCtx.getGlobalRef(entityToMutate.extId)} " +
+                            "Before: '$currentVersion' After: '$newContentVersion'"
+                    )
+                }
             }
         }
 
@@ -749,20 +769,20 @@ class DbRecordsDao(
             recAttributes.remove(ScalarType.DISP.mirrorAtt)
         }
 
+        val mainContentAtt = DbRecord.getDefaultContentAtt(typeInfo)
         var contentAttToExtractName = ""
         if (recAttributes.has(RecordConstants.ATT_CONTENT)) {
 
-            val targetContentAtt = DbRecord.getDefaultContentAtt(typeInfo)
-            if (targetContentAtt.contains(".")) {
-                error("Inner content uploading is not supported. Content attribute: $targetContentAtt")
+            if (mainContentAtt.contains(".")) {
+                error("Inner content uploading is not supported. Content attribute: '$mainContentAtt'")
             }
             val contentValue = recAttributes[RecordConstants.ATT_CONTENT]
-            recAttributes[targetContentAtt] = contentValue
+            recAttributes[mainContentAtt] = contentValue
             recAttributes.remove(RecordConstants.ATT_CONTENT)
 
             val hasCustomNameAtt = typeInfo.model.attributes.find { it.id == ATT_CUSTOM_NAME } != null
             if (hasCustomNameAtt && recAttributes[ATT_CUSTOM_NAME].isEmpty()) {
-                contentAttToExtractName = targetContentAtt
+                contentAttToExtractName = mainContentAtt
             }
         }
 
@@ -770,7 +790,7 @@ class DbRecordsDao(
         val operations = daoCtx.mutAttOperationHandler.extractAttValueOperations(recAttributes)
             .filter { !recAttributes.has(it.getAttName()) }
         if (operations.isNotEmpty()) {
-            val currentAtts: Map<String, Any?> = if (entityToMutate.id == DbEntity.NEW_REC_ID) {
+            val currentAtts: Map<String, Any?> = if (isNewEntity) {
                 emptyMap()
             } else {
                 DbRecord(daoCtx, entityToMutate).getAttsForOperations()
@@ -795,6 +815,9 @@ class DbRecordsDao(
                 recAttributes.fieldNamesList().filter { it.contains(":") }.toSet()
             )
         )
+        if (recAttributes.has(mainContentAtt)) {
+            newAspects.add(ModelUtils.getAspectRef("versionable"))
+        }
         val addedAspects = newAspects.filter { !currentAspectRefs.contains(it) }
         val aspectsColumns = ecosTypeService.getColumnsForAspects(addedAspects)
         for (column in aspectsColumns) {
@@ -827,6 +850,32 @@ class DbRecordsDao(
             typeInfo.contentConfig.storageType
         )
 
+        val contentAfter = recAttributes[mainContentAtt].asLong(-1)
+        val contentBefore = entityToMutate.attributes[mainContentAtt] as? Long ?: -1
+
+        if (contentAfter != contentBefore) {
+            val contentWasChanged = if (contentBefore == -1L || contentAfter == -1L) {
+                true
+            } else {
+                val uriBefore = daoCtx.contentService?.getContent(contentBefore)?.getUri()
+                val uriAfter = daoCtx.contentService?.getContent(contentAfter)?.getUri()
+                uriBefore != uriAfter
+            }
+            if (contentWasChanged) {
+                val newVersionFromAtts = recAttributes[DbRecord.ATT_CONTENT_VERSION].asText()
+                if (newVersionFromAtts.isBlank()) {
+                    if (contentBefore == -1L) {
+                        recAttributes[DbRecord.ATT_CONTENT_VERSION] = "1.0"
+                    } else {
+                        val currentVersionStr =
+                            entityToMutate.attributes[DbRecord.ATT_CONTENT_VERSION] as? String ?: "1.0"
+                        val newVersion = Version.valueOf(currentVersionStr) + Version.valueOf("1.0")
+                        recAttributes[DbRecord.ATT_CONTENT_VERSION] = newVersion.toString()
+                    }
+                }
+            }
+        }
+
         if (contentAttToExtractName.isNotBlank() && recordPerms.isCurrentUserHasAttWritePerms(ATT_CUSTOM_NAME)) {
             val attribute = recAttributes[contentAttToExtractName]
             if (attribute.isNumber()) {
@@ -841,7 +890,7 @@ class DbRecordsDao(
         val recordEntityBeforeMutation = entityToMutate.copy()
 
         val fullColumns = ArrayList(typeColumns)
-        val perms = if (entityToMutate.id == DbEntity.NEW_REC_ID || isRunAsSystem) {
+        val perms = if (isNewEntity || isRunAsSystem) {
             null
         } else {
             getRecordPerms(entityToMutate.extId)
@@ -874,8 +923,7 @@ class DbRecordsDao(
             }
         }
 
-        val isNewRecord = entityToMutate.id == DbEntity.NEW_REC_ID
-        if (isNewRecord) {
+        if (isNewEntity) {
             val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
             val currentAppName = serviceFactory.webappProps.appName
             val currentRef = EntityRef.create(currentAppName, getId(), entityToMutate.extId)
@@ -889,7 +937,7 @@ class DbRecordsDao(
                 computeAttsToStore(
                     computedAttsComponent,
                     recAfterSave,
-                    isNewRecord,
+                    isNewEntity,
                     typeInfo.id,
                     fullColumns
                 )
@@ -912,7 +960,7 @@ class DbRecordsDao(
             record.attributes
         )
 
-        daoCtx.recEventsHandler.emitEventsAfterMutation(recordEntityBeforeMutation, recAfterSave, isNewRecord)
+        daoCtx.recEventsHandler.emitEventsAfterMutation(recordEntityBeforeMutation, recAfterSave, isNewEntity)
 
         return recAfterSave
     }

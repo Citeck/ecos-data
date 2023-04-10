@@ -38,6 +38,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         const val ATT_NAME = "_name"
         const val ATT_ASPECTS = "_aspects"
         const val ATT_PERMISSIONS = "permissions"
+        const val ATT_CONTENT_VERSION = "version:version"
 
         val ATTS_MAPPING = mapOf(
             "id" to DbEntity.EXT_ID,
@@ -477,6 +478,12 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             "previewInfo" -> getDefaultContent()?.getContentValue()?.getAtt("previewInfo")
             else -> {
                 if (isCurrentUserHasAttReadPerms(name)) {
+                    if (name == ATT_CONTENT_VERSION &&
+                        additionalAtts[ATT_CONTENT_VERSION] == null &&
+                        getDefaultContent() != null
+                    ) {
+                        return "1.0"
+                    }
                     additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
                 } else {
                     null
@@ -508,9 +515,10 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 val entityName = MLText.getClosestValue(entity.name, I18nContext.getLocale())
                     .ifBlank { contentValue.contentData.getName() }
                     .ifBlank { "no-name" }
-                return DbContentValueWithCustomName(entityName, contentValue)
+                DbContentValueWithCustomName(entityName, contentValue)
+            } else {
+                null
             }
-            return null
         } else {
             null
         }
