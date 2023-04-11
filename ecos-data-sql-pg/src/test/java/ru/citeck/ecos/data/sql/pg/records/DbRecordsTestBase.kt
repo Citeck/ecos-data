@@ -21,6 +21,7 @@ import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
+import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.listener.DbIntegrityCheckListener
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
@@ -60,6 +61,7 @@ import ru.citeck.ecos.txn.lib.resource.type.xa.JavaXaTxnManagerAdapter
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -85,7 +87,10 @@ abstract class DbRecordsTestBase {
 
         private val DEFAULT_ASPECTS = listOf(
             AspectInfo.create()
-                .withId("versionable")
+                .withId(DbRecord.ASPECT_VERSIONABLE)
+                .build(),
+            AspectInfo.create()
+                .withId("versionable-data")
                 .withAttributes(
                     listOf(
                         AttributeDef.create()
@@ -106,6 +111,7 @@ abstract class DbRecordsTestBase {
         private val DEFAULT_TYPES = listOf(
             TypeInfo.create()
                 .withId("temp-file")
+                .withParentRef(ModelUtils.getTypeRef("base"))
                 .withSourceId(TEMP_FILE_TYPE_ID)
                 .withModel(
                     TypeModelDef.create()
@@ -121,7 +127,14 @@ abstract class DbRecordsTestBase {
                             )
                         )
                         .build()
-                ).build()
+                ).build(),
+            TypeInfo.create()
+                .withId("user-base")
+                .withParentRef(ModelUtils.getTypeRef("base"))
+                .build(),
+            TypeInfo.create()
+                .withId("base")
+                .build()
         )
     }
 
@@ -169,8 +182,8 @@ abstract class DbRecordsTestBase {
         numTemplates.clear()
         schemaContexts.clear()
 
-        DEFAULT_ASPECTS.forEach { registerAspect(it) }
-        DEFAULT_TYPES.forEach { registerType(it) }
+        DEFAULT_ASPECTS.forEach { aspectsInfo[it.id] = it }
+        DEFAULT_TYPES.forEach { typesInfo[it.id] = it }
 
         if (mainCtxInitialized) {
             mainCtx.clear()
@@ -346,14 +359,14 @@ abstract class DbRecordsTestBase {
         val recAttWritePerms: MutableMap<Pair<EntityRef, String>, Set<String>> = mutableMapOf()
 
         val permsComponent = object : DbPermsComponent {
-            override fun getEntityPerms(entityRef: EntityRef): DbRecordPerms {
-                val globalRef = entityRef.withDefaultAppName(APP_NAME)
+            override fun getRecordPerms(record: Any): DbRecordPerms {
+                val globalRef = records.getAtt(record, "?id").toEntityRef().withDefaultAppName(APP_NAME)
                 return object : DbRecordPerms {
                     override fun getAuthoritiesWithReadPermission(): Set<String> {
                         if (recReadPerms.containsKey(globalRef)) {
                             return recReadPerms[globalRef]!!
                         }
-                        return defaultPermsComponent.getEntityPerms(globalRef)
+                        return defaultPermsComponent.getRecordPerms(globalRef)
                             .getAuthoritiesWithReadPermission()
                     }
 
@@ -562,6 +575,13 @@ abstract class DbRecordsTestBase {
             type
         }
         this.typesInfo[fixedType.id] = fixedType
+    }
+
+    fun updateType(typeId: String = REC_TEST_TYPE_ID, action: (TypeInfo.Builder) -> Unit) {
+        val typeInfo = this.typesInfo[typeId] ?: error("Type '$typeId' is not found")
+        val builder = typeInfo.copy()
+        action.invoke(builder)
+        registerType(builder.build())
     }
 
     fun registerAtts(atts: List<AttributeDef>, systemAtts: List<AttributeDef> = emptyList()) {

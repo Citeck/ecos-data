@@ -6,7 +6,6 @@ import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
-import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DefaultDbPermsComponent(
     private val recordsService: RecordsService
@@ -16,8 +15,8 @@ class DefaultDbPermsComponent(
         private val AUTHORITIES_WITH_READ_PERMS = setOf(AuthGroup.EVERYONE)
     }
 
-    override fun getEntityPerms(entityRef: EntityRef): DbRecordPerms {
-        return DefaultRecPerms(recordsService.getAtts(entityRef, ParentPermsAtts::class.java))
+    override fun getRecordPerms(record: Any): DbRecordPerms {
+        return DefaultRecPerms(recordsService.getAtts(record, ParentPermsAtts::class.java))
     }
 
     private class ParentPermsAtts(

@@ -73,6 +73,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Pattern
 import kotlin.collections.ArrayList
 import kotlin.collections.HashSet
+import kotlin.collections.LinkedHashMap
 import kotlin.collections.LinkedHashSet
 import kotlin.math.min
 
@@ -94,6 +95,8 @@ class DbRecordsDao(
         private const val ATT_ID = "id"
         private const val ATT_STATE = "_state"
         private const val ATT_CUSTOM_NAME = "name"
+
+        private const val ASPECT_VERSIONABLE_DATA = "${DbRecord.ASPECT_VERSIONABLE}-data"
 
         private val AGG_FUNC_PATTERN = Pattern.compile("^(\\w+)\\((\\w+|\\*)\\)$")
 
@@ -619,12 +622,16 @@ class DbRecordsDao(
 
         val knownColumnIds = HashSet<String>()
         val typeAttColumns = ArrayList(typeAttColumnsArg)
+        val typeAttColumnsByAtt = LinkedHashMap<String, EcosAttColumnDef>()
+        typeAttColumns.forEach { typeAttColumnsByAtt[it.attribute.id] = it }
+
         val typeColumns = typeAttColumns.map { it.column }.toMutableList()
         val typeColumnNames = typeColumns.map { it.name }.toMutableSet()
 
         fun addTypeAttColumn(column: EcosAttColumnDef) {
             if (knownColumnIds.add(column.attribute.id)) {
                 typeAttColumns.add(column)
+                typeAttColumnsByAtt[column.attribute.id] = column
                 typeColumns.add(column.column)
                 typeColumnNames.add(column.column.name)
             }
@@ -739,14 +746,30 @@ class DbRecordsDao(
             recAttributes[StatusConstants.ATT_STATUS] = typeInfo.defaultStatus
         }
 
+        val mainContentAtt = DbRecord.getDefaultContentAtt(typeInfo)
+
         var contentVersionWasChanged = false
-        if (!isNewEntity && recAttributes.has(DbRecord.ATT_CONTENT_VERSION)) {
+        var isVersionable = false
+        for (aspectRef in currentAspectRefs) {
+            if (aspectRef.getLocalId() == DbRecord.ASPECT_VERSIONABLE) {
+                val aspectConfig = typeInfo.aspects.find {
+                    it.ref.getLocalId() == DbRecord.ASPECT_VERSIONABLE
+                }?.config
+                if (aspectConfig?.get("disabled", false) != true) {
+                    isVersionable = true
+                }
+            }
+        }
+
+        if (isVersionable && !isNewEntity && recAttributes.has(DbRecord.ATT_CONTENT_VERSION)) {
             val newContentVersionStr = recAttributes[DbRecord.ATT_CONTENT_VERSION].asText()
             val currentVersionStr = (entityToMutate.attributes[DbRecord.ATT_CONTENT_VERSION] as? String) ?: "1.0"
             val currentVersion = Version.valueOf(currentVersionStr)
             if (newContentVersionStr.startsWith("+")) {
                 val newContentVersion = Version.valueOf(newContentVersionStr.substring(1))
-                recAttributes[DbRecord.ATT_CONTENT_VERSION] = currentVersion + newContentVersion
+                val versionPartsCount = newContentVersion.toString(0).count { it == '.' } + 1
+                val resultVersion = currentVersion.truncateTo(versionPartsCount) + newContentVersion
+                recAttributes[DbRecord.ATT_CONTENT_VERSION] = resultVersion
             } else {
                 val newContentVersion = Version.valueOf(newContentVersionStr)
                 if (newContentVersion <= currentVersion) {
@@ -771,7 +794,6 @@ class DbRecordsDao(
             recAttributes.remove(ScalarType.DISP.mirrorAtt)
         }
 
-        val mainContentAtt = DbRecord.getDefaultContentAtt(typeInfo)
         var contentAttToExtractName = ""
         if (recAttributes.has(RecordConstants.ATT_CONTENT)) {
 
@@ -817,8 +839,8 @@ class DbRecordsDao(
                 recAttributes.fieldNamesList().filter { it.contains(":") }.toSet()
             )
         )
-        if (recAttributes.has(mainContentAtt)) {
-            newAspects.add(ModelUtils.getAspectRef("versionable"))
+        if (isVersionable && recAttributes.has(mainContentAtt)) {
+            newAspects.add(ModelUtils.getAspectRef(ASPECT_VERSIONABLE_DATA))
         }
         val addedAspects = newAspects.filter { !currentAspectRefs.contains(it) }
         val aspectsColumns = ecosTypeService.getColumnsForAspects(addedAspects)
@@ -852,7 +874,7 @@ class DbRecordsDao(
             typeInfo.contentConfig.storageType
         )
 
-        if (recAttributes.has(mainContentAtt)) {
+        if (isVersionable && recAttributes.has(mainContentAtt)) {
             val contentAfter = recAttributes[mainContentAtt].asLong(-1)
             val contentBefore = entityToMutate.attributes[mainContentAtt] as? Long ?: -1
             if (contentAfter != contentBefore) {
@@ -879,7 +901,7 @@ class DbRecordsDao(
                 }
             }
         }
-        if (contentVersionWasChanged && !recAttributes.has(DbRecord.ATT_CONTENT_VERSION_COMMENT)) {
+        if (isVersionable && contentVersionWasChanged && !recAttributes.has(DbRecord.ATT_CONTENT_VERSION_COMMENT)) {
             recAttributes[DbRecord.ATT_CONTENT_VERSION_COMMENT] = ""
         }
 
@@ -1027,7 +1049,12 @@ class DbRecordsDao(
         return result
     }
 
-    fun getRecordPerms(recordId: String): DbRecordPerms {
+    fun getRecordPerms(record: Any): DbRecordPerms {
+        val recordToGetPerms = if (record is String) {
+            EntityRef.create(getId(), record)
+        } else {
+            record
+        }
         // Optimization to enable caching
         return RequestContext.doWithCtx(
             serviceFactory,
@@ -1038,7 +1065,7 @@ class DbRecordsDao(
                 TxnContext.doInTxn(true) {
                     AuthContext.runAsSystem {
                         DbRecordPermsSystemAdapter(
-                            permsComponent.getEntityPerms(EntityRef.create(getId(), recordId))
+                            permsComponent.getRecordPerms(recordToGetPerms)
                         )
                     }
                 }

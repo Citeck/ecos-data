@@ -7,7 +7,7 @@ import ru.citeck.ecos.records3.record.atts.value.AttValue
 
 class DbRecPermsValue(
     private val ctx: DbRecordsDaoCtx,
-    private val recordId: String
+    private val record: DbRecord
 ) : AttValue {
 
     companion object {
@@ -15,7 +15,7 @@ class DbRecPermsValue(
     }
 
     private val recordPermsValue: DbRecordPerms by lazy {
-        ctx.recordsDao.getRecordPerms(recordId)
+        ctx.recordsDao.getRecordPerms(record)
     }
 
     fun getRecordPerms(): DbRecordPerms {

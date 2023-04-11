@@ -41,6 +41,8 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         const val ATT_CONTENT_VERSION = "version:version"
         const val ATT_CONTENT_VERSION_COMMENT = "version:comment"
 
+        const val ASPECT_VERSIONABLE = "versionable"
+
         val ATTS_MAPPING = mapOf(
             "id" to DbEntity.EXT_ID,
             ScalarType.DISP.mirrorAtt to DbEntity.NAME,
@@ -98,11 +100,11 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         }
     }
 
-    private val permsValue by lazy { DbRecPermsValue(ctx, entity.extId) }
+    private val permsValue by lazy { DbRecPermsValue(ctx, this) }
     private val additionalAtts: Map<String, Any?>
     private val assocMapping: Map<Long, EntityRef>
 
-    private val typeInfo: TypeInfo?
+    private val typeInfo: TypeInfo
     private val attTypes: Map<String, AttributeType>
     private val attDefs: Map<String, AttributeDef>
 
@@ -260,8 +262,8 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     override fun getDisplayName(): Any {
         var name: MLText = entity.name
         if (MLText.isEmpty(name)) {
-            val typeName = typeInfo?.name
-            if (typeName != null && !MLText.isEmpty(typeName)) {
+            val typeName = typeInfo.name
+            if (!MLText.isEmpty(typeName)) {
                 name = typeName
             }
         }
@@ -324,8 +326,6 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
     override fun asJson(): Any {
 
-        typeInfo ?: error("TypeInfo is null")
-
         val jsonAtts = LinkedHashMap<String, Any?>()
         jsonAtts["id"] = entity.extId
 
@@ -349,7 +349,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
     fun getAttsForOperations(): Map<String, Any?> {
 
-        typeInfo ?: error("TypeInfo is null")
+        typeInfo
 
         fun getValueForOperations(attribute: String, value: Any?): Any? {
             value ?: return null
@@ -398,7 +398,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
     fun getAttsForCopy(): Map<String, Any?> {
 
-        typeInfo ?: error("TypeInfo is null")
+        typeInfo
 
         fun getValueForCopy(attribute: String, value: Any?): Any? {
             value ?: return null
@@ -480,6 +480,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             else -> {
                 if (isCurrentUserHasAttReadPerms(name)) {
                     if (name == ATT_CONTENT_VERSION &&
+                        typeInfo.aspects.any { it.ref.getLocalId() == ASPECT_VERSIONABLE } &&
                         additionalAtts[ATT_CONTENT_VERSION] == null &&
                         getDefaultContent() != null
                     ) {

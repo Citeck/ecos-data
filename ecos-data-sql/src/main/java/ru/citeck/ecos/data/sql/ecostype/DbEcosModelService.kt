@@ -27,6 +27,27 @@ class DbEcosModelService(modelServices: ModelServiceFactory) {
     private val typesRepo = modelServices.typesRepo
     private val aspectsRepo = modelServices.aspectsRepo
 
+    fun isSubType(typeId: String?, ofTypeId: String?): Boolean {
+        if (typeId == ofTypeId) {
+            return true
+        }
+        if (typeId.isNullOrBlank() || ofTypeId.isNullOrBlank()) {
+            return false
+        }
+        if (ofTypeId == "base") {
+            return true
+        }
+        var typeInfo = typesRepo.getTypeInfo(ModelUtils.getTypeRef(typeId))
+        var iterations = 30
+        while (typeInfo != null && typeInfo.id != "base" && --iterations > 0) {
+            if (typeInfo.parentRef.getLocalId() == ofTypeId) {
+                return true
+            }
+            typeInfo = typesRepo.getTypeInfo(typeInfo.parentRef)
+        }
+        return false
+    }
+
     fun getAspectsForAtts(attributes: Set<String>): List<EntityRef> {
         return aspectsRepo.getAspectsForAtts(attributes)
     }
