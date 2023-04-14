@@ -13,10 +13,12 @@ import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsDto
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
 import ru.citeck.ecos.data.sql.records.dao.atts.DbEmptyRecord
+import ru.citeck.ecos.data.sql.records.dao.atts.DbMultiAssocAttValuesContainer
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
 import ru.citeck.ecos.data.sql.records.listener.*
@@ -25,6 +27,7 @@ import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsSystemAdapter
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
+import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
@@ -100,13 +103,6 @@ class DbRecordsDao(
 
         private val AGG_FUNC_PATTERN = Pattern.compile("^(\\w+)\\((\\w+|\\*)\\)$")
 
-        private val GLOBAL_ATTS = listOf(
-            AttributeDef.create()
-                .withId(RecordConstants.ATT_PARENT)
-                .withType(AttributeType.ASSOC)
-                .build()
-        ).associateBy { it.id }
-
         private val log = KotlinLogging.logger {}
     }
 
@@ -115,6 +111,7 @@ class DbRecordsDao(
     private val daoCtxInitialized = AtomicBoolean(false)
 
     private val recordRefService: DbRecordRefService = dataService.getTableContext().getRecordRefsService()
+    private val assocsService: DbAssocsService = dataService.getTableContext().getAssocsService()
     private val contentService: DbContentService = dataService.getTableContext().getContentService()
     private val entityPermsService: DbEntityPermsService = dataService.getTableContext().getPermsService()
 
@@ -172,6 +169,7 @@ class DbRecordsDao(
 
     @JvmOverloads
     fun getContent(recordId: String, attribute: String = "", index: Int = 0): EcosContentData? {
+
         val entity = dataService.findByExtId(recordId) ?: error("Entity doesn't found with id '$recordId'")
         val notBlankAttribute = attribute.ifBlank { RecordConstants.ATT_CONTENT }
         val dotIdx = notBlankAttribute.indexOf('.')
@@ -217,6 +215,10 @@ class DbRecordsDao(
             val perms = AuthContext.runAsSystem { getEntitiesPerms(records) }
             entityPermsService.setReadPerms(perms)
         }
+    }
+
+    fun getRecordsDaoCtx(): DbRecordsDaoCtx {
+        return daoCtx
     }
 
     fun getTableRef(): DbTableRef {
@@ -422,7 +424,7 @@ class DbRecordsDao(
                             currentPred
                         }
                         val attDef = attributesById[newPred.getAttribute()]
-                            ?: GLOBAL_ATTS[newPred.getAttribute()]
+                            ?: DbRecord.GLOBAL_ATTS[newPred.getAttribute()]
 
                         if (newPred.getType() == ValuePredicate.Type.EQ) {
                             if (newPred.getAttribute() == DbEntity.NAME || attDef?.type == AttributeType.MLTEXT) {
@@ -737,6 +739,13 @@ class DbRecordsDao(
         if (entityToMutate.extId.isEmpty()) {
             entityToMutate.extId = UUID.randomUUID().toString()
         }
+        if (isNewEntity) {
+            val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
+            val currentAppName = serviceFactory.webappProps.appName
+            val currentRef = EntityRef.create(currentAppName, getId(), entityToMutate.extId)
+            val newRecordRef = RecordRefUtils.mapAppIdAndSourceId(currentRef, currentAppName, sourceIdMapping)
+            entityToMutate.refId = recordRefService.getOrCreateIdByEntityRefs(listOf(newRecordRef))[0]
+        }
 
         val recAttributes = record.attributes.deepCopy()
 
@@ -813,6 +822,8 @@ class DbRecordsDao(
         val changedByOperationsAtts = mutableSetOf<String>()
         val operations = daoCtx.mutAttOperationHandler.extractAttValueOperations(recAttributes)
             .filter { !recAttributes.has(it.getAttName()) }
+
+        val multiAssocValues = LinkedHashMap<String, DbMultiAssocAttValuesContainer>()
         if (operations.isNotEmpty()) {
             val currentAtts: Map<String, Any?> = if (isNewEntity) {
                 emptyMap()
@@ -825,6 +836,9 @@ class DbRecordsDao(
                 if (newValue != currentValue) {
                     changedByOperationsAtts.add(it.getAttName())
                     recAttributes[it.getAttName()] = newValue
+                } else if (newValue is DbMultiAssocAttValuesContainer) {
+                    changedByOperationsAtts.add(it.getAttName())
+                    multiAssocValues[it.getAttName()] = newValue
                 }
             }
         }
@@ -873,6 +887,49 @@ class DbRecordsDao(
             typeAttColumns,
             typeInfo.contentConfig.storageType
         )
+
+        recAttributes.forEach { att, newValue ->
+            val attDef = typeAttColumnsByAtt[att]
+            if (attDef != null && attDef.attribute.type == AttributeType.ASSOC) {
+                if (!multiAssocValues.containsKey(att)) {
+                    val valuesBefore = if (isNewEntity) {
+                        emptyList()
+                    } else {
+                        assocsService.getTargetAssocs(entityToMutate.refId, att, DbFindPage(0, 100))
+                            .entities.map { it.targetId }
+                    }
+                    if (valuesBefore.size == 100) {
+                        error(
+                            "You can't edit large associations by providing full values list. " +
+                                "Please, use att_add_... and att_rem_... to work with it. " +
+                                "Assoc: $att Record: ${daoCtx.getGlobalRef(entityToMutate.extId)}"
+                        )
+                    }
+                    val refsBefore = recordRefService.getEntityRefsByIds(valuesBefore).map {
+                        it.toString()
+                    }.toSet()
+
+                    val assocValues = DbMultiAssocAttValuesContainer(
+                        daoCtx,
+                        refsBefore,
+                        DbRecordsUtils.isChildAssocAttribute(attDef.attribute),
+                        attDef.attribute.multiple
+                    )
+                    multiAssocValues[att] = assocValues
+
+                    val newValuesStrings = DbAttValueUtils.anyToSetOfStrings(newValue)
+                    val added = newValuesStrings.filterTo(LinkedHashSet()) {
+                        !refsBefore.contains(it)
+                    }
+                    assocValues.addAll(added)
+
+                    val removed = refsBefore.filterTo(LinkedHashSet()) {
+                        !newValuesStrings.contains(it)
+                    }
+                    assocValues.removeAll(removed)
+                }
+            }
+        }
 
         if (isVersionable && recAttributes.has(mainContentAtt)) {
             val contentAfter = recAttributes[mainContentAtt].asLong(-1)
@@ -924,7 +981,7 @@ class DbRecordsDao(
         } else {
             getRecordPerms(entityToMutate.extId)
         }
-        setMutationAtts(entityToMutate, recAttributes, typeColumns, perms)
+        setMutationAtts(entityToMutate, recAttributes, typeColumns, perms, multiAssocValues)
         val optionalAtts = DbRecord.OPTIONAL_COLUMNS.filter { !typeColumnNames.contains(it.name) }
         if (optionalAtts.isNotEmpty()) {
             fullColumns.addAll(setMutationAtts(entityToMutate, recAttributes, optionalAtts))
@@ -952,13 +1009,6 @@ class DbRecordsDao(
             }
         }
 
-        if (isNewEntity) {
-            val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
-            val currentAppName = serviceFactory.webappProps.appName
-            val currentRef = EntityRef.create(currentAppName, getId(), entityToMutate.extId)
-            val newRecordRef = RecordRefUtils.mapAppIdAndSourceId(currentRef, currentAppName, sourceIdMapping)
-            entityToMutate.refId = recordRefService.getOrCreateIdByEntityRefs(listOf(newRecordRef))[0]
-        }
         var recAfterSave = dataService.save(entityToMutate, fullColumns)
 
         recAfterSave = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
@@ -968,7 +1018,8 @@ class DbRecordsDao(
                     recAfterSave,
                     isNewEntity,
                     typeInfo.id,
-                    fullColumns
+                    fullColumns,
+                    typeAttColumnsByAtt
                 )
             } else {
                 recAfterSave
@@ -981,7 +1032,8 @@ class DbRecordsDao(
             recAfterSave,
             record.attributes,
             typeAttColumns,
-            changedByOperationsAtts
+            changedByOperationsAtts,
+            multiAssocValues
         )
         daoCtx.mutAssocHandler.processParentAfterMutation(
             recordEntityBeforeMutation,
@@ -999,7 +1051,8 @@ class DbRecordsDao(
         entity: DbEntity,
         isNewRecord: Boolean,
         recTypeId: String,
-        columns: List<DbColumnDef>
+        columns: List<DbColumnDef>,
+        typeAttColumnsByAtt: Map<String, EcosAttColumnDef>
     ): DbEntity {
 
         val typeRef = ModelUtils.getTypeRef(recTypeId)
@@ -1086,17 +1139,18 @@ class DbRecordsDao(
         recToMutate: DbEntity,
         atts: ObjectData,
         columns: List<DbColumnDef>,
-        perms: DbRecordPerms? = null
+        perms: DbRecordPerms? = null,
+        multiAssocValues: Map<String, DbMultiAssocAttValuesContainer> = emptyMap()
     ): List<DbColumnDef> {
 
-        if (atts.size() == 0) {
+        if (atts.isEmpty() && multiAssocValues.isEmpty()) {
             return emptyList()
         }
         val currentUser = AuthContext.getCurrentUser()
 
         val notEmptyColumns = ArrayList<DbColumnDef>()
         for (dbColumnDef in columns) {
-            if (!atts.has(dbColumnDef.name)) {
+            if (!atts.has(dbColumnDef.name) && !multiAssocValues.containsKey(dbColumnDef.name)) {
                 continue
             }
             if (perms?.isCurrentUserHasAttWritePerms(dbColumnDef.name) == false) {
@@ -1106,12 +1160,41 @@ class DbRecordsDao(
                 }
             } else {
                 notEmptyColumns.add(dbColumnDef)
-                val value = atts[dbColumnDef.name]
-                recToMutate.attributes[dbColumnDef.name] = daoCtx.mutConverter.convert(
-                    value,
-                    dbColumnDef.multiple,
-                    dbColumnDef.type
-                )
+
+                val multiAssocValue = multiAssocValues[dbColumnDef.name]
+                if (multiAssocValue != null) {
+
+                    assocsService.removeAssocs(
+                        recToMutate.refId,
+                        dbColumnDef.name,
+                        multiAssocValue.getRemovedTargetIds()
+                    )
+                    assocsService.createAssocs(
+                        recToMutate.refId,
+                        dbColumnDef.name,
+                        multiAssocValue.child,
+                        multiAssocValue.getAddedTargetsIds()
+                    )
+
+                    val maxAssocs = if (dbColumnDef.multiple) { 10 } else { 1 }
+                    val targetIds = assocsService.getTargetAssocs(
+                        recToMutate.refId,
+                        dbColumnDef.name,
+                        DbFindPage(0, maxAssocs)
+                    ).entities.map { it.targetId }
+
+                    recToMutate.attributes[dbColumnDef.name] = daoCtx.mutConverter.convert(
+                        DataValue.create(targetIds),
+                        dbColumnDef.multiple,
+                        dbColumnDef.type
+                    )
+                } else {
+                    recToMutate.attributes[dbColumnDef.name] = daoCtx.mutConverter.convert(
+                        atts[dbColumnDef.name],
+                        dbColumnDef.multiple,
+                        dbColumnDef.type
+                    )
+                }
             }
         }
         return notEmptyColumns
@@ -1150,7 +1233,8 @@ class DbRecordsDao(
             listeners,
             this,
             serviceFactory.attValuesConverter,
-            serviceFactory.getEcosWebAppApi()?.getWebClientApi()
+            serviceFactory.getEcosWebAppApi()?.getWebClientApi(),
+            assocsService
         )
         daoCtxInitialized.set(true)
         listeners.forEach {

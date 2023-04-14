@@ -20,6 +20,7 @@ import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.listener.DbIntegrityCheckListener
@@ -149,6 +150,7 @@ abstract class DbRecordsTestBase {
 
     lateinit var dbSchemaDao: DbSchemaDao
     lateinit var dbRecordRefService: DbRecordRefService
+    lateinit var assocsService: DbAssocsService
     lateinit var dataSource: BasicDataSource
     lateinit var computedAttsComponent: DbComputedAttsComponent
     lateinit var modelServiceFactory: ModelServiceFactory
@@ -418,6 +420,7 @@ abstract class DbRecordsTestBase {
         records.register(recordsDao)
 
         dbRecordRefService = schemaCtx.recordRefService
+        assocsService = schemaCtx.assocsService
 
         val resCtx = RecordsDaoTestCtx(
             tableRef,
@@ -520,20 +523,22 @@ abstract class DbRecordsTestBase {
     }
 
     fun printQueryRes(sql: String) {
-        dataSource.connection.use { conn ->
-            conn.createStatement().use { stmt ->
-                stmt.executeQuery(sql).use {
-                    var line = ""
-                    for (i in 1..it.metaData.columnCount) {
-                        line += it.metaData.getColumnName(i) + "\t\t\t\t\t"
-                    }
-                    println(line)
-                    while (it.next()) {
-                        line = ""
+        TxnContext.doInTxn {
+            dataSource.connection.use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery(sql).use {
+                        var line = ""
                         for (i in 1..it.metaData.columnCount) {
-                            line += (it.getObject(i) ?: "").toString() + "\t\t\t\t\t"
+                            line += it.metaData.getColumnName(i) + "\t\t\t\t\t"
                         }
                         println(line)
+                        while (it.next()) {
+                            line = ""
+                            for (i in 1..it.metaData.columnCount) {
+                                line += (it.getObject(i) ?: "").toString() + "\t\t\t\t\t"
+                            }
+                            println(line)
+                        }
                     }
                 }
             }

@@ -27,7 +27,7 @@ interface DbEntityRepo {
         selectFunctions: List<AggregateFunc>
     ): DbFindRes<Map<String, Any?>>
 
-    fun getCount(context: DbTableContext, predicate: Predicate): Long
+    fun getCount(context: DbTableContext, predicate: Predicate, groupBy: List<String>): Long
 
     fun save(context: DbTableContext, entities: List<Map<String, Any?>>): List<Map<String, Any?>>
 

@@ -17,6 +17,7 @@ import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaConfig
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -146,6 +147,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     override fun findByIds(ids: Set<Long>): List<T> {
+        if (ids.isEmpty()) {
+            return emptyList()
+        }
         return execReadOnlyQuery {
             entityRepo.findByColumn(getTableContext(), "id", ids, false, ids.size)
         }.map {
@@ -269,7 +273,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     override fun getCount(predicate: Predicate): Long {
         return execReadOnlyQueryWithPredicate(predicate, 0) { tableCtx, pred ->
-            entityRepo.getCount(tableCtx, pred)
+            entityRepo.getCount(tableCtx, pred, emptyList())
         }
     }
 
@@ -281,11 +285,11 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return save(listOf(entity), columns)[0]
     }
 
-    override fun save(entities: List<T>): List<T> {
+    override fun save(entities: Collection<T>): List<T> {
         return save(entities, emptyList())
     }
 
-    override fun save(entities: List<T>, columns: List<DbColumnDef>): List<T> {
+    override fun save(entities: Collection<T>, columns: List<DbColumnDef>): List<T> {
 
         val columnsBefore = this.columns
         try {
@@ -327,13 +331,18 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     override fun delete(entity: T) {
+        if (!isTableExists()) {
+            return
+        }
         dataSource.withTransaction(false) {
             entityRepo.delete(getTableContext(), entityMapper.convertToMap(entity))
         }
     }
 
     override fun forceDelete(predicate: Predicate) {
-        getTableContext()
+        if (!isTableExists()) {
+            return
+        }
         if (PredicateUtils.isAlwaysFalse(predicate)) {
             return
         }
@@ -359,19 +368,25 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     override fun forceDelete(entityId: Long) {
+        if (!isTableExists()) {
+            return
+        }
         dataSource.withTransaction(false) {
             entityRepo.forceDelete(getTableContext(), listOf(entityId))
         }
     }
 
     override fun forceDelete(entity: T) {
+        if (!isTableExists()) {
+            return
+        }
         dataSource.withTransaction(false) {
             entityRepo.forceDelete(getTableContext(), listOf(entityMapper.convertToMap(entity)[DbEntity.ID] as Long))
         }
     }
 
     override fun forceDelete(entities: List<T>) {
-        if (entities.isEmpty()) {
+        if (entities.isEmpty() || !isTableExists()) {
             return
         }
         dataSource.withTransaction(false) {
@@ -531,7 +546,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
         if (columnsWithChangedType.isNotEmpty()) {
             if (!mock) {
-                val currentCount = entityRepo.getCount(getTableContext(), Predicates.alwaysTrue())
+                val currentCount = entityRepo.getCount(getTableContext(), Predicates.alwaysTrue(), emptyList())
                 if (currentCount > maxItemsToAllowSchemaMigration) {
                     val baseMsg = "Schema migration can't be performed because table has too much items: $currentCount."
                     val newColumnsMsg = columnsWithChangedType.joinToString { it.toString() }
@@ -693,6 +708,10 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
         override fun getRecordRefsService(): DbRecordRefService {
             return schemaCtx.recordRefService
+        }
+
+        override fun getAssocsService(): DbAssocsService {
+            return schemaCtx.assocsService
         }
 
         override fun getContentService(): DbContentService {

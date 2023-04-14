@@ -13,7 +13,6 @@ class RecMutAttOperationsHandler {
                     AttAddOrRemOperation(
                         name.replaceFirst(OperationType.ATT_ADD.prefix, ""),
                         add = true,
-                        exclusive = true,
                         value = value
                     )
                 )
@@ -23,7 +22,6 @@ class RecMutAttOperationsHandler {
                     AttAddOrRemOperation(
                         name.replaceFirst(OperationType.ATT_REMOVE.prefix, ""),
                         add = false,
-                        exclusive = true,
                         value = value
                     )
                 )

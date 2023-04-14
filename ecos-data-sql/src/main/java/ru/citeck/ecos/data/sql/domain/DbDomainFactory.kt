@@ -106,7 +106,7 @@ class DbDomainFactory(
 
             recordsDao.addListener(DbIntegrityCheckListener())
 
-            val migrationContext = DbDomainMigrationContext(dataService, schemaContext)
+            val migrationContext = DbDomainMigrationContext(dataService, schemaContext, recordsDao, domainConfig)
             if (webAppApi.isReady()) {
                 migrationService.runMigrations(migrationContext)
             } else {

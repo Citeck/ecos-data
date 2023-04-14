@@ -18,6 +18,10 @@ data class DbFindRes<T>(
 
     constructor() : this(emptyList(), 0)
 
+    fun <O> withEntities(entities: List<O>): DbFindRes<O> {
+        return DbFindRes(entities, totalCount)
+    }
+
     fun <O> mapEntities(mapping: (T) -> O): DbFindRes<O> {
         val resEntities = entities.map { mapping.invoke(it) }
         return DbFindRes(resEntities, totalCount)

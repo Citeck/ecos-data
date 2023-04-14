@@ -14,7 +14,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 interface DbDataService<T : Any> {
 
     companion object {
-        const val NEW_TABLE_SCHEMA_VERSION = 1
+        const val NEW_TABLE_SCHEMA_VERSION = 2
     }
 
     fun <T> doWithPermsPolicy(permsPolicy: QueryPermsPolicy?, action: () -> T): T
@@ -54,9 +54,9 @@ interface DbDataService<T : Any> {
 
     fun save(entity: T): T
 
-    fun save(entities: List<T>): List<T>
+    fun save(entities: Collection<T>): List<T>
 
-    fun save(entities: List<T>, columns: List<DbColumnDef>): List<T>
+    fun save(entities: Collection<T>, columns: List<DbColumnDef>): List<T>
 
     fun save(entity: T, columns: List<DbColumnDef>): T
 

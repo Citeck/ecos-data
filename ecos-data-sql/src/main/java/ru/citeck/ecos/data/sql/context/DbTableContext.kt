@@ -5,6 +5,7 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
@@ -12,6 +13,8 @@ import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 interface DbTableContext {
 
     fun getPermsService(): DbEntityPermsService
+
+    fun getAssocsService(): DbAssocsService
 
     fun getRecordRefsService(): DbRecordRefService
 

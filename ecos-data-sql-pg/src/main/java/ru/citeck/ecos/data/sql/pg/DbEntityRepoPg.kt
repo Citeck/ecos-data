@@ -398,7 +398,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
     }
 
-    override fun getCount(context: DbTableContext, predicate: Predicate): Long {
+    override fun getCount(context: DbTableContext, predicate: Predicate, groupBy: List<String>): Long {
 
         if (context.getColumns().isEmpty()) {
             return 0
@@ -411,7 +411,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val params = mutableListOf<Any?>()
         val sqlCondition = toSqlCondition(context, predicate, params)
 
-        return getCountImpl(context, sqlCondition, params, permsColumn)
+        return getCountImpl(context, sqlCondition, params, permsColumn, groupBy)
     }
 
     private fun getPermsColumn(context: DbTableContext): String {
@@ -427,14 +427,23 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
     }
 
-    private fun getCountImpl(context: DbTableContext, sqlCondition: String, params: List<Any?>, permsColumn: String): Long {
+    private fun getCountImpl(
+        context: DbTableContext,
+        sqlCondition: String,
+        params: List<Any?>,
+        permsColumn: String,
+        groupBy: List<String>
+    ): Long {
 
         val selectQuery = createSelectQuery(
             context,
             COUNT_COLUMN,
             permsColumn,
             withDeleted = false,
-            sqlCondition
+            sqlCondition,
+            emptyList(),
+            DbFindPage.ALL,
+            groupBy
         )
         if (selectQuery.contains(WHERE_ALWAYS_FALSE)) {
             return 0
@@ -474,13 +483,13 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val columnsByName = columns.associateBy { it.name }
 
-        val queryGroupBy = ArrayList(groupBy)
         if (selectFunctions.isNotEmpty()) {
             val invalidFunctions = selectFunctions.filter { it.field != "*" && !columnsByName.containsKey(it.field) }
             if (invalidFunctions.isNotEmpty()) {
                 error("Function can't be evaluated by non-existing column. Invalid functions: $invalidFunctions")
             }
         }
+        val queryGroupBy = ArrayList(groupBy)
         if (queryGroupBy.isNotEmpty()) {
             val invalidColumns = queryGroupBy.filter { !columnsByName.containsKey(it) }
             if (invalidColumns.isNotEmpty()) {
@@ -521,7 +530,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val totalCount = if (page.maxItems == -1) {
             resultEntities.size.toLong() + page.skipCount
         } else {
-            getCountImpl(context, sqlCondition, params, permsColumn)
+            getCountImpl(context, sqlCondition, params, permsColumn, groupBy)
         }
         return DbFindRes(resultEntities, totalCount)
     }

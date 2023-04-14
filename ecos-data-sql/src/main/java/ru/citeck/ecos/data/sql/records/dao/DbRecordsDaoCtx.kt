@@ -6,6 +6,7 @@ import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.records.DbRecordsDeleteDao
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.content.DbRecContentHandler
 import ru.citeck.ecos.data.sql.records.dao.events.DbRecEventsHandler
@@ -42,7 +43,8 @@ class DbRecordsDaoCtx(
     val listeners: List<DbRecordsListener>,
     val recordsDao: DbRecordsDao,
     val attValuesConverter: AttValuesConverter,
-    val webApiClient: EcosWebClientApi?
+    val webApiClient: EcosWebClientApi?,
+    val assocsService: DbAssocsService
 ) {
     val recContentHandler: DbRecContentHandler by lazy { DbRecContentHandler(this) }
     val mutConverter = RecMutConverter()

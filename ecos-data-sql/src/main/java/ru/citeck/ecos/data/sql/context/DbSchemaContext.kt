@@ -13,6 +13,7 @@ import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaServiceImpl
 import ru.citeck.ecos.data.sql.meta.table.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsServiceImpl
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.entity.auth.DbAuthorityEntity
 import ru.citeck.ecos.data.sql.service.DbDataService
@@ -42,8 +43,8 @@ class DbSchemaContext(
         this
     )
     val entityPermsService: DbEntityPermsService = DbEntityPermsServiceImpl(this)
-
     val recordRefService: DbRecordRefService = DbRecordRefService(dataSourceCtx.appName, this)
+    val assocsService: DbAssocsService = DbAssocsService(this)
 
     private val contentWriterFactory: EcosContentWriterFactory = object : EcosContentWriterFactory {
         override fun createWriter(output: OutputStream): EcosContentWriter {

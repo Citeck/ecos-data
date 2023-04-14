@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao.atts
 
 import ecos.com.fasterxml.jackson210.databind.node.ArrayNode
 import ecos.com.fasterxml.jackson210.databind.node.ObjectNode
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
@@ -15,6 +16,7 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValue
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValueWithCustomName
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
@@ -40,6 +42,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         const val ATT_PERMISSIONS = "permissions"
         const val ATT_CONTENT_VERSION = "version:version"
         const val ATT_CONTENT_VERSION_COMMENT = "version:comment"
+        const val ASSOC_SRC_ATT_PREFIX = "assoc_src_"
 
         const val ASPECT_VERSIONABLE = "versionable"
 
@@ -95,6 +98,18 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             withType(DbColumnType.BOOLEAN)
         }
 
+        val GLOBAL_ATTS = listOf(
+            AttributeDef.create()
+                .withId(RecordConstants.ATT_PARENT)
+                .withType(AttributeType.ASSOC)
+                .build(),
+            AttributeDef.create()
+                .withId(DbRecord.ATT_ASPECTS)
+                .withType(AttributeType.ASSOC)
+                .withMultiple(true)
+                .build()
+        ).associateBy { it.id }
+
         fun getDefaultContentAtt(typeInfo: TypeInfo?): String {
             return (typeInfo?.contentConfig?.path ?: "").ifBlank { "content" }
         }
@@ -106,7 +121,8 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
     private val typeInfo: TypeInfo
     private val attTypes: Map<String, AttributeType>
-    private val attDefs: Map<String, AttributeDef>
+    private val allAttDefs: Map<String, AttributeDef>
+    private val nonSystemAttDefs: Map<String, AttributeDef>
 
     init {
         val recData = LinkedHashMap(entity.attributes)
@@ -115,9 +131,23 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         typeInfo = meta.typeInfo
 
         attTypes = LinkedHashMap()
-        attDefs = meta.allAttributes
+        allAttDefs = meta.allAttributes
+        nonSystemAttDefs = meta.nonSystemAtts
         meta.allAttributes.forEach {
             attTypes[it.key] = it.value.type
+        }
+
+        allAttDefs.values.forEach {
+            if (it.type == AttributeType.ASSOC && it.multiple) {
+                val assocs = recData[it.id]
+                if (assocs is Collection<*> && assocs.size == 10) {
+                    recData[it.id] = ctx.assocsService.getTargetAssocs(
+                        entity.refId,
+                        it.id,
+                        DbFindPage(0, 300)
+                    ).entities.map { assoc -> assoc.targetId }
+                }
+            }
         }
 
         OPTIONAL_COLUMNS.forEach {
@@ -349,56 +379,60 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
     fun getAttsForOperations(): Map<String, Any?> {
 
-        typeInfo
-
-        fun getValueForOperations(attribute: String, value: Any?): Any? {
-            value ?: return null
-            return when (value) {
-                is Collection<*> -> {
-                    val result = ArrayList<Any?>()
-                    value.forEach {
-                        val newValue = getValueForOperations(attribute, it)
-                        if (newValue != null) {
-                            result.add(newValue)
+        fun getValueForOperations(attribute: String, value: Any?, attDef: AttributeDef): Any? {
+            if (attribute != ATT_ASPECTS && attDef.type == AttributeType.ASSOC) {
+                return DbMultiAssocAttValuesContainer(
+                    ctx,
+                    value,
+                    DbRecordsUtils.isChildAssocAttribute(attDef),
+                    attDef.multiple
+                )
+            } else {
+                value ?: return null
+                val resValue = when (value) {
+                    is Collection<*> -> {
+                        val result = ArrayList<Any?>()
+                        value.forEach {
+                            val newValue = getValueForOperations(attribute, it, attDef)
+                            if (newValue != null) {
+                                result.add(newValue)
+                            }
                         }
+                        value
                     }
-                    value
+                    is DbAspectsValue -> value.getAspectRefs()
+                    else -> filterUnknownJsonTypes(attribute, value)
                 }
-                is DbAspectsValue -> value.getAspectRefs()
-                else -> filterUnknownJsonTypes(attribute, value)
+                return DataValue.create(resValue).asJavaObj()
             }
         }
 
         val isRunAsSystem = AuthContext.isRunAsSystem()
 
-        val attIds = LinkedHashSet<String>(32)
-        typeInfo.model.attributes.mapTo(attIds) { it.id }
-        if (isRunAsSystem) {
-            typeInfo.model.systemAttributes.mapTo(attIds) { it.id }
-        }
-        attIds.add(ATT_ASPECTS)
-        val aspects = additionalAtts[ATT_ASPECTS]
-        if (aspects is DbAspectsValue) {
-            val aspectsAtts = ctx.ecosTypeService.getAttributesForAspects(aspects.getAspectRefs(), isRunAsSystem)
-            for (att in aspectsAtts) {
-                attIds.add(att.id)
-            }
+        val attDefs = if (isRunAsSystem) {
+            allAttDefs
+        } else {
+            nonSystemAttDefs
         }
 
+        val attIds = LinkedHashSet<String>(attDefs.keys)
+        attIds.add(ATT_ASPECTS)
         attIds.removeIf { !isCurrentUserHasAttReadPerms(it) }
 
-        val resultAtts = ObjectData.create()
+        val resultAtts = LinkedHashMap<String, Any?>()
 
         for (attribute in attIds) {
-            resultAtts[attribute] = getValueForOperations(attribute, additionalAtts[attribute])
+            resultAtts[attribute] = getValueForOperations(
+                attribute,
+                additionalAtts[attribute],
+                attDefs[attribute] ?: GLOBAL_ATTS[attribute] ?: error("Attribute def is not found for '$attribute'")
+            )
         }
 
-        return resultAtts.asMap(String::class.java, Any::class.java)
+        return resultAtts
     }
 
     fun getAttsForCopy(): Map<String, Any?> {
-
-        typeInfo
 
         fun getValueForCopy(attribute: String, value: Any?): Any? {
             value ?: return null
@@ -478,6 +512,15 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             RecordConstants.ATT_PARENT -> additionalAtts[RecordConstants.ATT_PARENT]
             "previewInfo" -> getDefaultContent()?.getContentValue()?.getAtt("previewInfo")
             else -> {
+                if (name.startsWith(ASSOC_SRC_ATT_PREFIX)) {
+                    val assocName = name.substring(ASSOC_SRC_ATT_PREFIX.length)
+                    val sourceAssocsIds = ctx.assocsService.getSourceAssocs(
+                        entity.refId,
+                        assocName,
+                        DbFindPage(0, 300)
+                    ).entities.map { it.sourceId }
+                    return ctx.recordRefService.getEntityRefsByIds(sourceAssocsIds)
+                }
                 if (isCurrentUserHasAttReadPerms(name)) {
                     if (name == ATT_CONTENT_VERSION &&
                         typeInfo.aspects.any { it.ref.getLocalId() == ASPECT_VERSIONABLE } &&
@@ -533,7 +576,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         return DbRecordAttEdge(
             this,
             name,
-            attDefs[name] ?: AttributeDef.create {
+            allAttDefs[name] ?: AttributeDef.create {
                 withId(name)
                 withName(MLText(name))
             },

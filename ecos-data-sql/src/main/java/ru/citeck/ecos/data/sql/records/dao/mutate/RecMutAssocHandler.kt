@@ -6,6 +6,7 @@ import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
+import ru.citeck.ecos.data.sql.records.dao.atts.DbMultiAssocAttValuesContainer
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.OperationType
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
@@ -297,7 +298,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         recAfterSave: DbEntity,
         attributes: ObjectData,
         columns: List<EcosAttColumnDef>,
-        changedByOperationsAtts: Set<String>
+        changedByOperationsAtts: Set<String>,
+        multiAssocValues: Map<String, DbMultiAssocAttValuesContainer>
     ) {
 
         if (recAfterSave.refId < 0) {
@@ -333,13 +335,25 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
 
         for (att in childAssociations) {
             val attributeId = att.attribute.id
-            val before = DbAttValueUtils.anyToSetOfLongs(recBeforeSave.attributes[attributeId])
-            val after = DbAttValueUtils.anyToSetOfLongs(recAfterSave.attributes[attributeId])
 
-            val changes = AddedRemovedAssocs(
-                after.subtract(before),
-                before.subtract(after)
-            )
+            val multiAssocAttValues = multiAssocValues[attributeId]
+
+            val changes = if (multiAssocAttValues != null) {
+
+                AddedRemovedAssocs(
+                    multiAssocAttValues.getAddedTargetsIds().toSet(),
+                    multiAssocAttValues.getRemovedTargetIds().toSet()
+                )
+            } else {
+
+                val before = DbAttValueUtils.anyToSetOfLongs(recBeforeSave.attributes[attributeId])
+                val after = DbAttValueUtils.anyToSetOfLongs(recAfterSave.attributes[attributeId])
+
+                AddedRemovedAssocs(
+                    after.subtract(before),
+                    before.subtract(after)
+                )
+            }
             if (changes.isNotEmpty()) {
                 childrenChanges[attributeId] = changes
             }
@@ -390,6 +404,10 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             addOrRemoveParentRef.invoke(it.key, it.value.added, true)
         }
     }
+/*
+    fun processMultiAssocValuesAfterMutation(values: Map<String, DbMultiAssocAttValuesContainer>) {
+
+    }*/
 
     private data class AddedRemovedAssocs(
         val added: Set<Long>,

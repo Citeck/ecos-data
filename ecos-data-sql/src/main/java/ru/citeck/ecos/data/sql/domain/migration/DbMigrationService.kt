@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.domain.migration
 
 import mu.KotlinLogging
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.data.sql.domain.migration.type.MoveAssocsToAssocsTable
 import ru.citeck.ecos.data.sql.domain.migration.type.MovePermsToSchemaTable
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.txn.lib.TxnContext
@@ -16,6 +17,7 @@ class DbMigrationService {
 
     init {
         domainMigrations.add(MovePermsToSchemaTable())
+        domainMigrations.add(MoveAssocsToAssocsTable())
     }
 
     fun runMigrations(context: DbDomainMigrationContext) {
