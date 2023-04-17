@@ -11,6 +11,7 @@ import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.OperationType
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
@@ -244,6 +245,34 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         if (parentRefIdBefore == parentRefIdAfter && parentAttBefore == parentAttAfter) {
             return
         }
+
+        val parentRefAfter = parentRefIdAfter?.let {
+            ctx.recordRefService.getEntityRefById(it)
+        } ?: EntityRef.EMPTY
+
+        var parentId: Long = parentRefIdAfter ?: -1
+        while (parentId != -1L) {
+
+            if (parentId == recAfterSave.refId) {
+                error(
+                    "Recursive parent link for record" +
+                        " ${ctx.getGlobalRef(recAfterSave.extId)}" +
+                        " parent: $parentRefAfter" +
+                        " attribute: $parentAttAfter"
+                )
+            }
+
+            val assoc = ctx.assocsService
+                .getSourceAssocs(parentId, parentAttAfter, DbFindPage.FIRST)
+                .entities.firstOrNull()
+
+            parentId = if (assoc?.child == true) {
+                assoc.sourceId
+            } else {
+                -1
+            }
+        }
+
         val parentRefBefore = parentRefIdBefore?.let {
             ctx.recordRefService.getEntityRefById(it)
         } ?: EntityRef.EMPTY
@@ -274,10 +303,6 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 }
             }
         }
-
-        val parentRefAfter = parentRefIdAfter?.let {
-            ctx.recordRefService.getEntityRefById(it)
-        } ?: EntityRef.EMPTY
 
         if (parentRefAfter.getAppName() == AppName.ALFRESCO) {
             return

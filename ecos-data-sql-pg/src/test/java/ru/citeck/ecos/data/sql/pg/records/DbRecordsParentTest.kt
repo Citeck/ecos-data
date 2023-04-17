@@ -1,8 +1,10 @@
 package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -39,8 +41,7 @@ class DbRecordsParentTest : DbRecordsTestBase() {
         Assertions.assertThat(result.getRecords()[0]).isEqualTo(ref)
     }
 
-    // todo: uncomment when ECOSCOM-5054 will be done
-    // @Test
+    @Test
     fun recursiveParentTest() {
 
         registerAtts(
@@ -62,8 +63,15 @@ class DbRecordsParentTest : DbRecordsTestBase() {
             "_parent" to ref1,
             "_parentAtt" to "childAssoc"
         )
-        assertThrows<RuntimeException> {
-            records.mutateAtt(ref0, "_parent", ref2)
+        val exception = assertThrows<RuntimeException> {
+            records.mutate(
+                ref0,
+                DataValue.createObj()
+                    .set("_parent", ref2)
+                    .set("_parentAtt", "childAssoc")
+            )
         }
+        assertThat(exception.message).containsIgnoringCase("Recursive")
+        println(exception.message)
     }
 }
