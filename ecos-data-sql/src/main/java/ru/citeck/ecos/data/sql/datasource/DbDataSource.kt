@@ -21,4 +21,6 @@ interface DbDataSource {
     fun <T> withMetaData(action: (DatabaseMetaData) -> T): T
 
     fun <T> withTransaction(readOnly: Boolean, action: () -> T): T
+
+    fun <T> withTransaction(readOnly: Boolean, requiresNew: Boolean, action: () -> T): T
 }

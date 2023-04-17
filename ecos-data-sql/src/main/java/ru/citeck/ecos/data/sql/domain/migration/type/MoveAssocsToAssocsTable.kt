@@ -24,6 +24,7 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
         val daoCtx = context.recordsDao.getRecordsDaoCtx()
         val typeRef = context.config.recordsDao.typeRef
         val typeInfo = daoCtx.ecosTypeService.getTypeInfo(typeRef.getLocalId())
+        val dataSource = context.schemaContext.dataSourceCtx.dataSource
 
         if (typeInfo == null) {
             if (typeRef.isNotEmpty()) {
@@ -83,25 +84,27 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
 
         while (findRes.entities.isNotEmpty()) {
             TxnContext.doInNewTxn {
-                findRes.entities.forEach { entity ->
-                    targetAssocsAtts.forEach {
-                        val targetIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
-                        if (targetIds.isNotEmpty()) {
-                            assocsService.createAssocs(entity.refId, it.id, false, targetIds)
+                dataSource.withTransaction(readOnly = false, requiresNew = true) {
+                    findRes.entities.forEach { entity ->
+                        targetAssocsAtts.forEach {
+                            val targetIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
+                            if (targetIds.isNotEmpty()) {
+                                assocsService.createAssocs(entity.refId, it.id, false, targetIds)
+                            }
+                        }
+                        childAssocsAtts.forEach {
+                            val childrenIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
+                            if (childrenIds.isNotEmpty()) {
+                                assocsService.createAssocs(entity.refId, it.id, true, childrenIds)
+                            }
                         }
                     }
-                    childAssocsAtts.forEach {
-                        val childrenIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
-                        if (childrenIds.isNotEmpty()) {
-                            assocsService.createAssocs(entity.refId, it.id, true, childrenIds)
-                        }
+                    processed++
+                    if (processed.mod(10000) == 0) {
+                        log.info { "Processed: $processed" }
                     }
+                    findRes = findImpl()
                 }
-                processed++
-                if (processed.mod(10000) == 0) {
-                    log.info { "Processed: $processed" }
-                }
-                findRes = findImpl()
             }
         }
 

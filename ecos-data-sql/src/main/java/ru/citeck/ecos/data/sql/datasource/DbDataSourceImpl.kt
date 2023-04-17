@@ -128,8 +128,13 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
     }
 
     override fun <T> withTransaction(readOnly: Boolean, action: () -> T): T {
+        return withTransaction(readOnly, false, action)
+    }
+
+    override fun <T> withTransaction(readOnly: Boolean, requiresNew: Boolean, action: () -> T): T {
         val currentTxn = currentThreadTxn.get()
-        if (currentTxn != null && !currentTxn.connection.isClosed) {
+        val isCurrentTxnExists = currentTxn != null && !currentTxn.connection.isClosed
+        if (isCurrentTxnExists && !requiresNew) {
             if (currentTxn.readOnly && !readOnly) {
                 error("Write transaction can't be started from readOnly context")
             }
@@ -180,7 +185,11 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
                             connection.isReadOnly = readOnlyBefore
                         }
                     }
-                    currentThreadTxn.remove()
+                    if (requiresNew && isCurrentTxnExists) {
+                        currentThreadTxn.set(currentTxn)
+                    } else {
+                        currentThreadTxn.remove()
+                    }
                 }
             }
         }
