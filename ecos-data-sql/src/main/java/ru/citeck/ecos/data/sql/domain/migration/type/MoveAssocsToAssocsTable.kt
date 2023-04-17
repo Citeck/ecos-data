@@ -4,10 +4,14 @@ import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigration
 import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigrationContext
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
+import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
+import ru.citeck.ecos.data.sql.repo.find.DbFindRes
+import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.txn.lib.TxnContext
 
 class MoveAssocsToAssocsTable : DbDomainMigration {
 
@@ -56,37 +60,49 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
             return
         }
 
-        val pageSize = 100
-        fun findImpl(page: Int) = context.dataService.find(
-            Predicates.alwaysTrue(),
-            emptyList(),
-            DbFindPage(page * pageSize, pageSize),
-            true
-        )
+        var lastId = -1L
+        fun findImpl(): DbFindRes<DbEntity> {
+            val result = context.dataService.find(
+                Predicates.gt(DbEntity.ID, lastId),
+                listOf(DbFindSort(DbEntity.ID, true)),
+                DbFindPage(0, 100),
+                true
+            )
+            if (result.entities.isNotEmpty()) {
+                lastId = result.entities.last().id
+            }
+            return result
+        }
 
         val assocsService = context.recordsDao.getRecordsDaoCtx().assocsService
 
-        var page = 0
         var processed = 0
 
-        var findRes = findImpl(page)
+        var findRes = findImpl()
+        log.info { "Start migration. Total count: ${findRes.totalCount}" }
+
         while (findRes.entities.isNotEmpty()) {
-            findRes.entities.forEach { entity ->
-                targetAssocsAtts.forEach {
-                    val targetIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
-                    if (targetIds.isNotEmpty()) {
-                        assocsService.createAssocs(entity.refId, it.id, false, targetIds)
+            TxnContext.doInNewTxn {
+                findRes.entities.forEach { entity ->
+                    targetAssocsAtts.forEach {
+                        val targetIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
+                        if (targetIds.isNotEmpty()) {
+                            assocsService.createAssocs(entity.refId, it.id, false, targetIds)
+                        }
+                    }
+                    childAssocsAtts.forEach {
+                        val childrenIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
+                        if (childrenIds.isNotEmpty()) {
+                            assocsService.createAssocs(entity.refId, it.id, true, childrenIds)
+                        }
                     }
                 }
-                childAssocsAtts.forEach {
-                    val childrenIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
-                    if (childrenIds.isNotEmpty()) {
-                        assocsService.createAssocs(entity.refId, it.id, true, childrenIds)
-                    }
+                processed++
+                if (processed.mod(10000) == 0) {
+                    log.info { "Processed: $processed" }
                 }
+                findRes = findImpl()
             }
-            processed++
-            findRes = findImpl(++page)
         }
 
         log.info { "Migration completed. Processed: $processed" }
