@@ -22,49 +22,70 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
     override fun run(context: DbDomainMigrationContext) {
 
         val daoCtx = context.recordsDao.getRecordsDaoCtx()
-        val typeRef = context.config.recordsDao.typeRef
-        val typeInfo = daoCtx.ecosTypeService.getTypeInfo(typeRef.getLocalId())
         val dataSource = context.schemaContext.dataSourceCtx.dataSource
+        val mainTypeRef = context.config.recordsDao.typeRef
+        val mainTypeInfo = daoCtx.ecosTypeService.getTypeInfo(mainTypeRef.getLocalId())
 
-        if (typeInfo == null) {
-            if (typeRef.isNotEmpty()) {
-                log.warn { "TypeInfo is not found for ref: $typeRef" }
+        if (mainTypeInfo == null) {
+            if (mainTypeRef.isNotEmpty()) {
+                log.warn { "TypeInfo is not found for ref: $mainTypeRef" }
             } else {
                 log.warn { "TypeRef is empty for source '${daoCtx.sourceId}'" }
             }
             return
         }
 
-        val attributes = LinkedHashMap<String, AttributeDef>()
-        typeInfo.model.attributes.forEach {
-            attributes[it.id] = it
-        }
-        typeInfo.model.systemAttributes.forEach {
-            attributes[it.id] = it
-        }
+        val excludedTypes = mutableSetOf<String>()
+        fun evalTypeAssocs(typeId: String): Pair<List<AttributeDef>, List<AttributeDef>> {
 
-        val targetAssocsAtts = mutableListOf<AttributeDef>()
-        val childAssocsAtts = mutableListOf<AttributeDef>()
+            val typeInfo = daoCtx.ecosTypeService.getTypeInfo(typeId) ?: mainTypeInfo
 
-        for (attDef in attributes.values) {
-            if (attDef.type == AttributeType.ASSOC) {
-                if (attDef.config["child"].asBoolean()) {
-                    childAssocsAtts.add(attDef)
-                } else {
-                    targetAssocsAtts.add(attDef)
+            val attributes = LinkedHashMap<String, AttributeDef>()
+            typeInfo.model.attributes.forEach {
+                attributes[it.id] = it
+            }
+            typeInfo.model.systemAttributes.forEach {
+                attributes[it.id] = it
+            }
+
+            val targetAssocsAtts = mutableListOf<AttributeDef>()
+            val childAssocsAtts = mutableListOf<AttributeDef>()
+
+            for (attDef in attributes.values) {
+                if (attDef.type == AttributeType.ASSOC) {
+                    if (attDef.config["child"].asBoolean()) {
+                        childAssocsAtts.add(attDef)
+                    } else {
+                        targetAssocsAtts.add(attDef)
+                    }
                 }
             }
+            if (targetAssocsAtts.isEmpty() && childAssocsAtts.isEmpty()) {
+                excludedTypes.add(typeId)
+            }
+            return targetAssocsAtts to childAssocsAtts
         }
 
-        if (targetAssocsAtts.isEmpty() && childAssocsAtts.isEmpty()) {
-            log.warn { "Assoc attributes doesn't found. Migration will be skipped for '${daoCtx.sourceId}'" }
-            return
+        val assocDefsByType = HashMap<String, Pair<List<AttributeDef>, List<AttributeDef>>>()
+        fun getAssocs(typeId: String): Pair<List<AttributeDef>, List<AttributeDef>> {
+            return assocDefsByType.computeIfAbsent(typeId) { evalTypeAssocs(it) }
         }
+
+        // add main type to excluded types if it doesn't contain associations
+        getAssocs(mainTypeRef.getLocalId())
 
         var lastId = -1L
         fun findImpl(): DbFindRes<DbEntity> {
+            val excludedTypesPredicate = if (excludedTypes.isEmpty()) {
+                Predicates.alwaysTrue()
+            } else {
+                Predicates.not(Predicates.inVals(DbEntity.TYPE, excludedTypes))
+            }
             val result = context.dataService.find(
-                Predicates.gt(DbEntity.ID, lastId),
+                Predicates.and(
+                    Predicates.gt(DbEntity.ID, lastId),
+                    excludedTypesPredicate
+                ),
                 listOf(DbFindSort(DbEntity.ID, true)),
                 DbFindPage(0, 100),
                 true
@@ -86,6 +107,11 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
             TxnContext.doInNewTxn {
                 dataSource.withTransaction(readOnly = false, requiresNew = true) {
                     findRes.entities.forEach { entity ->
+                        val (
+                            targetAssocsAtts,
+                            childAssocsAtts
+                        ) = getAssocs(entity.type)
+
                         targetAssocsAtts.forEach {
                             val targetIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
                             if (targetIds.isNotEmpty()) {
@@ -98,10 +124,10 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
                                 assocsService.createAssocs(entity.refId, it.id, true, childrenIds)
                             }
                         }
-                    }
-                    processed++
-                    if (processed.mod(10000) == 0) {
-                        log.info { "Processed: $processed" }
+                        processed++
+                        if (processed.mod(100_000) == 0) {
+                            log.info { "Processed: $processed" }
+                        }
                     }
                     findRes = findImpl()
                 }
