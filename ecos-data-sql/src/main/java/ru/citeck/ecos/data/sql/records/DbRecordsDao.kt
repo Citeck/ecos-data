@@ -85,7 +85,8 @@ class DbRecordsDao(
     private val modelServices: ModelServiceFactory,
     private val dataService: DbDataService<DbEntity>,
     private val permsComponent: DbPermsComponent,
-    private val computedAttsComponent: DbComputedAttsComponent?
+    private val computedAttsComponent: DbComputedAttsComponent?,
+    private val onInitialized: () -> Unit
 ) : AbstractRecordsDao(),
     RecordsAttsDao,
     RecordsQueryDao,
@@ -1242,6 +1243,7 @@ class DbRecordsDao(
                 it.setRecordsDaoCtx(daoCtx)
             }
         }
+        onInitialized()
     }
 
     private fun getUpdatedInTxnIds(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<String> {

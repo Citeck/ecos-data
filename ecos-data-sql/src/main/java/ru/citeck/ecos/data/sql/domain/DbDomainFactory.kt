@@ -87,13 +87,25 @@ class DbDomainFactory(
                 schemaContext
             )
 
+            var migrationContext: DbDomainMigrationContext? = null
             val recordsDao = DbRecordsDao(
                 domainConfig.recordsDao,
                 modelServices,
                 dataService,
                 permsComponent ?: this@DbDomainFactory.permsComponent,
                 computedAttsComponent ?: this@DbDomainFactory.computedAttsComponent
-            )
+            ) {
+                val ctx = migrationContext
+                    ?: error("Migration context is null for '${domainConfig.recordsDao.id}'")
+
+                if (webAppApi.isReady()) {
+                    migrationService.runMigrations(ctx)
+                } else {
+                    webAppApi.doBeforeAppReady {
+                        migrationService.runMigrations(ctx)
+                    }
+                }
+            }
 
             if (!excludeDefaultListeners) {
                 this@DbDomainFactory.defaultListeners.forEach {
@@ -105,15 +117,7 @@ class DbDomainFactory(
             }
 
             recordsDao.addListener(DbIntegrityCheckListener())
-
-            val migrationContext = DbDomainMigrationContext(dataService, schemaContext, recordsDao, domainConfig)
-            if (webAppApi.isReady()) {
-                migrationService.runMigrations(migrationContext)
-            } else {
-                webAppApi.doBeforeAppReady {
-                    migrationService.runMigrations(migrationContext)
-                }
-            }
+            migrationContext = DbDomainMigrationContext(dataService, schemaContext, recordsDao, domainConfig)
 
             return recordsDao
         }
