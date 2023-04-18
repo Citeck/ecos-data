@@ -151,10 +151,28 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             return emptyList()
         }
         return execReadOnlyQuery {
-            entityRepo.findByColumn(getTableContext(), "id", ids, false, ids.size)
+            findByColumn(getTableContext(), "id", ids, false, ids.size)
         }.map {
             entityMapper.convertToEntity(it)
         }
+    }
+
+    private fun findByColumn(
+        context: DbTableContext,
+        column: String,
+        values: Collection<Any>,
+        withDeleted: Boolean,
+        limit: Int
+    ): List<Map<String, Any?>> {
+        return entityRepo.find(
+            context,
+            ValuePredicate(column, ValuePredicate.Type.IN, values),
+            emptyList(),
+            DbFindPage(0, limit),
+            withDeleted,
+            emptyList(),
+            emptyList()
+        ).entities
     }
 
     override fun findById(id: Long): T? {
@@ -182,7 +200,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             is Long -> DbEntity.ID
             else -> error("Incorrect id type: ${id::class}")
         }
-        return entityRepo.findByColumn(
+        return findByColumn(
             getTableContext(),
             idColumn,
             listOf(id),

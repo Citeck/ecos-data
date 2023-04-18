@@ -59,56 +59,22 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
     }
 
-    override fun findByColumn(
+    private fun findByColumn(
         context: DbTableContext,
         column: String,
         values: Collection<Any>,
         withDeleted: Boolean,
         limit: Int
     ): List<Map<String, Any?>> {
-
-        val columns = context.getColumns()
-
-        if (columns.isEmpty() || values.isEmpty()) {
-            return emptyList()
-        }
-        val permsColumn = getPermsColumn(context)
-        if (permsColumn.isNotEmpty() && (!context.getPermsService().isTableExists() || !context.hasColumn(permsColumn))) {
-            return emptyList()
-        }
-
-        val condition = StringBuilder()
-        appendRecordColumnName(condition, column)
-        if (values.size == 1) {
-            condition.append("=?")
-        } else {
-            condition.append(" IN (")
-            repeat(values.size) { condition.append("?,") }
-            condition.setLength(condition.length - 1)
-            condition.append(")")
-        }
-
-        val query = createSelectQuery(
+        return find(
             context,
-            columns,
-            permsColumn,
+            ValuePredicate(column, ValuePredicate.Type.IN, values),
+            emptyList(),
+            DbFindPage(0, limit),
             withDeleted,
-            condition.toString(),
-            page = DbFindPage(0, limit)
-        )
-        if (hasAlwaysFalseCondition(query)) {
-            return emptyList()
-        }
-
-        val typesConverter = context.getTypesConverter()
-
-        return context.getDataSource().query(query, values.toList()) { resultSet ->
-            val result = mutableListOf<Map<String, Any?>>()
-            while (resultSet.next()) {
-                result.add(convertRowToMap(typesConverter, resultSet, columns))
-            }
-            result
-        }
+            emptyList(),
+            emptyList()
+        ).entities
     }
 
     private fun hasAlwaysFalseCondition(query: String): Boolean {

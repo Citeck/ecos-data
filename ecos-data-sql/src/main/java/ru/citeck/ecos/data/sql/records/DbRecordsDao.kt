@@ -86,7 +86,7 @@ class DbRecordsDao(
     private val dataService: DbDataService<DbEntity>,
     private val permsComponent: DbPermsComponent,
     private val computedAttsComponent: DbComputedAttsComponent?,
-    private val onInitialized: () -> Unit
+    private val onInitialized: () -> Unit = {}
 ) : AbstractRecordsDao(),
     RecordsAttsDao,
     RecordsQueryDao,

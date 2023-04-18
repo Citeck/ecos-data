@@ -9,14 +9,6 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 
 interface DbEntityRepo {
 
-    fun findByColumn(
-        context: DbTableContext,
-        column: String,
-        values: Collection<Any>,
-        withDeleted: Boolean,
-        limit: Int
-    ): List<Map<String, Any?>>
-
     fun find(
         context: DbTableContext,
         predicate: Predicate,
@@ -33,9 +25,6 @@ interface DbEntityRepo {
 
     fun delete(context: DbTableContext, entity: Map<String, Any?>)
 
-    /**
-     * @argument entities - not empty list of entities to delete
-     */
     fun forceDelete(context: DbTableContext, entities: List<Long>)
 
     fun forceDelete(context: DbTableContext, predicate: Predicate)

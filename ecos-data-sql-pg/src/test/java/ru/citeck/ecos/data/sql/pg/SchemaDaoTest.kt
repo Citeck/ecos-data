@@ -102,15 +102,33 @@ class SchemaDaoTest {
                 DbColumnDef.create {
                     withName("date_column")
                     withType(DbColumnType.DATE)
+                },
+                DbColumnDef.create {
+                    withName("long_column")
+                    withType(DbColumnType.LONG)
+                },
+                DbColumnDef.create {
+                    withName("int_column")
+                    withType(DbColumnType.INT)
+                },
+                DbColumnDef.create {
+                    withName("double_column")
+                    withType(DbColumnType.DOUBLE)
                 }
             )
         )
 
         // text to json
 
-        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)).hasSize(2)
-        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[0].type).isEqualTo(DbColumnType.TEXT)
-        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[1].type).isEqualTo(DbColumnType.DATE)
+        val columns0 = dbSchemaDao.getColumns(dataSource, tableRef)
+        assertThat(columns0).hasSize(5)
+        assertThat(columns0.map { it.type }).containsExactly(
+            DbColumnType.TEXT,
+            DbColumnType.DATE,
+            DbColumnType.LONG,
+            DbColumnType.INT,
+            DbColumnType.DOUBLE
+        )
 
         dbSchemaDao.setColumnType(dataSource, tableRef, "text_column", false, DbColumnType.JSON)
         assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[0].type).isEqualTo(DbColumnType.JSON)
@@ -120,5 +138,12 @@ class SchemaDaoTest {
 
         dbSchemaDao.setColumnType(dataSource, tableRef, "date_column", false, DbColumnType.DATETIME)
         assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[1].type).isEqualTo(DbColumnType.DATETIME)
+
+        dbSchemaDao.setColumnType(dataSource, tableRef, "long_column", false, DbColumnType.TEXT)
+        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[2].type).isEqualTo(DbColumnType.TEXT)
+        dbSchemaDao.setColumnType(dataSource, tableRef, "int_column", false, DbColumnType.TEXT)
+        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[3].type).isEqualTo(DbColumnType.TEXT)
+        dbSchemaDao.setColumnType(dataSource, tableRef, "double_column", false, DbColumnType.TEXT)
+        assertThat(dbSchemaDao.getColumns(dataSource, tableRef)[4].type).isEqualTo(DbColumnType.TEXT)
     }
 }

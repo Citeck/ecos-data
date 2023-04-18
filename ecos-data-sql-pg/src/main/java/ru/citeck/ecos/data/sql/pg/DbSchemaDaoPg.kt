@@ -26,6 +26,14 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
             DbColumnType.BOOLEAN,
             DbColumnType.UUID
         )
+        private val CONVERTABLE_TO_TEXT_TYPES = setOf(
+            DbColumnType.JSON,
+            DbColumnType.BOOLEAN,
+            DbColumnType.DOUBLE,
+            DbColumnType.INT,
+            DbColumnType.LONG,
+            DbColumnType.UUID
+        )
     }
 
     override fun getColumns(dataSource: DbDataSource, tableRef: DbTableRef): List<DbColumnDef> {
@@ -153,7 +161,7 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
                         if (currentType != newType) {
                             var conversion = if (currentType == DbColumnType.TEXT && newType == DbColumnType.JSON) {
                                 "jsonb"
-                            } else if (currentType == DbColumnType.JSON && newType == DbColumnType.TEXT) {
+                            } else if (newType == DbColumnType.TEXT && CONVERTABLE_TO_TEXT_TYPES.contains(currentType)) {
                                 "text"
                             } else if (currentType == DbColumnType.DATE && newType == DbColumnType.DATETIME) {
                                 "timestamp AT TIME ZONE 'UTC'"
