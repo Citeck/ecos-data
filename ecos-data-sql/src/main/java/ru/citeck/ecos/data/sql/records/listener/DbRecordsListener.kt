@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.records.listener
 
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocRefsDiff
 import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
@@ -77,7 +78,8 @@ class DbRecordChangedEvent(
     val typeDef: TypeInfo,
     val aspects: List<AspectInfo>,
     val before: Map<String, Any?>,
-    val after: Map<String, Any?>
+    val after: Map<String, Any?>,
+    val assocs: List<DbAssocRefsDiff>
 )
 
 class DbRecordContentChangedEvent(

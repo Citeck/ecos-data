@@ -6,7 +6,7 @@ import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
-import ru.citeck.ecos.data.sql.records.dao.atts.DbMultiAssocAttValuesContainer
+import ru.citeck.ecos.data.sql.records.dao.atts.DbAssocAttValuesContainer
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.OperationType
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
@@ -324,7 +324,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         attributes: ObjectData,
         columns: List<EcosAttColumnDef>,
         changedByOperationsAtts: Set<String>,
-        multiAssocValues: Map<String, DbMultiAssocAttValuesContainer>
+        assocsValues: Map<String, DbAssocAttValuesContainer>
     ) {
 
         if (recAfterSave.refId < 0) {
@@ -361,7 +361,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         for (att in childAssociations) {
             val attributeId = att.attribute.id
 
-            val multiAssocAttValues = multiAssocValues[attributeId]
+            val multiAssocAttValues = assocsValues[attributeId]
 
             val changes = if (multiAssocAttValues != null) {
 

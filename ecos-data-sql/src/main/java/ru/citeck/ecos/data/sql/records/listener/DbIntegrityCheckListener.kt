@@ -49,6 +49,10 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
                 data.changedAtts.add(it)
             }
         }
+        for (assoc in event.assocs) {
+            data.changedAtts.add(assoc.assocId)
+        }
+
         if (isNewRecData.get()) {
             txn.addAction(TxnActionType.BEFORE_COMMIT, 0f, false) {
                 checkIntegrity(event.localRef, data)

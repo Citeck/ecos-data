@@ -1,5 +1,7 @@
 package ru.citeck.ecos.data.sql.records.dao.events
 
+import ru.citeck.ecos.data.sql.records.DbRecordsUtils
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocRefsDiff
 import ru.citeck.ecos.data.sql.records.dao.DbEntityMeta
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
@@ -25,7 +27,12 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         }
     }
 
-    fun emitEventsAfterMutation(before: DbEntity, after: DbEntity, isNewRecord: Boolean) {
+    fun emitEventsAfterMutation(
+        before: DbEntity,
+        after: DbEntity,
+        isNewRecord: Boolean,
+        assocsDiff: List<DbAssocRefsDiff>
+    ) {
 
         if (ctx.listeners.isEmpty()) {
             return
@@ -60,11 +67,13 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
 
         val attsDef = meta.nonSystemAtts.values
         attsDef.forEach {
-            attsBefore[it.id] = recBefore.getAtt(it.id)
-            attsAfter[it.id] = recAfter.getAtt(it.id)
+            if (!DbRecordsUtils.isAssocLikeAttribute(it)) {
+                attsBefore[it.id] = recBefore.getAtt(it.id)
+                attsAfter[it.id] = recAfter.getAtt(it.id)
+            }
         }
 
-        if (attsBefore != attsAfter) {
+        if (attsBefore != attsAfter || assocsDiff.isNotEmpty()) {
             val recChangedEvent = DbRecordChangedEvent(
                 localRef,
                 globalRef,
@@ -73,7 +82,8 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
                 typeInfo,
                 aspectsInfo,
                 attsBefore,
-                attsAfter
+                attsAfter,
+                assocsDiff
             )
             ctx.listeners.forEach {
                 it.onChanged(recChangedEvent)

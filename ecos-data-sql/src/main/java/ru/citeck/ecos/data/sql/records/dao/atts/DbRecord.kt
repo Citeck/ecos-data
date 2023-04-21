@@ -381,7 +381,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
         fun getValueForOperations(attribute: String, value: Any?, attDef: AttributeDef): Any? {
             if (attribute != ATT_ASPECTS && attDef.type == AttributeType.ASSOC) {
-                return DbMultiAssocAttValuesContainer(
+                return DbAssocAttValuesContainer(
                     ctx,
                     value,
                     DbRecordsUtils.isChildAssocAttribute(attDef),

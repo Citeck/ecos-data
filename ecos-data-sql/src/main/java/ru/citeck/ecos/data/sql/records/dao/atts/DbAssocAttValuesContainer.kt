@@ -5,7 +5,7 @@ import ru.citeck.ecos.data.sql.records.dao.mutate.operation.AttValuesContainer
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 
-class DbMultiAssocAttValuesContainer(
+class DbAssocAttValuesContainer(
     private val ctx: DbRecordsDaoCtx,
     originalValue: Any?,
     val child: Boolean,
@@ -38,9 +38,11 @@ class DbMultiAssocAttValuesContainer(
         if (added.isEmpty()) {
             return emptyList()
         }
-        return if (multiple) {
-            ctx.recordRefService.getOrCreateIdByEntityRefs(added.map { it.toEntityRef() })
-        } else if (value.isNotEmpty()) {
+        if (multiple) {
+            return ctx.recordRefService.getOrCreateIdByEntityRefs(added.map { it.toEntityRef() })
+        }
+        val currentSingleValue = value.firstOrNull()
+        return if (currentSingleValue != null && removed.all { currentSingleValue != it }) {
             emptyList()
         } else {
             ctx.recordRefService.getOrCreateIdByEntityRefs(listOf(added.first().toEntityRef()))
@@ -59,5 +61,9 @@ class DbMultiAssocAttValuesContainer(
     override fun removeAll(values: Collection<String>) {
         removed.addAll(values)
         added.removeAll(values)
+    }
+
+    fun isEmpty(): Boolean {
+        return removed.isEmpty() && added.isEmpty()
     }
 }

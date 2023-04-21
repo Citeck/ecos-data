@@ -204,6 +204,22 @@ class DbContentValue(
         return null
     }
 
+    override fun equals(other: Any?): Boolean {
+        other ?: return false
+        if (this === other) {
+            return true
+        }
+        if (other::class != this::class) {
+            return false
+        }
+        other as DbContentValue
+        return contentDbId == other.contentDbId
+    }
+
+    override fun hashCode(): Int {
+        return contentDbId.hashCode()
+    }
+
     private inner class ConvertedToValue : AttValue {
 
         override fun getAtt(name: String): Any? {

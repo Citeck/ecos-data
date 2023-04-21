@@ -10,6 +10,7 @@ import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
+import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.webapp.api.constants.AppName
@@ -31,7 +32,7 @@ class DbAssocsService(
     private val attsService = DbEcosAttributesService(schemaCtx)
     private val refsService = schemaCtx.recordRefService
 
-    fun createAssocs(sourceId: Long, attribute: String, child: Boolean, targetIds: Collection<Long>) {
+    fun createAssocs(sourceId: Long, attribute: String, child: Boolean, targetIds: Collection<Long>): List<Long> {
 
         val attId = getIdForAtt(attribute, true)
 
@@ -89,19 +90,38 @@ class DbAssocsService(
                 }
             )
         }
+        return assocsToCreate.toList()
     }
 
-    fun removeAssocs(sourceId: Long, attribute: String, targetIds: Collection<Long>) {
+    fun removeAssocs(sourceId: Long, attribute: String, targetIds: Collection<Long>): List<Long> {
         if (targetIds.isEmpty()) {
-            return
+            return emptyList()
         }
-        dataService.forceDelete(
-            Predicates.and(
+
+        fun createPredicateForIds(ids: Collection<Long>): Predicate {
+            return Predicates.and(
                 Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId),
                 Predicates.eq(DbAssocEntity.ATTRIBUTE, getIdForAtt(attribute)),
-                ValuePredicate(DbAssocEntity.TARGET_ID, ValuePredicate.Type.IN, targetIds)
+                ValuePredicate(DbAssocEntity.TARGET_ID, ValuePredicate.Type.IN, ids)
             )
-        )
+        }
+
+        val existentAssocs = dataService.find(
+            createPredicateForIds(targetIds),
+            emptyList(),
+            DbFindPage.ALL,
+            true,
+            emptyList(),
+            emptyList()
+        ).entities
+
+        if (existentAssocs.isEmpty()) {
+            return emptyList()
+        }
+
+        val targetsToRemove = existentAssocs.map { it.targetId }
+        dataService.forceDelete(createPredicateForIds(targetsToRemove))
+        return targetsToRemove
     }
 
     fun getTargetAssocs(sourceId: Long, attribute: String, page: DbFindPage): DbFindRes<DbAssocDto> {

@@ -99,6 +99,12 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
         val rec5 = createRecord("assocAtt" to extIdRef)
         assertThat(records.getAtt(rec5, "assocAtt.aa").asText()).isEqualTo("bb")
 
+        val rec6 = createRecord()
+        updateRecord(rec6, "assocAtt" to rec5)
+        assertThat(records.getAtt(rec6, "assocAtt?id").toEntityRef()).isEqualTo(rec5)
+        updateRecord(rec6, "assocAtt" to rec4)
+        assertThat(records.getAtt(rec6, "assocAtt?id").toEntityRef()).isEqualTo(rec4)
+
         // printQueryRes("SELECT * FROM ${tableRef.withTable("ecos_record_ref").fullName}")
         // printQueryRes("SELECT * FROM ${tableRef.fullName}")
     }

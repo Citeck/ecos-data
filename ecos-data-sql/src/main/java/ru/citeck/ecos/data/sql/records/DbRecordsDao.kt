@@ -13,12 +13,13 @@ import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsDto
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocRefsDiff
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
+import ru.citeck.ecos.data.sql.records.dao.atts.DbAssocAttValuesContainer
 import ru.citeck.ecos.data.sql.records.dao.atts.DbEmptyRecord
-import ru.citeck.ecos.data.sql.records.dao.atts.DbMultiAssocAttValuesContainer
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
 import ru.citeck.ecos.data.sql.records.listener.*
@@ -343,123 +344,133 @@ class DbRecordsDao(
 
         var typePredicateExists = false
 
-        var predicate = PredicateUtils.mapAttributePredicates(recsQuery.getQuery(Predicate::class.java)) { currentPred ->
-            val attribute = currentPred.getAttribute()
-            if (currentPred is ValuePredicate) {
-                when (attribute) {
-                    RecordConstants.ATT_TYPE -> {
-                        typePredicateExists = true
-                        val value = currentPred.getValue()
-                        when (currentPred.getType()) {
-                            ValuePredicate.Type.EQ,
-                            ValuePredicate.Type.CONTAINS,
-                            ValuePredicate.Type.IN -> {
-                                val expandedValue = mutableSetOf<String>()
-                                if (value.isArray()) {
-                                    value.forEach { typeRef ->
-                                        val typeId = typeRef.asText().toEntityRef().getLocalId()
+        var predicate =
+            PredicateUtils.mapAttributePredicates(recsQuery.getQuery(Predicate::class.java)) { currentPred ->
+                val attribute = currentPred.getAttribute()
+                if (currentPred is ValuePredicate) {
+                    when (attribute) {
+                        RecordConstants.ATT_TYPE -> {
+                            typePredicateExists = true
+                            val value = currentPred.getValue()
+                            when (currentPred.getType()) {
+                                ValuePredicate.Type.EQ,
+                                ValuePredicate.Type.CONTAINS,
+                                ValuePredicate.Type.IN -> {
+                                    val expandedValue = mutableSetOf<String>()
+                                    if (value.isArray()) {
+                                        value.forEach { typeRef ->
+                                            val typeId = typeRef.asText().toEntityRef().getLocalId()
+                                            expandedValue.add(typeId)
+                                            ecosTypeService.getAllChildrenIds(typeId, expandedValue)
+                                        }
+                                    } else {
+                                        val typeId = EntityRef.valueOf(value.asText()).getLocalId()
                                         expandedValue.add(typeId)
                                         ecosTypeService.getAllChildrenIds(typeId, expandedValue)
                                     }
-                                } else {
-                                    val typeId = EntityRef.valueOf(value.asText()).getLocalId()
-                                    expandedValue.add(typeId)
-                                    ecosTypeService.getAllChildrenIds(typeId, expandedValue)
-                                }
-                                if (currentPred.getType() != ValuePredicate.Type.IN) {
-                                    if (expandedValue.size > 1) {
-                                        ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, expandedValue)
-                                    } else if (expandedValue.size == 1) {
-                                        ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValue.first())
+                                    if (currentPred.getType() != ValuePredicate.Type.IN) {
+                                        if (expandedValue.size > 1) {
+                                            ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, expandedValue)
+                                        } else if (expandedValue.size == 1) {
+                                            ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValue.first())
+                                        } else {
+                                            Predicates.alwaysTrue()
+                                        }
                                     } else {
-                                        Predicates.alwaysTrue()
+                                        ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValue)
                                     }
-                                } else {
-                                    ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValue)
                                 }
-                            }
-                            else -> {
-                                Predicates.alwaysFalse()
+
+                                else -> {
+                                    Predicates.alwaysFalse()
+                                }
                             }
                         }
-                    }
-                    DbRecord.ATT_ASPECTS -> {
-                        val aspectsPredicate: Predicate = when (currentPred.getType()) {
-                            ValuePredicate.Type.EQ,
-                            ValuePredicate.Type.CONTAINS -> {
-                                val value = currentPred.getValue()
-                                if (value.isTextual()) {
-                                    if (typeAspects.contains(value.asText().toEntityRef())) {
+
+                        DbRecord.ATT_ASPECTS -> {
+                            val aspectsPredicate: Predicate = when (currentPred.getType()) {
+                                ValuePredicate.Type.EQ,
+                                ValuePredicate.Type.CONTAINS -> {
+                                    val value = currentPred.getValue()
+                                    if (value.isTextual()) {
+                                        if (typeAspects.contains(value.asText().toEntityRef())) {
+                                            Predicates.alwaysTrue()
+                                        } else {
+                                            currentPred
+                                        }
+                                    } else {
+                                        currentPred
+                                    }
+                                }
+
+                                ValuePredicate.Type.IN -> {
+                                    val aspects = currentPred.getValue().toList(EntityRef::class.java)
+                                    if (aspects.any { typeAspects.contains(it) }) {
                                         Predicates.alwaysTrue()
                                     } else {
                                         currentPred
                                     }
-                                } else {
-                                    currentPred
                                 }
-                            }
-                            ValuePredicate.Type.IN -> {
-                                val aspects = currentPred.getValue().toList(EntityRef::class.java)
-                                if (aspects.any { typeAspects.contains(it) }) {
-                                    Predicates.alwaysTrue()
-                                } else {
-                                    currentPred
-                                }
-                            }
-                            else -> currentPred
-                        }
-                        if (aspectsPredicate is ValuePredicate) {
-                            ValuePredicate(
-                                aspectsPredicate.getAttribute(),
-                                aspectsPredicate.getType(),
-                                replaceRefsToIds(aspectsPredicate.getValue())
-                            )
-                        } else {
-                            aspectsPredicate
-                        }
-                    }
-                    else -> {
-                        var newPred = if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
-                            ValuePredicate(DbRecord.ATTS_MAPPING[attribute], currentPred.getType(), currentPred.getValue())
-                        } else {
-                            currentPred
-                        }
-                        val attDef = attributesById[newPred.getAttribute()]
-                            ?: DbRecord.GLOBAL_ATTS[newPred.getAttribute()]
 
-                        if (newPred.getType() == ValuePredicate.Type.EQ) {
-                            if (newPred.getAttribute() == DbEntity.NAME || attDef?.type == AttributeType.MLTEXT) {
-                                // MLText fields stored as json text like '{"en":"value"}'
-                                // and for equals predicate we should use '"value"' instead of 'value' to search
-                                // and replace "EQ" to "CONTAINS"
+                                else -> currentPred
+                            }
+                            if (aspectsPredicate is ValuePredicate) {
+                                ValuePredicate(
+                                    aspectsPredicate.getAttribute(),
+                                    aspectsPredicate.getType(),
+                                    replaceRefsToIds(aspectsPredicate.getValue())
+                                )
+                            } else {
+                                aspectsPredicate
+                            }
+                        }
+
+                        else -> {
+                            var newPred = if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
+                                ValuePredicate(
+                                    DbRecord.ATTS_MAPPING[attribute],
+                                    currentPred.getType(),
+                                    currentPred.getValue()
+                                )
+                            } else {
+                                currentPred
+                            }
+                            val attDef = attributesById[newPred.getAttribute()]
+                                ?: DbRecord.GLOBAL_ATTS[newPred.getAttribute()]
+
+                            if (newPred.getType() == ValuePredicate.Type.EQ) {
+                                if (newPred.getAttribute() == DbEntity.NAME || attDef?.type == AttributeType.MLTEXT) {
+                                    // MLText fields stored as json text like '{"en":"value"}'
+                                    // and for equals predicate we should use '"value"' instead of 'value' to search
+                                    // and replace "EQ" to "CONTAINS"
+                                    newPred = ValuePredicate(
+                                        newPred.getAttribute(),
+                                        ValuePredicate.Type.CONTAINS,
+                                        DataValue.createStr(newPred.getValue().toString())
+                                    )
+                                }
+                            }
+                            if (DbRecordsUtils.isAssocLikeAttribute(attDef) && newPred.getValue().isTextual()) {
                                 newPred = ValuePredicate(
                                     newPred.getAttribute(),
-                                    ValuePredicate.Type.CONTAINS,
-                                    DataValue.createStr(newPred.getValue().toString())
+                                    newPred.getType(),
+                                    replaceRefsToIds(newPred.getValue())
                                 )
                             }
+                            newPred
                         }
-                        if (DbRecordsUtils.isAssocLikeAttribute(attDef) && newPred.getValue().isTextual()) {
-                            newPred = ValuePredicate(
-                                newPred.getAttribute(),
-                                newPred.getType(),
-                                replaceRefsToIds(newPred.getValue())
-                            )
-                        }
-                        newPred
                     }
-                }
-            } else if (currentPred is EmptyPredicate) {
-                if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
-                    EmptyPredicate(DbRecord.ATTS_MAPPING[attribute])
+                } else if (currentPred is EmptyPredicate) {
+                    if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
+                        EmptyPredicate(DbRecord.ATTS_MAPPING[attribute])
+                    } else {
+                        currentPred
+                    }
                 } else {
-                    currentPred
+                    log.error { "Unknown predicate type: ${currentPred::class}" }
+                    null
                 }
-            } else {
-                log.error { "Unknown predicate type: ${currentPred::class}" }
-                null
-            }
-        } ?: Predicates.alwaysTrue()
+            } ?: Predicates.alwaysTrue()
 
         if (!typePredicateExists && config.typeRef.getLocalId() != ecosTypeRef.getLocalId()) {
             val typeIds = mutableListOf<String>()
@@ -824,7 +835,7 @@ class DbRecordsDao(
         val operations = daoCtx.mutAttOperationHandler.extractAttValueOperations(recAttributes)
             .filter { !recAttributes.has(it.getAttName()) }
 
-        val multiAssocValues = LinkedHashMap<String, DbMultiAssocAttValuesContainer>()
+        val allAssocsValues = LinkedHashMap<String, DbAssocAttValuesContainer>()
         if (operations.isNotEmpty()) {
             val currentAtts: Map<String, Any?> = if (isNewEntity) {
                 emptyMap()
@@ -837,9 +848,9 @@ class DbRecordsDao(
                 if (newValue != currentValue) {
                     changedByOperationsAtts.add(it.getAttName())
                     recAttributes[it.getAttName()] = newValue
-                } else if (newValue is DbMultiAssocAttValuesContainer) {
+                } else if (newValue is DbAssocAttValuesContainer) {
                     changedByOperationsAtts.add(it.getAttName())
-                    multiAssocValues[it.getAttName()] = newValue
+                    allAssocsValues[it.getAttName()] = newValue
                 }
             }
         }
@@ -892,7 +903,7 @@ class DbRecordsDao(
         recAttributes.forEach { att, newValue ->
             val attDef = typeAttColumnsByAtt[att]
             if (attDef != null && attDef.attribute.type == AttributeType.ASSOC) {
-                if (!multiAssocValues.containsKey(att)) {
+                if (!allAssocsValues.containsKey(att)) {
                     val valuesBefore = if (isNewEntity) {
                         emptyList()
                     } else {
@@ -910,24 +921,24 @@ class DbRecordsDao(
                         it.toString()
                     }.toSet()
 
-                    val assocValues = DbMultiAssocAttValuesContainer(
+                    val assocValuesContainer = DbAssocAttValuesContainer(
                         daoCtx,
                         refsBefore,
                         DbRecordsUtils.isChildAssocAttribute(attDef.attribute),
                         attDef.attribute.multiple
                     )
-                    multiAssocValues[att] = assocValues
+                    allAssocsValues[att] = assocValuesContainer
 
                     val newValuesStrings = DbAttValueUtils.anyToSetOfStrings(newValue)
                     val added = newValuesStrings.filterTo(LinkedHashSet()) {
                         !refsBefore.contains(it)
                     }
-                    assocValues.addAll(added)
+                    assocValuesContainer.addAll(added)
 
                     val removed = refsBefore.filterTo(LinkedHashSet()) {
                         !newValuesStrings.contains(it)
                     }
-                    assocValues.removeAll(removed)
+                    assocValuesContainer.removeAll(removed)
                 }
             }
         }
@@ -982,10 +993,11 @@ class DbRecordsDao(
         } else {
             getRecordPerms(entityToMutate.extId)
         }
-        setMutationAtts(entityToMutate, recAttributes, typeColumns, perms, multiAssocValues)
+        val changedAssocs = ArrayList<DbAssocRefsDiff>()
+        setMutationAtts(entityToMutate, recAttributes, typeColumns, changedAssocs, perms, allAssocsValues)
         val optionalAtts = DbRecord.OPTIONAL_COLUMNS.filter { !typeColumnNames.contains(it.name) }
         if (optionalAtts.isNotEmpty()) {
-            fullColumns.addAll(setMutationAtts(entityToMutate, recAttributes, optionalAtts))
+            fullColumns.addAll(setMutationAtts(entityToMutate, recAttributes, optionalAtts, changedAssocs))
         }
 
         if (recAttributes.has(ATT_STATE)) {
@@ -1019,8 +1031,7 @@ class DbRecordsDao(
                     recAfterSave,
                     isNewEntity,
                     typeInfo.id,
-                    fullColumns,
-                    typeAttColumnsByAtt
+                    fullColumns
                 )
             } else {
                 recAfterSave
@@ -1034,7 +1045,7 @@ class DbRecordsDao(
             record.attributes,
             typeAttColumns,
             changedByOperationsAtts,
-            multiAssocValues
+            allAssocsValues
         )
         daoCtx.mutAssocHandler.processParentAfterMutation(
             recordEntityBeforeMutation,
@@ -1042,7 +1053,12 @@ class DbRecordsDao(
             record.attributes
         )
 
-        daoCtx.recEventsHandler.emitEventsAfterMutation(recordEntityBeforeMutation, recAfterSave, isNewEntity)
+        daoCtx.recEventsHandler.emitEventsAfterMutation(
+            recordEntityBeforeMutation,
+            recAfterSave,
+            isNewEntity,
+            changedAssocs
+        )
 
         return recAfterSave
     }
@@ -1052,8 +1068,7 @@ class DbRecordsDao(
         entity: DbEntity,
         isNewRecord: Boolean,
         recTypeId: String,
-        columns: List<DbColumnDef>,
-        typeAttColumnsByAtt: Map<String, EcosAttColumnDef>
+        columns: List<DbColumnDef>
     ): DbEntity {
 
         val typeRef = ModelUtils.getTypeRef(recTypeId)
@@ -1065,7 +1080,7 @@ class DbRecordsDao(
                 fullColumns.add(it)
             }
         }
-        var changed = setMutationAtts(entity, atts, fullColumns).isNotEmpty()
+        var changed = setMutationAtts(entity, atts, fullColumns, ArrayList()).isNotEmpty()
 
         val dispName = component.computeDisplayName(DbRecord(daoCtx, entity), typeRef)
         if (entity.name != dispName) {
@@ -1140,8 +1155,9 @@ class DbRecordsDao(
         recToMutate: DbEntity,
         atts: ObjectData,
         columns: List<DbColumnDef>,
+        changedAssocs: MutableList<DbAssocRefsDiff>,
         perms: DbRecordPerms? = null,
-        multiAssocValues: Map<String, DbMultiAssocAttValuesContainer> = emptyMap()
+        multiAssocValues: Map<String, DbAssocAttValuesContainer> = emptyMap()
     ): List<DbColumnDef> {
 
         if (atts.isEmpty() && multiAssocValues.isEmpty()) {
@@ -1165,30 +1181,49 @@ class DbRecordsDao(
                 val multiAssocValue = multiAssocValues[dbColumnDef.name]
                 if (multiAssocValue != null) {
 
-                    assocsService.removeAssocs(
+                    val removedTargetIds = assocsService.removeAssocs(
                         recToMutate.refId,
                         dbColumnDef.name,
                         multiAssocValue.getRemovedTargetIds()
                     )
-                    assocsService.createAssocs(
+                    val addedTargetIds = assocsService.createAssocs(
                         recToMutate.refId,
                         dbColumnDef.name,
                         multiAssocValue.child,
                         multiAssocValue.getAddedTargetsIds()
                     )
 
-                    val maxAssocs = if (dbColumnDef.multiple) { 10 } else { 1 }
-                    val targetIds = assocsService.getTargetAssocs(
-                        recToMutate.refId,
-                        dbColumnDef.name,
-                        DbFindPage(0, maxAssocs)
-                    ).entities.map { it.targetId }
+                    if (removedTargetIds.isNotEmpty() || addedTargetIds.isNotEmpty()) {
+                        val maxAssocs = if (dbColumnDef.multiple) {
+                            10
+                        } else {
+                            1
+                        }
+                        val targetIds = assocsService.getTargetAssocs(
+                            recToMutate.refId,
+                            dbColumnDef.name,
+                            DbFindPage(0, maxAssocs)
+                        ).entities.map { it.targetId }
 
-                    recToMutate.attributes[dbColumnDef.name] = daoCtx.mutConverter.convert(
-                        DataValue.create(targetIds),
-                        dbColumnDef.multiple,
-                        dbColumnDef.type
-                    )
+                        recToMutate.attributes[dbColumnDef.name] = daoCtx.mutConverter.convert(
+                            DataValue.create(targetIds),
+                            dbColumnDef.multiple,
+                            dbColumnDef.type
+                        )
+                        val changedAssocIds = HashSet<Long>(addedTargetIds.size + removedTargetIds.size)
+                        changedAssocIds.addAll(addedTargetIds)
+                        changedAssocIds.addAll(removedTargetIds)
+                        val refsByIds = daoCtx.recordRefService.getEntityRefsByIdsMap(changedAssocIds)
+
+                        changedAssocs.add(
+                            DbAssocRefsDiff(
+                                dbColumnDef.name,
+                                addedTargetIds.mapNotNull { refsByIds[it] },
+                                removedTargetIds.mapNotNull { refsByIds[it] },
+                                multiAssocValue.child
+                            )
+                        )
+                    }
                 } else {
                     recToMutate.attributes[dbColumnDef.name] = daoCtx.mutConverter.convert(
                         atts[dbColumnDef.name],
