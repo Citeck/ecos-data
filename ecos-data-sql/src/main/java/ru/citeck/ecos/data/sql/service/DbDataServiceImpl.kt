@@ -309,42 +309,36 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     override fun save(entities: Collection<T>, columns: List<DbColumnDef>): List<T> {
 
-        val columnsBefore = this.columns
-        try {
-            return dataSource.withTransaction(false) {
+        return dataSource.withTransaction(false) {
 
-                runMigrationsInTxn(columns, mock = false, diff = true)
-                val tableCtx = getTableContext()
+            runMigrationsInTxn(columns, mock = false, diff = true)
+            val tableCtx = getTableContext()
 
-                val entitiesToSave = entities.map { entity ->
+            val entitiesToSave = entities.map { entity ->
 
-                    val entityMap = entityMapper.convertToMap(entity)
+                val entityMap = entityMapper.convertToMap(entity)
 
-                    // entities with 'deleted' flag field doesn't really delete from table.
-                    // We set deleted = true for it instead. When new record will be created
-                    // with same id we should remove old record with deleted flag.
-                    if (hasDeletedFlag && entityMap[DbEntity.ID] == DbEntity.NEW_REC_ID) {
-                        val extId = entityMap[DbEntity.EXT_ID] as? String ?: ""
-                        if (extId.isNotBlank()) {
-                            val existingEntityMap = findMapByAnyId(extId, true)
-                            if (existingEntityMap != null) {
-                                // check that it's not a txn table and entity in was deleted before
-                                if (existingEntityMap[DbEntity.DELETED] == true) {
-                                    entityRepo.forceDelete(tableCtx, listOf(existingEntityMap[DbEntity.ID] as Long))
-                                } else {
-                                    throw IllegalStateException("New entity with same extId, but with new dbId. ExtId: $extId")
-                                }
+                // entities with 'deleted' flag field doesn't really delete from table.
+                // We set deleted = true for it instead. When new record will be created
+                // with same id we should remove old record with deleted flag.
+                if (hasDeletedFlag && entityMap[DbEntity.ID] == DbEntity.NEW_REC_ID) {
+                    val extId = entityMap[DbEntity.EXT_ID] as? String ?: ""
+                    if (extId.isNotBlank()) {
+                        val existingEntityMap = findMapByAnyId(extId, true)
+                        if (existingEntityMap != null) {
+                            // check that entity was deleted before
+                            if (existingEntityMap[DbEntity.DELETED] == true) {
+                                entityRepo.forceDelete(tableCtx, listOf(existingEntityMap[DbEntity.ID] as Long))
+                            } else {
+                                throw IllegalStateException("New entity with same extId, but with new dbId. ExtId: $extId")
                             }
                         }
                     }
-                    entityMap
                 }
-
-                entityRepo.save(tableCtx, entitiesToSave).map { entityMapper.convertToEntity(it) }
+                entityMap
             }
-        } catch (e: Exception) {
-            setColumns(columnsBefore)
-            throw e
+
+            entityRepo.save(tableCtx, entitiesToSave).map { entityMapper.convertToEntity(it) }
         }
     }
 
@@ -485,10 +479,21 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             return dataSource.withSchemaMock { migration.invoke() }
         }
 
-        val commands = migration.invoke()
+        val commands = try {
+            migration.invoke()
+        } catch (e: Throwable) {
+            resetColumnsCache()
+            if (e::class == InterruptedException::class) {
+                Thread.currentThread().interrupt()
+                throw e
+            } else {
+                getTableContext()
+                migration.invoke()
+            }
+        }
         val durationMs = System.currentTimeMillis() - startTime.toEpochMilli()
 
-        if (!mock && commands.isNotEmpty()) {
+        if (commands.isNotEmpty()) {
             resetColumnsCache()
             TxnContext.doAfterRollback(0f, false) {
                 resetColumnsCache()
@@ -607,7 +612,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         if (newColumns.isEmpty()) {
             return
         }
-        val tableCtx = getTableContext()
+        getTableContext()
 
         val currentColumnsNames = schemaDao.getColumns(dataSource, tableRef).map { it.name }.toSet()
         val newColumnsNames = newColumns.map { it.name }.toSet()
