@@ -282,7 +282,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     }
 
     override fun getId(): EntityRef {
-        return EntityRef.create(ctx.appName, ctx.sourceId, entity.extId)
+        return ctx.getGlobalRef(entity.extId)
     }
 
     override fun asText(): String {

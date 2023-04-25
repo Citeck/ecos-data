@@ -10,6 +10,7 @@ import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.listener.DbIntegrityCheckListener
 import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
+import ru.citeck.ecos.data.sql.records.refs.DbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
@@ -44,11 +45,17 @@ class DbDomainFactory(
         var permsComponent: DbPermsComponent? = null
         var computedAttsComponent: DbComputedAttsComponent? = null
         var dbContentService: DbContentService? = null
+        var globalRefCalculator: DbGlobalRefCalculator? = null
         var listeners: List<DbRecordsListener>? = null
         var excludeDefaultListeners: Boolean = false
 
         fun withPermsComponent(permsComponent: DbPermsComponent): Builder {
             this.permsComponent = permsComponent
+            return this
+        }
+
+        fun withGlobalRefCalculator(globalRefCalculator: DbGlobalRefCalculator?): Builder {
+            this.globalRefCalculator = globalRefCalculator
             return this
         }
 
@@ -93,7 +100,8 @@ class DbDomainFactory(
                 modelServices,
                 dataService,
                 permsComponent ?: this@DbDomainFactory.permsComponent,
-                computedAttsComponent ?: this@DbDomainFactory.computedAttsComponent
+                computedAttsComponent ?: this@DbDomainFactory.computedAttsComponent,
+                globalRefCalculator
             ) {
                 val ctx = migrationContext
                     ?: error("Migration context is null for '${domainConfig.recordsDao.id}'")

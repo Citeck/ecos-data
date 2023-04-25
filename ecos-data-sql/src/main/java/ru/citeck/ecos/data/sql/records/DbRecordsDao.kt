@@ -27,7 +27,9 @@ import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsSystemAdapter
+import ru.citeck.ecos.data.sql.records.refs.DbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
+import ru.citeck.ecos.data.sql.records.refs.DefaultDbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -64,7 +66,6 @@ import ru.citeck.ecos.records3.record.dao.query.RecsGroupQueryDao
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.records3.record.request.RequestContext
-import ru.citeck.ecos.records3.utils.RecordRefUtils
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.txn.lib.transaction.Transaction
 import ru.citeck.ecos.webapp.api.content.EcosContentData
@@ -87,6 +88,7 @@ class DbRecordsDao(
     private val dataService: DbDataService<DbEntity>,
     private val permsComponent: DbPermsComponent,
     private val computedAttsComponent: DbComputedAttsComponent?,
+    private val globalRefCalculator: DbGlobalRefCalculator?,
     private val onInitialized: () -> Unit = {}
 ) : AbstractRecordsDao(),
     RecordsAttsDao,
@@ -752,11 +754,8 @@ class DbRecordsDao(
             entityToMutate.extId = UUID.randomUUID().toString()
         }
         if (isNewEntity) {
-            val sourceIdMapping = RequestContext.getCurrentNotNull().ctxData.sourceIdMapping
-            val currentAppName = serviceFactory.webappProps.appName
-            val currentRef = EntityRef.create(currentAppName, getId(), entityToMutate.extId)
-            val newRecordRef = RecordRefUtils.mapAppIdAndSourceId(currentRef, currentAppName, sourceIdMapping)
-            entityToMutate.refId = recordRefService.getOrCreateIdByEntityRefs(listOf(newRecordRef))[0]
+            val globalRef = daoCtx.getGlobalRef(entityToMutate.extId)
+            entityToMutate.refId = recordRefService.getOrCreateIdByEntityRefs(listOf(globalRef))[0]
         }
 
         val recAttributes = record.attributes.deepCopy()
@@ -1119,11 +1118,6 @@ class DbRecordsDao(
     }
 
     fun getRecordPerms(record: Any): DbRecordPerms {
-        val recordToGetPerms = if (record is String) {
-            EntityRef.create(getId(), record)
-        } else {
-            record
-        }
         // Optimization to enable caching
         return RequestContext.doWithCtx(
             serviceFactory,
@@ -1133,9 +1127,18 @@ class DbRecordsDao(
             {
                 TxnContext.doInTxn(true) {
                     AuthContext.runAsSystem {
-                        DbRecordPermsSystemAdapter(
-                            permsComponent.getRecordPerms(recordToGetPerms)
-                        )
+                        val recordToGetPerms = if (record is String) {
+                            findDbEntityByExtId(record)?.let { DbRecord(daoCtx, it) }
+                        } else {
+                            record
+                        }
+                        if (recordToGetPerms != null) {
+                            DbRecordPermsSystemAdapter(
+                                permsComponent.getRecordPerms(recordToGetPerms)
+                            )
+                        } else {
+                            DbRecordAllowedAllPerms
+                        }
                     }
                 }
             }
@@ -1254,8 +1257,9 @@ class DbRecordsDao(
     override fun setRecordsServiceFactory(serviceFactory: RecordsServiceFactory) {
         super.setRecordsServiceFactory(serviceFactory)
         ecosTypeService = DbEcosModelService(modelServices)
+        val appName = serviceFactory.webappProps.appName
         daoCtx = DbRecordsDaoCtx(
-            serviceFactory.webappProps.appName,
+            appName,
             getId(),
             dataService.getTableRef(),
             config,
@@ -1270,7 +1274,8 @@ class DbRecordsDao(
             this,
             serviceFactory.attValuesConverter,
             serviceFactory.getEcosWebAppApi()?.getWebClientApi(),
-            assocsService
+            assocsService,
+            globalRefCalculator ?: DefaultDbGlobalRefCalculator()
         )
         daoCtxInitialized.set(true)
         listeners.forEach {

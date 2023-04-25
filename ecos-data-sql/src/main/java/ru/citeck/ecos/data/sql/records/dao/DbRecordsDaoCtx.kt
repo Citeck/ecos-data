@@ -14,6 +14,7 @@ import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler
 import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutConverter
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.RecMutAttOperationsHandler
 import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
+import ru.citeck.ecos.data.sql.records.refs.DbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -21,8 +22,6 @@ import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.value.AttValuesConverter
-import ru.citeck.ecos.records3.record.request.RequestContext
-import ru.citeck.ecos.records3.utils.RecordRefUtils
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
 import ru.citeck.ecos.webapp.api.content.EcosContentApi
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -44,7 +43,8 @@ class DbRecordsDaoCtx(
     val recordsDao: DbRecordsDao,
     val attValuesConverter: AttValuesConverter,
     val webApiClient: EcosWebClientApi?,
-    val assocsService: DbAssocsService
+    val assocsService: DbAssocsService,
+    val globalRefCalculator: DbGlobalRefCalculator
 ) {
     val recContentHandler: DbRecContentHandler by lazy { DbRecContentHandler(this) }
     val mutConverter = RecMutConverter()
@@ -58,11 +58,7 @@ class DbRecordsDaoCtx(
     }
 
     fun getGlobalRef(extId: String): EntityRef {
-        return RecordRefUtils.mapAppIdAndSourceId(
-            getLocalRef(extId),
-            appName,
-            RequestContext.getCurrent()?.ctxData?.sourceIdMapping
-        )
+        return globalRefCalculator.getGlobalRef(appName, sourceId, extId)
     }
 
     fun getEntityMeta(entity: DbEntity): DbEntityMeta {

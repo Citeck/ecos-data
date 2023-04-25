@@ -414,7 +414,8 @@ abstract class DbRecordsTestBase {
             modelServiceFactory,
             dataService,
             permsComponent,
-            computedAttsComponent
+            computedAttsComponent,
+            null
         )
         recordsDao.addListener(DbIntegrityCheckListener())
         records.register(recordsDao)
