@@ -277,7 +277,8 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
 
         val currentContentValue = records.getAtt(record, "assoc[]._as.content-data?json")
         currentContentValue.add(
-            """
+            DataValue.of(
+                """
               {
                 "storage": "base64",
                 "name": "Assoc test2.-ad3e182c-3aac-4d7d-b145-880dae799698.txt",
@@ -287,7 +288,8 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
                 "fileType": "document",
                 "originalName": "Assoc test2.txt"
               }
-            """.trimIndent()
+                """.trimIndent()
+            )
         )
         records.mutateAtt(record, "assoc", currentContentValue)
 
