@@ -1,6 +1,5 @@
 package ru.citeck.ecos.data.sql.pg.records
 
-import org.assertj.core.api.Assertions
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -37,8 +36,8 @@ class DbRecordsParentTest : DbRecordsTestBase() {
                     Predicates.eq("_parent", "alfresco/@abc")
                 ).build()
         )
-        Assertions.assertThat(result.getRecords()).hasSize(1)
-        Assertions.assertThat(result.getRecords()[0]).isEqualTo(ref)
+        assertThat(result.getRecords()).hasSize(1)
+        assertThat(result.getRecords()[0]).isEqualTo(ref)
     }
 
     @Test

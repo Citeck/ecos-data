@@ -5,6 +5,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
+import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
 import ru.citeck.ecos.records2.predicate.model.Predicate
 
 interface DbEntityRepo {
@@ -16,10 +17,16 @@ interface DbEntityRepo {
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
-        selectFunctions: List<AggregateFunc>
+        selectFunctions: List<AggregateFunc>,
+        assocJoins: Map<String, AssocJoin>
     ): DbFindRes<Map<String, Any?>>
 
-    fun getCount(context: DbTableContext, predicate: Predicate, groupBy: List<String>): Long
+    fun getCount(
+        context: DbTableContext,
+        predicate: Predicate,
+        groupBy: List<String>,
+        assocJoins: Map<String, AssocJoin>
+    ): Long
 
     fun save(context: DbTableContext, entities: List<Map<String, Any?>>): List<Map<String, Any?>>
 

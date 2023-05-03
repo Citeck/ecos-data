@@ -36,6 +36,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
+import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
 import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -345,6 +346,9 @@ class DbRecordsDao(
         }
 
         var typePredicateExists = false
+        val assocJoins = mutableMapOf<String, AssocJoin>()
+        var assocJoinsCounter = 0
+        val assocsTableExists = assocsService.isAssocsTableExists()
 
         var predicate =
             PredicateUtils.mapAttributePredicates(recsQuery.getQuery(Predicate::class.java)) { currentPred ->
@@ -453,8 +457,19 @@ class DbRecordsDao(
                                 }
                             }
                             if (DbRecordsUtils.isAssocLikeAttribute(attDef) && newPred.getValue().isTextual()) {
+                                val newAttribute = if (assocsTableExists && attDef?.multiple == true) {
+                                    val assocAtt = newPred.getAttribute()
+                                    val joinAtt = "$assocAtt-${assocJoinsCounter++}"
+                                    assocJoins[joinAtt] = AssocJoin(
+                                        daoCtx.assocsService.getIdForAtt(assocAtt),
+                                        assocAtt
+                                    )
+                                    joinAtt
+                                } else {
+                                    newPred.getAttribute()
+                                }
                                 newPred = ValuePredicate(
-                                    newPred.getAttribute(),
+                                    newAttribute,
                                     newPred.getType(),
                                     replaceRefsToIds(newPred.getValue())
                                 )
@@ -520,7 +535,8 @@ class DbRecordsDao(
                 ),
                 false,
                 recsQuery.groupBy,
-                selectFunctions
+                selectFunctions,
+                assocJoins
             )
         }
 

@@ -6,12 +6,15 @@ import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.perms.DbPermsEntity
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
+import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
+import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
@@ -23,6 +26,7 @@ import java.sql.Timestamp
 import java.time.*
 import java.util.*
 import kotlin.collections.ArrayList
+import kotlin.collections.LinkedHashMap
 import kotlin.reflect.KClass
 
 open class DbEntityRepoPg internal constructor() : DbEntityRepo {
@@ -35,6 +39,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         private const val RECORD_TABLE_ALIAS = "r"
         private const val PERMS_TABLE_ALIAS = "p"
+        private const val ASSOCS_TABLE_ALIAS_PREFIX = "a"
 
         private const val IS_TRUE = "IS TRUE"
         private const val IS_FALSE = "IS FALSE"
@@ -73,7 +78,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             DbFindPage(0, limit),
             withDeleted,
             emptyList(),
-            emptyList()
+            emptyList(),
+            emptyMap()
         ).entities
     }
 
@@ -147,7 +153,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             .append(" \"r\" WHERE ")
 
         val parameters = arrayListOf<Any?>()
-        toSqlCondition(context, query, predicate, parameters)
+        toSqlCondition(context, query, predicate, emptyMap(), parameters)
 
         context.getDataSource().update(query.toString(), parameters)
     }
@@ -364,20 +370,30 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
     }
 
-    override fun getCount(context: DbTableContext, predicate: Predicate, groupBy: List<String>): Long {
+    override fun getCount(
+        context: DbTableContext,
+        predicate: Predicate,
+        groupBy: List<String>,
+        assocJoins: Map<String, AssocJoin>
+    ): Long {
 
         if (context.getColumns().isEmpty()) {
             return 0
         }
         val permsColumn = getPermsColumn(context)
-        if (permsColumn.isNotEmpty() && (!context.getPermsService().isTableExists() || !context.hasColumn(permsColumn))) {
+        if (permsColumn.isNotEmpty() && (
+            !context.getPermsService()
+                .isTableExists() || !context.hasColumn(permsColumn)
+            )
+        ) {
             return 0
         }
 
+        val repoAssocJoins = prepareAssocJoins(assocJoins)
         val params = mutableListOf<Any?>()
-        val sqlCondition = toSqlCondition(context, predicate, params)
+        val sqlCondition = toSqlCondition(context, predicate, repoAssocJoins, params)
 
-        return getCountImpl(context, sqlCondition, params, permsColumn, groupBy)
+        return getCountImpl(context, sqlCondition, params, permsColumn, groupBy, repoAssocJoins)
     }
 
     private fun getPermsColumn(context: DbTableContext): String {
@@ -398,7 +414,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         sqlCondition: String,
         params: List<Any?>,
         permsColumn: String,
-        groupBy: List<String>
+        groupBy: List<String>,
+        assocJoins: Map<String, RepoAssocJoin>
     ): Long {
 
         val selectQuery = createSelectQuery(
@@ -409,7 +426,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             sqlCondition,
             emptyList(),
             DbFindPage.ALL,
-            groupBy
+            groupBy,
+            assocJoins
         )
         if (selectQuery.contains(WHERE_ALWAYS_FALSE)) {
             return 0
@@ -431,7 +449,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
-        selectFunctions: List<AggregateFunc>
+        selectFunctions: List<AggregateFunc>,
+        assocJoins: Map<String, AssocJoin>
     ): DbFindRes<Map<String, Any?>> {
 
         val columns = context.getColumns()
@@ -443,7 +462,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val permsColumn = getPermsColumn(context)
 
-        if (permsColumn.isNotEmpty() && (!context.getPermsService().isTableExists() || !context.hasColumn(permsColumn))) {
+        if (permsColumn.isNotEmpty() && (
+            !context.getPermsService()
+                .isTableExists() || !context.hasColumn(permsColumn)
+            )
+        ) {
             return DbFindRes(emptyList(), 0)
         }
 
@@ -463,8 +486,10 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             }
         }
 
+        val repoAssocJoins = prepareAssocJoins(assocJoins)
+
         val params = mutableListOf<Any?>()
-        val sqlCondition = toSqlCondition(context, predicate, params)
+        val sqlCondition = toSqlCondition(context, predicate, repoAssocJoins, params)
         val query = createSelectQuery(
             context,
             columns,
@@ -474,7 +499,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             sort,
             page,
             queryGroupBy,
-            selectFunctions
+            selectFunctions,
+            repoAssocJoins
         )
 
         val resultEntities = context.getDataSource().query(query, params) { resultSet ->
@@ -496,9 +522,21 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val totalCount = if (page.maxItems == -1) {
             resultEntities.size.toLong() + page.skipCount
         } else {
-            getCountImpl(context, sqlCondition, params, permsColumn, groupBy)
+            getCountImpl(context, sqlCondition, params, permsColumn, groupBy, repoAssocJoins)
         }
         return DbFindRes(resultEntities, totalCount)
+    }
+
+    private fun prepareAssocJoins(assocJoins: Map<String, AssocJoin>): Map<String, RepoAssocJoin> {
+        if (assocJoins.isEmpty()) {
+            return emptyMap()
+        }
+        var aliasCounter = 0
+        val result = LinkedHashMap<String, RepoAssocJoin>()
+        assocJoins.forEach { (k, v) ->
+            result[k] = RepoAssocJoin(ASSOCS_TABLE_ALIAS_PREFIX + (aliasCounter++), v.attId, v.attribute)
+        }
+        return result
     }
 
     private fun createSelectQuery(
@@ -511,6 +549,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         page: DbFindPage = DbFindPage.ALL,
         groupBy: List<String> = emptyList(),
         selectFunctions: List<AggregateFunc> = emptyList(),
+        assocJoins: Map<String, RepoAssocJoin> = emptyMap()
     ): String {
 
         val selectColumnsStr = StringBuilder()
@@ -544,7 +583,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             condition,
             sort,
             page,
-            groupBy
+            groupBy,
+            assocJoins
         )
     }
 
@@ -557,11 +597,12 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         sort: List<DbFindSort> = emptyList(),
         page: DbFindPage = DbFindPage.ALL,
         groupBy: List<String> = emptyList(),
-        innerAuthSelect: Boolean = false
+        assocJoins: Map<String, RepoAssocJoin> = emptyMap(),
+        innerIdSelect: Boolean = false
     ): String {
 
         val delCondition = if (context.hasDeleteFlag() && !withDeleted) {
-            "\"${DbEntity.DELETED}\"!=true"
+            "\"${RECORD_TABLE_ALIAS}\".\"${DbEntity.DELETED}\"!=true"
         } else {
             ""
         }
@@ -569,59 +610,69 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val query = StringBuilder()
         query.append("SELECT $selectColumns FROM ${context.getTableRef().fullName} \"$RECORD_TABLE_ALIAS\"")
 
-        if (permsColumn.isNotEmpty()) {
+        if (innerIdSelect) {
 
-            if (innerAuthSelect) {
+            if (assocJoins.isNotEmpty()) {
+                joinWithAssocs(context, query, assocJoins)
+            }
+            var isPermsCheckingEnabled = false
+            val currentAuthCondition = if (permsColumn.isNotEmpty()) {
                 joinWithAuthorities(context, query, permsColumn)
+                isPermsCheckingEnabled = true
+                getCurrentUserAuthoritiesCondition(context)
+            } else {
+                ""
             }
             query.append(" WHERE ")
-            if (innerAuthSelect) {
-                val currentAuthCondition = getCurrentUserAuthoritiesCondition(context)
-                if (currentAuthCondition == ALWAYS_FALSE_CONDITION) {
-                    query.append(ALWAYS_FALSE_CONDITION)
-                } else {
-                    query.append(joinConditionsByAnd(delCondition, currentAuthCondition, condition))
-                }
-                query.append(" GROUP BY ")
-                appendRecordColumnName(query, "id")
+            query.append(joinConditionsByAnd(delCondition, currentAuthCondition, condition))
+            query.append(" GROUP BY ")
+            appendRecordColumnName(query, "id")
+            if (isPermsCheckingEnabled) {
                 query.append(" HAVING bool_and(\"")
                     .append(PERMS_TABLE_ALIAS)
                     .append("\".\"")
                     .append(DbPermsEntity.ALLOWED)
                     .append("\")")
-                addSortAndPage(query, sort, page)
-            } else {
-                val innerQuery = createSelectQuery(
-                    context,
-                    selectColumns = "\"$RECORD_TABLE_ALIAS\".\"id\"",
-                    permsColumn = permsColumn,
-                    withDeleted = withDeleted,
-                    condition = condition,
-                    sort,
-                    page,
-                    innerAuthSelect = true
-                )
-                if (hasAlwaysFalseCondition(innerQuery)) {
-                    query.append(ALWAYS_FALSE_CONDITION)
-                } else {
-                    appendRecordColumnName(query, "id")
-                    query.append(" IN (")
-                        .append(innerQuery)
-                        .append(")")
-                    addSortAndPage(query, sort, DbFindPage.ALL)
-                }
             }
+            addSortAndPage(query, sort, page)
+
+            return query.toString()
+        } else if (permsColumn.isNotEmpty() || assocJoins.isNotEmpty()) {
+
+            val innerQuery = createSelectQuery(
+                context,
+                selectColumns = "\"$RECORD_TABLE_ALIAS\".\"id\"",
+                permsColumn = permsColumn,
+                withDeleted = withDeleted,
+                condition = condition,
+                sort,
+                page,
+                assocJoins = assocJoins,
+                innerIdSelect = true
+            )
+            query.append(" WHERE ")
+            if (hasAlwaysFalseCondition(innerQuery)) {
+                query.append(ALWAYS_FALSE_CONDITION)
+            } else {
+                appendRecordColumnName(query, "id")
+                query.append(" IN (")
+                    .append(innerQuery)
+                    .append(")")
+                addSortAndPage(query, sort, DbFindPage.ALL)
+            }
+
+            return query.toString()
+        } else {
+
+            val newCondition = joinConditionsByAnd(delCondition, condition)
+            if (newCondition.isNotBlank()) {
+                query.append(" WHERE ").append(newCondition)
+            }
+            addGrouping(query, groupBy)
+            addSortAndPage(query, sort, page)
+
             return query.toString()
         }
-
-        val newCondition = joinConditionsByAnd(delCondition, condition)
-        if (newCondition.isNotBlank()) {
-            query.append(" WHERE ").append(newCondition)
-        }
-        addGrouping(query, groupBy)
-        addSortAndPage(query, sort, page)
-
-        return query.toString()
     }
 
     private fun addGrouping(query: StringBuilder, groupBy: List<String>) {
@@ -664,6 +715,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         for (cond in conditions) {
             if (cond.isNotBlank()) {
                 condition = if (condition.isNotBlank()) {
+                    if (condition == ALWAYS_FALSE_CONDITION) {
+                        return ALWAYS_FALSE_CONDITION
+                    }
                     "$condition AND $cond"
                 } else {
                     cond
@@ -739,6 +793,23 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             .append("\"$PERMS_TABLE_ALIAS\".\"${DbPermsEntity.ENTITY_REF_ID}\"")
     }
 
+    private fun joinWithAssocs(
+        context: DbTableContext,
+        query: StringBuilder,
+        assocJoins: Map<String, RepoAssocJoin>
+    ) {
+
+        val tableRef = context.getTableRef()
+        val assocsTableName = tableRef.withTable(DbAssocEntity.TABLE).fullName
+
+        for (join in assocJoins.values) {
+            query.append(" LEFT JOIN $assocsTableName \"${join.alias}\" ")
+                .append("ON \"$RECORD_TABLE_ALIAS\".\"${DbEntity.REF_ID}\"=")
+                .append("\"${join.alias}\".\"${DbAssocEntity.SOURCE_ID}\"")
+                .append(" AND \"${join.alias}\".${DbAssocEntity.ATTRIBUTE}=${join.attId}")
+        }
+    }
+
     private fun getCurrentUserAuthoritiesCondition(context: DbTableContext): String {
 
         val userAuthorities = context.getCurrentUserAuthorityIds()
@@ -761,10 +832,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
     private fun toSqlCondition(
         context: DbTableContext,
         predicate: Predicate,
+        assocJoins: Map<String, RepoAssocJoin>,
         queryParams: MutableList<Any?>
     ): String {
         val sb = StringBuilder()
-        toSqlCondition(context, sb, predicate, queryParams)
+        toSqlCondition(context, sb, predicate, assocJoins, queryParams)
         return sb.toString()
     }
 
@@ -772,6 +844,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         context: DbTableContext,
         query: StringBuilder,
         predicate: Predicate,
+        assocJoins: Map<String, RepoAssocJoin>,
         queryParams: MutableList<Any?>
     ): Boolean {
 
@@ -787,7 +860,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 query.append("(")
                 var notEmpty = false
                 for (innerPred in predicate.getPredicates()) {
-                    if (toSqlCondition(context, query, innerPred, queryParams)) {
+                    if (toSqlCondition(context, query, innerPred, assocJoins, queryParams)) {
                         query.append(joinOperator)
                         notEmpty = true
                     }
@@ -804,14 +877,55 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
             is ValuePredicate -> {
 
-                val columnDef = context.getColumnByName(predicate.getAttribute())
-                    ?: error("column is not found: ${predicate.getAttribute()}")
+                var columnDef = context.getColumnByName(predicate.getAttribute())
+                if (columnDef == null) {
+                    val assocJoin = assocJoins[predicate.getAttribute()]
+                    if (assocJoin != null) {
+                        columnDef = context.getColumnByName(assocJoin.attribute)
+                    }
+                }
+                columnDef ?: error("column is not found: ${predicate.getAttribute()}")
 
                 val type = predicate.getType()
-                val attribute: String = predicate.getAttribute()
+                var attribute: String = predicate.getAttribute()
                 val value = predicate.getValue()
 
-                if (columnDef.multiple) {
+                var isAssocCondition = false
+                if (columnDef.type == DbColumnType.LONG) {
+                    val join = assocJoins[attribute]
+                    if (join != null) {
+                        attribute = join.alias + ".${DbAssocEntity.TARGET_ID}"
+                        isAssocCondition = true
+                        if (columnDef.multiple) {
+                            if (type != ValuePredicate.Type.EQ &&
+                                type != ValuePredicate.Type.CONTAINS &&
+                                type != ValuePredicate.Type.IN
+                            ) {
+                                return false
+                            }
+                            val longs = DbAttValueUtils.anyToSetOfLongs(value)
+                            if (longs.isEmpty()) {
+                                query.append(ALWAYS_FALSE_CONDITION)
+                                return true
+                            }
+                            query.append(attribute)
+                            if (longs.size == 1) {
+                                query.append(" = ?")
+                                queryParams.add(longs.first())
+                            } else {
+                                query.append(" IN (")
+                                longs.forEach {
+                                    query.append("?")
+                                    queryParams.add(it)
+                                }
+                                query.append(")")
+                            }
+                            return true
+                        }
+                    }
+                }
+                if (!isAssocCondition && columnDef.multiple) {
+
                     if (type != ValuePredicate.Type.EQ && type != ValuePredicate.Type.CONTAINS) {
                         return false
                     }
@@ -954,7 +1068,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
             is NotPredicate -> {
                 query.append("NOT ")
-                return if (toSqlCondition(context, query, predicate.getPredicate(), queryParams)) {
+                return if (toSqlCondition(context, query, predicate.getPredicate(), assocJoins, queryParams)) {
                     true
                 } else {
                     query.setLength(query.length - 4)
@@ -1014,5 +1128,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
     private data class EntityToInsert(
         val resIdIdx: Int,
         val data: Map<String, Any?>
+    )
+
+    private data class RepoAssocJoin(
+        val alias: String,
+        val attId: Long,
+        val attribute: String
     )
 }

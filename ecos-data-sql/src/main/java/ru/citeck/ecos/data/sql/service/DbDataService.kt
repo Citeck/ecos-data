@@ -8,6 +8,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
+import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.predicate.model.Predicate
 
@@ -47,7 +48,8 @@ interface DbDataService<T : Any> {
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
-        selectFunctions: List<AggregateFunc>
+        selectFunctions: List<AggregateFunc>,
+        assocJoins: Map<String, AssocJoin>
     ): DbFindRes<T>
 
     fun getCount(predicate: Predicate): Long

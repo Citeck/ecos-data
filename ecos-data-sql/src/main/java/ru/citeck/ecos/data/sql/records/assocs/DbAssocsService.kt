@@ -32,6 +32,14 @@ class DbAssocsService(
     private val attsService = DbEcosAttributesService(schemaCtx)
     private val refsService = schemaCtx.recordRefService
 
+    fun getIdsForAtts(attributes: Collection<String>, createIfNotExists: Boolean = false): Map<String, Long> {
+        return attsService.getIdsForAtts(attributes, createIfNotExists)
+    }
+
+    fun getIdForAtt(attribute: String, createIfNotExists: Boolean = false): Long {
+        return attsService.getIdsForAtts(listOf(attribute), createIfNotExists)[attribute] ?: -1L
+    }
+
     fun createAssocs(sourceId: Long, attribute: String, child: Boolean, targetIds: Collection<Long>): List<Long> {
 
         val attId = getIdForAtt(attribute, true)
@@ -61,7 +69,8 @@ class DbAssocsService(
                 DbFindPage.FIRST,
                 true,
                 listOf(DbAssocEntity.SOURCE_ID),
-                listOf(AggregateFunc(DbAssocEntity.INDEX, "max", DbAssocEntity.INDEX))
+                listOf(AggregateFunc(DbAssocEntity.INDEX, "max", DbAssocEntity.INDEX)),
+                emptyMap()
             )
 
             var index = if (maxIdxFindRes.entities.isEmpty()) {
@@ -112,7 +121,8 @@ class DbAssocsService(
             DbFindPage.ALL,
             true,
             emptyList(),
-            emptyList()
+            emptyList(),
+            emptyMap()
         ).entities
 
         if (existentAssocs.isEmpty()) {
@@ -150,8 +160,8 @@ class DbAssocsService(
         return result.withEntities(mapToDto(result.entities))
     }
 
-    private fun getIdForAtt(attribute: String, createIfNotExists: Boolean = false): Long {
-        return attsService.getIdsForAtts(listOf(attribute), createIfNotExists)[attribute] ?: -1L
+    fun isAssocsTableExists(): Boolean {
+        return dataService.isTableExists()
     }
 
     private fun mapToDto(entities: List<DbAssocEntity>): List<DbAssocDto> {

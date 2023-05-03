@@ -29,6 +29,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
+import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.predicate.PredicateUtils
@@ -164,14 +165,15 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         withDeleted: Boolean,
         limit: Int
     ): List<Map<String, Any?>> {
-        return entityRepo.find(
+        return findInRepo(
             context,
             ValuePredicate(column, ValuePredicate.Type.IN, values),
             emptyList(),
             DbFindPage(0, limit),
             withDeleted,
             emptyList(),
-            emptyList()
+            emptyList(),
+            emptyMap()
         ).entities
     }
 
@@ -218,15 +220,16 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     override fun findAll(predicate: Predicate, withDeleted: Boolean): List<T> {
-        return execReadOnlyQueryWithPredicate(predicate, emptyList()) { tableCtx, pred ->
-            entityRepo.find(
+        return execReadOnlyQueryWithPredicate(predicate, emptyMap(), emptyList()) { tableCtx, pred ->
+            findInRepo(
                 tableCtx,
                 pred,
                 emptyList(),
                 DbFindPage.ALL,
                 withDeleted,
                 emptyList(),
-                emptyList()
+                emptyList(),
+                emptyMap()
             ).entities.map {
                 entityMapper.convertToEntity(it)
             }
@@ -234,15 +237,16 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     override fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<T> {
-        return execReadOnlyQueryWithPredicate(predicate, emptyList()) { tableCtx, pred ->
-            entityRepo.find(
+        return execReadOnlyQueryWithPredicate(predicate, emptyMap(), emptyList()) { tableCtx, pred ->
+            findInRepo(
                 tableCtx,
                 pred,
                 sort,
                 DbFindPage.ALL,
                 false,
                 emptyList(),
-                emptyList()
+                emptyList(),
+                emptyMap()
             ).entities.map {
                 entityMapper.convertToEntity(it)
             }
@@ -259,15 +263,16 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         page: DbFindPage,
         withDeleted: Boolean
     ): DbFindRes<T> {
-        return execReadOnlyQueryWithPredicate(predicate, DbFindRes.empty()) { tableCtx, pred ->
-            entityRepo.find(
+        return execReadOnlyQueryWithPredicate(predicate, emptyMap(), DbFindRes.empty()) { tableCtx, pred ->
+            findInRepo(
                 tableCtx,
                 pred,
                 sort,
                 page,
                 withDeleted,
                 emptyList(),
-                emptyList()
+                emptyList(),
+                emptyMap()
             ).mapEntities {
                 entityMapper.convertToEntity(it)
             }
@@ -280,18 +285,51 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
-        selectFunctions: List<AggregateFunc>
+        selectFunctions: List<AggregateFunc>,
+        assocJoins: Map<String, AssocJoin>
     ): DbFindRes<T> {
-        return execReadOnlyQueryWithPredicate(predicate, DbFindRes.empty()) { tableCtx, pred ->
-            entityRepo.find(tableCtx, pred, sort, page, withDeleted, groupBy, selectFunctions).mapEntities {
+        return execReadOnlyQueryWithPredicate(predicate, assocJoins, DbFindRes.empty()) { tableCtx, pred ->
+            findInRepo(
+                tableCtx,
+                pred,
+                sort,
+                page,
+                withDeleted,
+                groupBy,
+                selectFunctions,
+                assocJoins
+            ).mapEntities {
                 entityMapper.convertToEntity(it)
             }
         }
     }
 
+    private fun findInRepo(
+        context: DbTableContext,
+        predicate: Predicate,
+        sort: List<DbFindSort>,
+        page: DbFindPage,
+        withDeleted: Boolean,
+        groupBy: List<String>,
+        selectFunctions: List<AggregateFunc>,
+        assocJoins: Map<String, AssocJoin>
+    ): DbFindRes<Map<String, Any?>> {
+
+        return entityRepo.find(
+            context,
+            predicate,
+            sort,
+            page,
+            withDeleted,
+            groupBy,
+            selectFunctions,
+            assocJoins
+        )
+    }
+
     override fun getCount(predicate: Predicate): Long {
-        return execReadOnlyQueryWithPredicate(predicate, 0) { tableCtx, pred ->
-            entityRepo.getCount(tableCtx, pred, emptyList())
+        return execReadOnlyQueryWithPredicate(predicate, emptyMap(), 0) { tableCtx, pred ->
+            entityRepo.getCount(tableCtx, pred, emptyList(), emptyMap())
         }
     }
 
@@ -569,7 +607,12 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
         if (columnsWithChangedType.isNotEmpty()) {
             if (!mock) {
-                val currentCount = entityRepo.getCount(getTableContext(), Predicates.alwaysTrue(), emptyList())
+                val currentCount = entityRepo.getCount(
+                    getTableContext(),
+                    Predicates.alwaysTrue(),
+                    emptyList(),
+                    emptyMap()
+                )
                 if (currentCount > maxItemsToAllowSchemaMigration) {
                     val baseMsg = "Schema migration can't be performed because table has too much items: $currentCount."
                     val newColumnsMsg = columnsWithChangedType.joinToString { it.toString() }
@@ -644,7 +687,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             expectedColumn.type != DbColumnType.JSON
     }
 
-    private fun preparePredicate(predicate: Predicate): Predicate {
+    private fun preparePredicate(predicate: Predicate, assocJoins: Map<String, AssocJoin>): Predicate {
 
         if (PredicateUtils.isAlwaysTrue(predicate) || PredicateUtils.isAlwaysFalse(predicate)) {
             return predicate
@@ -655,7 +698,13 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         val columnsPred = PredicateUtils.mapAttributePredicates(
             predicate,
             { pred ->
-                val column = tableCtx.getColumnByName(pred.getAttribute())
+                var column = tableCtx.getColumnByName(pred.getAttribute())
+                if (column == null) {
+                    val assocJoin = assocJoins[pred.getAttribute()]
+                    if (assocJoin != null) {
+                        column = tableCtx.getColumnByName(assocJoin.attribute)
+                    }
+                }
                 if (column == null) {
                     Predicates.alwaysFalse()
                 } else if (pred is ValuePredicate && pred.getType() == ValuePredicate.Type.IN) {
@@ -688,11 +737,12 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     private fun <T> execReadOnlyQueryWithPredicate(
         predicate: Predicate,
+        assocJoins: Map<String, AssocJoin>,
         defaultRes: T,
         action: (DbTableContext, Predicate) -> T
     ): T {
         val tableCtx = getTableContext()
-        val preparedPred = preparePredicate(predicate)
+        val preparedPred = preparePredicate(predicate, assocJoins)
         if (PredicateUtils.isAlwaysFalse(preparedPred)) {
             return defaultRes
         }
