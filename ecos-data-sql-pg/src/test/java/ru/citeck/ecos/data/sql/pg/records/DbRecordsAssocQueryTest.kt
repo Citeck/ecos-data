@@ -197,10 +197,12 @@ class DbRecordsAssocQueryTest : DbRecordsTestBase() {
                 }
             )
         )
+        assocsService.createTableIfNotExists()
 
         val anyRef = "emodel/person@admin".toEntityRef()
         val record = createRecord("assoc" to anyRef)
         testQuery(Predicates.eq("assoc", anyRef), listOf(record))
+        testQuery(ValuePredicate.contains("assoc", anyRef), listOf(record))
 
         val currentAssocValue0 = records.getAtt(record, "assoc[]?id")
             .toList(EntityRef::class.java)

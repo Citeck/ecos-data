@@ -160,6 +160,10 @@ class DbAssocsService(
         return result.withEntities(mapToDto(result.entities))
     }
 
+    fun createTableIfNotExists() {
+        dataService.runMigrations(mock = false, diff = true)
+    }
+
     fun isAssocsTableExists(): Boolean {
         return dataService.isTableExists()
     }
