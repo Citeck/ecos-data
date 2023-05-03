@@ -917,7 +917,7 @@ class DbRecordsDao(
 
         recAttributes.forEach { att, newValue ->
             val attDef = typeAttColumnsByAtt[att]
-            if (attDef != null && attDef.attribute.type == AttributeType.ASSOC) {
+            if (attDef != null && DbRecordsUtils.isAssocLikeAttribute(attDef.attribute)) {
                 if (!allAssocsValues.containsKey(att)) {
                     val valuesBefore = if (isNewEntity) {
                         emptyList()

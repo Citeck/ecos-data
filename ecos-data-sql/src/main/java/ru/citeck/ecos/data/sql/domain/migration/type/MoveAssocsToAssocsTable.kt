@@ -3,13 +3,13 @@ package ru.citeck.ecos.data.sql.domain.migration.type
 import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigration
 import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigrationContext
+import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
-import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.txn.lib.TxnContext
 
@@ -52,7 +52,7 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
             val childAssocsAtts = mutableListOf<AttributeDef>()
 
             for (attDef in attributes.values) {
-                if (attDef.type == AttributeType.ASSOC) {
+                if (DbRecordsUtils.isAssocLikeAttribute(attDef)) {
                     if (attDef.config["child"].asBoolean()) {
                         childAssocsAtts.add(attDef)
                     } else {

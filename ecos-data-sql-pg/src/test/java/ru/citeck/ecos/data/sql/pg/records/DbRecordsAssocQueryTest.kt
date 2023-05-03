@@ -2,6 +2,8 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -10,6 +12,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 
 class DbRecordsAssocQueryTest : DbRecordsTestBase() {
 
@@ -179,5 +182,34 @@ class DbRecordsAssocQueryTest : DbRecordsTestBase() {
         AuthContext.runAs("admin") {
             testQuery(assocPred, listOf(rec0, rec1))
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["ASSOC", "PERSON", "AUTHORITY_GROUP", "AUTHORITY"])
+    fun attTypesTest(attType: String) {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("assoc")
+                    withType(AttributeType.valueOf(attType))
+                    withMultiple(true)
+                }
+            )
+        )
+
+        val anyRef = "emodel/person@admin".toEntityRef()
+        val record = createRecord("assoc" to anyRef)
+        testQuery(Predicates.eq("assoc", anyRef), listOf(record))
+
+        val currentAssocValue0 = records.getAtt(record, "assoc[]?id")
+            .toList(EntityRef::class.java)
+        assertThat(currentAssocValue0).containsExactly(anyRef)
+
+        updateRecord(record, "assoc" to emptyList<Any>())
+
+        val currentAssocValue1 = records.getAtt(record, "assoc[]?id")
+            .toList(EntityRef::class.java)
+        assertThat(currentAssocValue1.isEmpty()).isTrue
     }
 }

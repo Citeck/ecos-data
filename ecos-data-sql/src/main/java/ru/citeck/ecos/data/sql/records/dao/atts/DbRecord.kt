@@ -138,7 +138,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         }
 
         allAttDefs.values.forEach {
-            if (it.type == AttributeType.ASSOC && it.multiple) {
+            if (DbRecordsUtils.isAssocLikeAttribute(it) && it.multiple) {
                 val assocs = recData[it.id]
                 if (assocs is Collection<*> && assocs.size == 10) {
                     recData[it.id] = ctx.assocsService.getTargetAssocs(
@@ -380,7 +380,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     fun getAttsForOperations(): Map<String, Any?> {
 
         fun getValueForOperations(attribute: String, value: Any?, attDef: AttributeDef): Any? {
-            if (attribute != ATT_ASPECTS && attDef.type == AttributeType.ASSOC) {
+            if (attribute != ATT_ASPECTS && DbRecordsUtils.isAssocLikeAttribute(attDef)) {
                 return DbAssocAttValuesContainer(
                     ctx,
                     value,
