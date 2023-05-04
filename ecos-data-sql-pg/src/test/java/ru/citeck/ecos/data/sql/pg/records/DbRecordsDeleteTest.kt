@@ -66,6 +66,16 @@ class DbRecordsDeleteTest : DbRecordsTestBase() {
 
         records.delete(otherTargetRef0)
         assertAssoc("targetAssoc", emptyList())
+
+        val otherTargetRef1 = otherCtx.createRecord()
+        updateRecord(mainRec, "targetAssoc" to otherTargetRef1)
+        assertAssoc("targetAssoc", listOf(otherTargetRef1))
+
+        records.delete(mainRec)
+        records.delete(otherTargetRef1)
+
+        assertThat(records.getAtt(mainRec, "_notExists?bool").asBoolean()).isEqualTo(true)
+        assertThat(records.getAtt(otherTargetRef1, "_notExists?bool").asBoolean()).isEqualTo(true)
     }
 
     @Test

@@ -121,7 +121,7 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
             } else {
                 dataService.delete(entity)
             }
-
+            ctx.assocsService.removeAssocs(entity.refId, isForceDeletion)
             ctx.recEventsHandler.emitDeleteEvent(entity, meta)
         }
 

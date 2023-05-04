@@ -102,6 +102,15 @@ class DbAssocsService(
         return assocsToCreate.toList()
     }
 
+    fun removeAssocs(sourceId: Long, force: Boolean) {
+        val predicate = Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId)
+        if (force) {
+            dataService.forceDelete(predicate)
+        } else {
+            dataService.delete(predicate)
+        }
+    }
+
     fun removeAssocs(sourceId: Long, attribute: String, targetIds: Collection<Long>, force: Boolean): List<Long> {
         if (targetIds.isEmpty()) {
             return emptyList()
