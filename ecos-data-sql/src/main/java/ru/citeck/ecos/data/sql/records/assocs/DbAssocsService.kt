@@ -70,7 +70,8 @@ class DbAssocsService(
                 true,
                 listOf(DbAssocEntity.SOURCE_ID),
                 listOf(AggregateFunc(DbAssocEntity.INDEX, "max", DbAssocEntity.INDEX)),
-                emptyMap()
+                emptyMap(),
+                false
             )
 
             var index = if (maxIdxFindRes.entities.isEmpty()) {
@@ -124,15 +125,7 @@ class DbAssocsService(
             )
         }
 
-        val existentAssocs = dataService.find(
-            createPredicateForIds(targetIds),
-            emptyList(),
-            DbFindPage.ALL,
-            force,
-            emptyList(),
-            emptyList(),
-            emptyMap()
-        ).entities
+        val existentAssocs = dataService.findAll(createPredicateForIds(targetIds), force)
 
         if (existentAssocs.isEmpty()) {
             return emptyList()

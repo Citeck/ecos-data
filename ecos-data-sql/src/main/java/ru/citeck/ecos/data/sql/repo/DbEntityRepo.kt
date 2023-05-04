@@ -18,7 +18,8 @@ interface DbEntityRepo {
         withDeleted: Boolean,
         groupBy: List<String>,
         selectFunctions: List<AggregateFunc>,
-        assocJoins: Map<String, AssocJoin>
+        assocJoins: Map<String, AssocJoin>,
+        withTotalCount: Boolean
     ): DbFindRes<Map<String, Any?>>
 
     fun getCount(

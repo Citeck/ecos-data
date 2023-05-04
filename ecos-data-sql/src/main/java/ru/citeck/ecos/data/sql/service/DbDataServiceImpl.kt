@@ -173,7 +173,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             withDeleted,
             emptyList(),
             emptyList(),
-            emptyMap()
+            emptyMap(),
+            false
         ).entities
     }
 
@@ -229,7 +230,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 withDeleted,
                 emptyList(),
                 emptyList(),
-                emptyMap()
+                emptyMap(),
+                false
             ).entities.map {
                 entityMapper.convertToEntity(it)
             }
@@ -246,7 +248,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 false,
                 emptyList(),
                 emptyList(),
-                emptyMap()
+                emptyMap(),
+                false
             ).entities.map {
                 entityMapper.convertToEntity(it)
             }
@@ -272,7 +275,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 withDeleted,
                 emptyList(),
                 emptyList(),
-                emptyMap()
+                emptyMap(),
+                true
             ).mapEntities {
                 entityMapper.convertToEntity(it)
             }
@@ -286,7 +290,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         withDeleted: Boolean,
         groupBy: List<String>,
         selectFunctions: List<AggregateFunc>,
-        assocJoins: Map<String, AssocJoin>
+        assocJoins: Map<String, AssocJoin>,
+        withTotalCount: Boolean
     ): DbFindRes<T> {
         return execReadOnlyQueryWithPredicate(predicate, assocJoins, DbFindRes.empty()) { tableCtx, pred ->
             findInRepo(
@@ -297,7 +302,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 withDeleted,
                 groupBy,
                 selectFunctions,
-                assocJoins
+                assocJoins,
+                withTotalCount
             ).mapEntities {
                 entityMapper.convertToEntity(it)
             }
@@ -312,7 +318,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         withDeleted: Boolean,
         groupBy: List<String>,
         selectFunctions: List<AggregateFunc>,
-        assocJoins: Map<String, AssocJoin>
+        assocJoins: Map<String, AssocJoin>,
+        withTotalCount: Boolean
     ): DbFindRes<Map<String, Any?>> {
 
         return entityRepo.find(
@@ -323,7 +330,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             withDeleted,
             groupBy,
             selectFunctions,
-            assocJoins
+            assocJoins,
+            withTotalCount
         )
     }
 

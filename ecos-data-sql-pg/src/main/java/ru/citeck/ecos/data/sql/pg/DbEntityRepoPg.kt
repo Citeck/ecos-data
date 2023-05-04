@@ -79,7 +79,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             withDeleted,
             emptyList(),
             emptyList(),
-            emptyMap()
+            emptyMap(),
+            false
         ).entities
     }
 
@@ -466,7 +467,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         withDeleted: Boolean,
         groupBy: List<String>,
         selectFunctions: List<AggregateFunc>,
-        assocJoins: Map<String, AssocJoin>
+        assocJoins: Map<String, AssocJoin>,
+        withTotalCount: Boolean
     ): DbFindRes<Map<String, Any?>> {
 
         val columns = context.getColumns()
@@ -535,7 +537,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             resultList
         }
 
-        val totalCount = if (page.maxItems == -1) {
+        val totalCount = if (!withTotalCount || page.maxItems == -1) {
             resultEntities.size.toLong() + page.skipCount
         } else {
             getCountImpl(context, sqlCondition, params, permsColumn, groupBy, repoAssocJoins)

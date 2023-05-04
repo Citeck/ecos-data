@@ -540,7 +540,8 @@ class DbRecordsDao(
                 false,
                 recsQuery.groupBy,
                 selectFunctions,
-                assocJoins
+                assocJoins,
+                true
             )
         }
 
