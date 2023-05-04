@@ -158,12 +158,17 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
                 }
             )
         )
+        assocsService.createTableIfNotExists()
 
         val refs = Array(5) { "some/assoc@value-$it" }
 
-        val record = createRecord(
+        val record0 = createRecord(
             "assocAtt" to refs[0],
             "multiAssocAtt" to refs.toList().take(3)
+        )
+        val record1 = createRecord(
+            "assocAtt" to refs[4],
+            "multiAssocAtt" to refs.toList().takeLast(3)
         )
 
         val queryTest = { query: Predicate, expected: List<RecordRef> ->
@@ -184,16 +189,25 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
 
         listOf(ValuePredicate.Type.EQ, ValuePredicate.Type.CONTAINS).forEach { predType ->
 
-            queryTest(ValuePredicate("assocAtt", predType, refs[0]), listOf(record))
-            queryTest(ValuePredicate("multiAssocAtt", predType, refs[0]), listOf(record))
-            queryTest(ValuePredicate("multiAssocAtt", predType, refs[1]), listOf(record))
+            queryTest(ValuePredicate("assocAtt", predType, refs[0]), listOf(record0))
+            queryTest(ValuePredicate("multiAssocAtt", predType, refs[0]), listOf(record0))
+            queryTest(ValuePredicate("multiAssocAtt", predType, refs[1]), listOf(record0))
 
             queryTest(ValuePredicate("assocAtt", predType, refs[3]), listOf())
-            queryTest(ValuePredicate("multiAssocAtt", predType, refs[3]), listOf())
+            queryTest(ValuePredicate("multiAssocAtt", predType, refs[3]), listOf(record1))
 
-            queryTest(ValuePredicate("multiAssocAtt", predType, listOf(refs[3], refs[4])), listOf())
-            queryTest(ValuePredicate("multiAssocAtt", predType, listOf(refs[3], refs[0])), listOf(record))
+            queryTest(ValuePredicate("multiAssocAtt", predType, listOf(refs[3], refs[4])), listOf(record1))
+            queryTest(ValuePredicate("multiAssocAtt", predType, listOf(refs[3], refs[0])), listOf(record0, record1))
         }
+
+        queryTest(
+            ValuePredicate(
+                "multiAssocAtt",
+                ValuePredicate.Type.IN,
+                listOf(refs[0], refs[1])
+            ),
+            listOf(record0)
+        )
     }
 
     @Test

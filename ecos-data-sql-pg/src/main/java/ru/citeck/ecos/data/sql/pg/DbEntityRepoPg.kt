@@ -931,9 +931,10 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                             } else {
                                 query.append(" IN (")
                                 longs.forEach {
-                                    query.append("?")
+                                    query.append("?,")
                                     queryParams.add(it)
                                 }
+                                query.setLength(query.length - 1)
                                 query.append(")")
                             }
                             return true
@@ -942,7 +943,10 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 }
                 if (!isAssocCondition && columnDef.multiple) {
 
-                    if (type != ValuePredicate.Type.EQ && type != ValuePredicate.Type.CONTAINS) {
+                    if (type != ValuePredicate.Type.EQ &&
+                        type != ValuePredicate.Type.CONTAINS &&
+                        type != ValuePredicate.Type.IN
+                    ) {
                         return false
                     }
                     appendRecordColumnName(query, attribute)

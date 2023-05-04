@@ -322,7 +322,11 @@ class DbRecordsDao(
                 return DataValue.create(
                     recordRefService.getIdByEntityRefs(
                         value.mapNotNull {
-                            val txt = it.asText()
+                            val txt = if (it.isTextual()) {
+                                it.asText()
+                            } else {
+                                ""
+                            }
                             if (txt.isNotEmpty()) {
                                 txt.toEntityRef()
                             } else {
@@ -456,7 +460,7 @@ class DbRecordsDao(
                                     )
                                 }
                             }
-                            if (DbRecordsUtils.isAssocLikeAttribute(attDef) && newPred.getValue().isTextual()) {
+                            if (DbRecordsUtils.isAssocLikeAttribute(attDef)) {
                                 val newAttribute = if (assocsTableExists && attDef?.multiple == true) {
                                     val assocAtt = newPred.getAttribute()
                                     val joinAtt = "$assocAtt-${assocJoinsCounter++}"
