@@ -60,9 +60,9 @@ class DbAssocsServiceTest : DbRecordsTestBase() {
             checkAllAssocs(2, 3, 4, 5)
             assocsService.createAssocs(1, "test", false, listOf(10))
             checkAllAssocs(2, 3, 4, 5, 10)
-            assocsService.removeAssocs(1, "test", listOf(10, 2))
+            assocsService.removeAssocs(1, "test", listOf(10, 2), false)
             checkAllAssocs(3, 4, 5)
-            assocsService.removeAssocs(1, "test", listOf(10))
+            assocsService.removeAssocs(1, "test", listOf(10), false)
             checkAllAssocs(3, 4, 5)
         }
     }

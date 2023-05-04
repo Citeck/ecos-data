@@ -64,6 +64,8 @@ interface DbDataService<T : Any> {
 
     fun delete(entity: T)
 
+    fun delete(predicate: Predicate)
+
     fun forceDelete(predicate: Predicate)
 
     fun forceDelete(entityId: Long)

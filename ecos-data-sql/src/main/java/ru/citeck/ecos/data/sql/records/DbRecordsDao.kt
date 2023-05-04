@@ -649,6 +649,8 @@ class DbRecordsDao(
                     "Please use att_add_${DbRecord.ATT_ASPECTS} and att_rem_${DbRecord.ATT_ASPECTS} to change aspects"
             )
         }
+        val isAssocForceDeletion = record.getAtt(DbRecordsDeleteDao.ASSOC_FORCE_DELETION_FLAG)
+            .asBoolean(true)
 
         val typeAspects = typeInfo.aspects.map { it.ref }.toSet()
 
@@ -1009,10 +1011,26 @@ class DbRecordsDao(
             getRecordPerms(entityToMutate.extId)
         }
         val changedAssocs = ArrayList<DbAssocRefsDiff>()
-        setMutationAtts(entityToMutate, recAttributes, typeColumns, changedAssocs, perms, allAssocsValues)
+        setMutationAtts(
+            entityToMutate,
+            recAttributes,
+            typeColumns,
+            changedAssocs,
+            isAssocForceDeletion,
+            perms,
+            allAssocsValues
+        )
         val optionalAtts = DbRecord.OPTIONAL_COLUMNS.filter { !typeColumnNames.contains(it.name) }
         if (optionalAtts.isNotEmpty()) {
-            fullColumns.addAll(setMutationAtts(entityToMutate, recAttributes, optionalAtts, changedAssocs))
+            fullColumns.addAll(
+                setMutationAtts(
+                    entityToMutate,
+                    recAttributes,
+                    optionalAtts,
+                    changedAssocs,
+                    isAssocForceDeletion
+                )
+            )
         }
 
         if (recAttributes.has(ATT_STATE)) {
@@ -1095,7 +1113,13 @@ class DbRecordsDao(
                 fullColumns.add(it)
             }
         }
-        var changed = setMutationAtts(entity, atts, fullColumns, ArrayList()).isNotEmpty()
+        var changed = setMutationAtts(
+            entity,
+            atts,
+            fullColumns,
+            ArrayList(),
+            true
+        ).isNotEmpty()
 
         val dispName = component.computeDisplayName(DbRecord(daoCtx, entity), typeRef)
         if (entity.name != dispName) {
@@ -1175,6 +1199,7 @@ class DbRecordsDao(
         atts: ObjectData,
         columns: List<DbColumnDef>,
         changedAssocs: MutableList<DbAssocRefsDiff>,
+        isAssocForceDeletion: Boolean,
         perms: DbRecordPerms? = null,
         multiAssocValues: Map<String, DbAssocAttValuesContainer> = emptyMap()
     ): List<DbColumnDef> {
@@ -1203,7 +1228,8 @@ class DbRecordsDao(
                     val removedTargetIds = assocsService.removeAssocs(
                         recToMutate.refId,
                         dbColumnDef.name,
-                        multiAssocValue.getRemovedTargetIds()
+                        multiAssocValue.getRemovedTargetIds(),
+                        isAssocForceDeletion
                     )
                     val addedTargetIds = assocsService.createAssocs(
                         recToMutate.refId,

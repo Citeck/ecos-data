@@ -146,6 +146,22 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
     }
 
+    override fun delete(context: DbTableContext, predicate: Predicate) {
+
+        if (!context.hasDeleteFlag()) {
+            forceDelete(context, predicate)
+        }
+
+        val query = StringBuilder("UPDATE ")
+            .append(context.getTableRef().fullName)
+            .append(" \"r\" SET \"${DbEntity.DELETED}\"=true WHERE ")
+
+        val parameters = arrayListOf<Any?>()
+        toSqlCondition(context, query, predicate, emptyMap(), parameters)
+
+        context.getDataSource().update(query.toString(), parameters)
+    }
+
     override fun forceDelete(context: DbTableContext, predicate: Predicate) {
 
         val query = StringBuilder("DELETE FROM ")

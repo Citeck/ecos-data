@@ -389,6 +389,18 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
     }
 
+    override fun delete(predicate: Predicate) {
+        if (!isTableExists()) {
+            return
+        }
+        if (PredicateUtils.isAlwaysFalse(predicate)) {
+            return
+        }
+        dataSource.withTransaction(false) {
+            entityRepo.delete(getTableContext(), predicate)
+        }
+    }
+
     override fun forceDelete(predicate: Predicate) {
         if (!isTableExists()) {
             return

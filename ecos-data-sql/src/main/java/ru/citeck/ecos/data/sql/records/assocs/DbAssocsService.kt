@@ -102,7 +102,7 @@ class DbAssocsService(
         return assocsToCreate.toList()
     }
 
-    fun removeAssocs(sourceId: Long, attribute: String, targetIds: Collection<Long>): List<Long> {
+    fun removeAssocs(sourceId: Long, attribute: String, targetIds: Collection<Long>, force: Boolean): List<Long> {
         if (targetIds.isEmpty()) {
             return emptyList()
         }
@@ -119,7 +119,7 @@ class DbAssocsService(
             createPredicateForIds(targetIds),
             emptyList(),
             DbFindPage.ALL,
-            true,
+            force,
             emptyList(),
             emptyList(),
             emptyMap()
@@ -130,7 +130,12 @@ class DbAssocsService(
         }
 
         val targetsToRemove = existentAssocs.map { it.targetId }
-        dataService.forceDelete(createPredicateForIds(targetsToRemove))
+        val predicate = createPredicateForIds(targetsToRemove)
+        if (force) {
+            dataService.forceDelete(predicate)
+        } else {
+            dataService.delete(predicate)
+        }
         return targetsToRemove
     }
 
@@ -149,11 +154,15 @@ class DbAssocsService(
 
     fun getSourceAssocs(targetId: Long, attribute: String, page: DbFindPage): DbFindRes<DbAssocDto> {
 
+        val conditions = mutableListOf(
+            Predicates.eq(DbAssocEntity.TARGET_ID, targetId)
+        )
+        if (attribute.isNotEmpty()) {
+            conditions.add(Predicates.eq(DbAssocEntity.ATTRIBUTE, getIdForAtt(attribute)))
+        }
+
         val result = dataService.find(
-            Predicates.and(
-                Predicates.eq(DbAssocEntity.TARGET_ID, targetId),
-                Predicates.eq(DbAssocEntity.ATTRIBUTE, getIdForAtt(attribute))
-            ),
+            Predicates.and(conditions),
             listOf(DbFindSort(DbAssocEntity.INDEX, true)),
             page
         )

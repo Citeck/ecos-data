@@ -2,14 +2,71 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.dao.delete.DelStatus
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsDeleteTest : DbRecordsTestBase() {
+
+    @Test
+    fun deleteWithAssoc() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("targetAssoc")
+                    withType(AttributeType.ASSOC)
+                },
+                AttributeDef.create {
+                    withId("childAssoc")
+                    withType(AttributeType.ASSOC)
+                    withConfig(ObjectData.create("""{"child": true}"""))
+                }
+            )
+        )
+        registerType(
+            TypeInfo.create {
+                withId("other")
+                withSourceId("$APP_NAME/other")
+            }
+        )
+
+        val otherCtx = createRecordsDao(
+            tableRef.withTable("other"),
+            ModelUtils.getTypeRef("other"),
+            sourceId = "other"
+        )
+
+        val otherTargetRef0 = otherCtx.createRecord()
+        val otherChildRef0 = otherCtx.createRecord()
+
+        val mainRec = mainCtx.createRecord(
+            "targetAssoc" to otherTargetRef0,
+            "childAssoc" to otherChildRef0
+        )
+
+        fun assertAssoc(att: String, expected: List<EntityRef>) {
+            assertThat(records.getAtt(mainRec, "$att[]?id").asList(EntityRef::class.java))
+                .describedAs("$att: $expected")
+                .containsExactlyElementsOf(expected)
+        }
+        assertAssoc("targetAssoc", listOf(otherTargetRef0))
+        assertAssoc("childAssoc", listOf(otherChildRef0))
+
+        records.delete(otherChildRef0)
+        assertAssoc("childAssoc", emptyList())
+
+        records.delete(otherTargetRef0)
+        assertAssoc("targetAssoc", emptyList())
+    }
 
     @Test
     fun test() {

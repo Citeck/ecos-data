@@ -14,6 +14,8 @@ data class DbRecordsDaoConfig(
 
     companion object {
 
+        private val VALID_ID_PATTERN = "[\\w-]+".toRegex()
+
         @JvmStatic
         fun create(): Builder {
             return Builder()
@@ -87,6 +89,9 @@ data class DbRecordsDaoConfig(
         }
 
         fun build(): DbRecordsDaoConfig {
+            if (!VALID_ID_PATTERN.matches(id)) {
+                error("Invalid records DAO id - '$id'. Valid pattern: $VALID_ID_PATTERN")
+            }
             return DbRecordsDaoConfig(
                 id,
                 typeRef,
