@@ -537,7 +537,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             resultList
         }
 
-        val totalCount = if (!withTotalCount || page.maxItems == -1) {
+        val totalCount = if (!withTotalCount || page.maxItems == -1 || page.maxItems > resultEntities.size) {
             resultEntities.size.toLong() + page.skipCount
         } else {
             getCountImpl(context, sqlCondition, params, permsColumn, groupBy, repoAssocJoins)
