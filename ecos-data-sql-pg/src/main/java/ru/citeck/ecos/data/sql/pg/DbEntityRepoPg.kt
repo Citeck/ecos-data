@@ -1026,23 +1026,24 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                             appendRecordColumnName(query, attribute)
                             query.append(" ").append(IS_NULL)
                         } else if (columnDef.type == DbColumnType.TEXT) {
+                            var queryParam = value.asText()
                             if (type == ValuePredicate.Type.LIKE || type == ValuePredicate.Type.CONTAINS) {
                                 query.append("LOWER(")
                                 appendRecordColumnName(query, attribute)
                                 query.append(") ")
                                     .append(operator)
-                                    .append(" LOWER(?)")
+                                    .append(" ?")
+                                queryParam = queryParam.lowercase()
+                                if (type == ValuePredicate.Type.CONTAINS) {
+                                    queryParam = "%$queryParam%"
+                                }
                             } else {
                                 appendRecordColumnName(query, attribute)
                                 query.append(' ')
                                     .append(operator)
                                     .append(" ?")
                             }
-                            if (type == ValuePredicate.Type.CONTAINS) {
-                                queryParams.add("%" + value.asText() + "%")
-                            } else {
-                                queryParams.add(value.asText())
-                            }
+                            queryParams.add(queryParam)
                         } else if (columnDef.type == DbColumnType.BOOLEAN) {
                             appendRecordColumnName(query, attribute)
                             if (value.asBoolean()) {

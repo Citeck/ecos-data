@@ -4,9 +4,11 @@ interface DbRecordPerms {
 
     fun getAuthoritiesWithReadPermission(): Set<String>
 
-    fun isCurrentUserHasWritePerms(): Boolean
+    fun hasReadPerms(): Boolean
 
-    fun isCurrentUserHasAttWritePerms(name: String): Boolean
+    fun hasWritePerms(): Boolean
 
-    fun isCurrentUserHasAttReadPerms(name: String): Boolean
+    fun hasAttWritePerms(name: String): Boolean
+
+    fun hasAttReadPerms(name: String): Boolean
 }

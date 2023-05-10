@@ -9,7 +9,6 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.commons.mime.MimeTypes
-import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
@@ -361,34 +360,37 @@ abstract class DbRecordsTestBase {
         val recAttWritePerms: MutableMap<Pair<EntityRef, String>, Set<String>> = mutableMapOf()
 
         val permsComponent = object : DbPermsComponent {
-            override fun getRecordPerms(record: Any): DbRecordPerms {
+            override fun getRecordPerms(user: String, authorities: Set<String>, record: Any): DbRecordPerms {
                 val globalRef = records.getAtt(record, "?id").toEntityRef().withDefaultAppName(APP_NAME)
                 return object : DbRecordPerms {
+
                     override fun getAuthoritiesWithReadPermission(): Set<String> {
                         if (recReadPerms.containsKey(globalRef)) {
                             return recReadPerms[globalRef]!!
                         }
-                        return defaultPermsComponent.getRecordPerms(globalRef)
+                        return defaultPermsComponent.getRecordPerms(user, authorities, globalRef)
                             .getAuthoritiesWithReadPermission()
                     }
 
-                    override fun isCurrentUserHasWritePerms(): Boolean {
-                        val perms = recWritePerms[globalRef] ?: emptySet()
-                        return perms.isEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
-                            perms.contains(it)
-                        }
+                    override fun hasReadPerms(): Boolean {
+                        return getAuthoritiesWithReadPermission().any { authorities.contains(it) }
                     }
 
-                    override fun isCurrentUserHasAttWritePerms(name: String): Boolean {
+                    override fun hasWritePerms(): Boolean {
+                        val perms = recWritePerms[globalRef] ?: emptySet()
+                        return perms.isEmpty() || authorities.any { perms.contains(it) }
+                    }
+
+                    override fun hasAttWritePerms(name: String): Boolean {
                         val writePerms = recAttWritePerms[globalRef to name]
-                        return writePerms.isNullOrEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
+                        return writePerms.isNullOrEmpty() || authorities.any {
                             writePerms.contains(it)
                         }
                     }
 
-                    override fun isCurrentUserHasAttReadPerms(name: String): Boolean {
+                    override fun hasAttReadPerms(name: String): Boolean {
                         val readPerms = recAttReadPerms[globalRef to name]
-                        return readPerms.isNullOrEmpty() || AuthContext.getCurrentRunAsUserWithAuthorities().any {
+                        return readPerms.isNullOrEmpty() || authorities.any {
                             readPerms.contains(it)
                         }
                     }

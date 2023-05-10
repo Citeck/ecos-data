@@ -20,6 +20,7 @@ import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.value.AttValuesConverter
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
@@ -43,6 +44,7 @@ class DbRecordsDaoCtx(
     val recordsDao: DbRecordsDao,
     val attValuesConverter: AttValuesConverter,
     val webApiClient: EcosWebClientApi?,
+    val delegationService: DelegationService,
     val assocsService: DbAssocsService,
     val globalRefCalculator: DbGlobalRefCalculator
 ) {

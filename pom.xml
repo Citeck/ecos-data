@@ -12,7 +12,7 @@
 
     <properties>
 
-        <revision>1.32.5</revision>
+        <revision>1.33.0</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
@@ -28,14 +28,14 @@
 
         <ecos.commons.version>2.13.2</ecos.commons.version>
         <ecos.records.version>3.57.0</ecos.records.version>
-        <ecos.model-lib.version>2.21.0</ecos.model-lib.version>
-        <ecos.context-lib.version>1.3.6</ecos.context-lib.version>
+        <ecos.model-lib.version>2.24.0</ecos.model-lib.version>
+        <ecos.context-lib.version>1.3.7</ecos.context-lib.version>
         <ecos.snakeyaml.version>2.2.0</ecos.snakeyaml.version>
         <ecos.guava.version>30.0.0-jre</ecos.guava.version>
-        <ecos.webapp-api.version>1.6.7</ecos.webapp-api.version>
+        <ecos.webapp-api.version>1.7.2</ecos.webapp-api.version>
         <ecos.txn-lib.version>1.0.7</ecos.txn-lib.version>
 
-        <ecos.test-commons.version>1.0.16</ecos.test-commons.version>
+        <ecos.test-commons.version>1.2.0</ecos.test-commons.version>
 
         <postgresql.driver.version>42.2.14</postgresql.driver.version>
 

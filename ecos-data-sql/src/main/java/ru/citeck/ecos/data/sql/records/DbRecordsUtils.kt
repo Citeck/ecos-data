@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records
 
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthGroup
+import ru.citeck.ecos.context.lib.auth.data.AuthData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
@@ -9,7 +10,15 @@ import ru.citeck.ecos.model.lib.role.constants.RoleConstants
 object DbRecordsUtils {
 
     fun getCurrentAuthorities(): Set<String> {
-        val authorities = AuthContext.getCurrentRunAsUserWithAuthorities().toMutableSet()
+        return getCurrentAuthorities(AuthContext.getCurrentRunAsAuth())
+    }
+
+    fun getCurrentAuthorities(auth: AuthData): Set<String> {
+        if (auth.getUser().isBlank()) {
+            return emptySet()
+        }
+        val authorities = linkedSetOf(auth.getUser())
+        authorities.addAll(auth.getAuthorities())
 
         if (authorities.isEmpty()) {
             return emptySet()

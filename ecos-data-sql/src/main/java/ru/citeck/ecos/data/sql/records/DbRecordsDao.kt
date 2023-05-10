@@ -25,8 +25,7 @@ import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
-import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
-import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsSystemAdapter
+import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsContext
 import ru.citeck.ecos.data.sql.records.refs.DbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.refs.DefaultDbGlobalRefCalculator
@@ -175,7 +174,7 @@ class DbRecordsDao(
     @JvmOverloads
     fun getContent(recordId: String, attribute: String = "", index: Int = 0): EcosContentData? {
 
-        val entity = dataService.findByExtId(recordId) ?: error("Entity doesn't found with id '$recordId'")
+        val entity = findDbEntityByExtId(recordId) ?: error("Entity doesn't found with id '$recordId'")
         val notBlankAttribute = attribute.ifBlank { RecordConstants.ATT_CONTENT }
         val dotIdx = notBlankAttribute.indexOf('.')
 
@@ -270,10 +269,7 @@ class DbRecordsDao(
         if (getUpdatedInTxnIds().contains(extId) || AuthContext.isRunAsSystem()) {
             return entity
         }
-        val perms = getRecordPerms(extId)
-        val authoritiesWithReadPermissions = perms.getAuthoritiesWithReadPermission().toSet()
-        val currentAuthorities = DbRecordsUtils.getCurrentAuthorities()
-        if (currentAuthorities.any { authoritiesWithReadPermissions.contains(it) }) {
+        if (getRecordPerms(extId).hasReadPerms()) {
             return entity
         }
         return null
@@ -562,7 +558,7 @@ class DbRecordsDao(
             if (!AuthContext.isRunAsSystem()) {
                 recordIds.forEach {
                     val recordPerms = getRecordPerms(it)
-                    if (!recordPerms.isCurrentUserHasWritePerms()) {
+                    if (!recordPerms.hasWritePerms()) {
                         error("Permissions Denied. You can't delete record '${daoCtx.getGlobalRef(it)}'")
                     }
                 }
@@ -681,6 +677,9 @@ class DbRecordsDao(
         val isRunAsAdmin = AuthContext.isAdminAuth(runAsAuth)
         val isRunAsSystemOrAdmin = isRunAsSystem || isRunAsAdmin
 
+        val currentUser = runAsAuth.getUser()
+        val currentAuthorities = DbRecordsUtils.getCurrentAuthorities(runAsAuth)
+
         val extId = record.id.ifEmpty { record.attributes[ATT_ID].asText() }
         val currentAspectRefs = LinkedHashSet(typeAspects)
         val aspectRefsInDb = LinkedHashSet<EntityRef>()
@@ -753,11 +752,11 @@ class DbRecordsDao(
 
         val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
 
-        var recordPerms: DbRecordPerms = DbRecordAllowedAllPerms
+        var recordPerms = DbRecordPermsContext(DbRecordAllowedAllPerms)
         if (!isNewEntity && !isRunAsSystem) {
             if (!getUpdatedInTxnIds().contains(entityToMutate.extId)) {
-                recordPerms = getRecordPerms(entityToMutate.extId)
-                if (!recordPerms.isCurrentUserHasWritePerms()) {
+                recordPerms = getRecordPerms(entityToMutate.extId, currentUser, currentAuthorities)
+                if (!recordPerms.hasWritePerms()) {
                     error("Permissions Denied. You can't change record '${daoCtx.getGlobalRef(record.id)}'")
                 }
             }
@@ -996,7 +995,7 @@ class DbRecordsDao(
             recAttributes[DbRecord.ATT_CONTENT_VERSION_COMMENT] = ""
         }
 
-        if (contentAttToExtractName.isNotBlank() && recordPerms.isCurrentUserHasAttWritePerms(ATT_CUSTOM_NAME)) {
+        if (contentAttToExtractName.isNotBlank() && recordPerms.hasAttWritePerms(ATT_CUSTOM_NAME)) {
             val attribute = recAttributes[contentAttToExtractName]
             if (attribute.isNumber()) {
                 contentService.getContent(attribute.asLong())?.getName()?.let {
@@ -1162,7 +1161,14 @@ class DbRecordsDao(
         return result
     }
 
-    fun getRecordPerms(record: Any): DbRecordPerms {
+    fun getRecordPerms(record: Any): DbRecordPermsContext {
+        val auth = AuthContext.getCurrentRunAsAuth()
+        val currentUser = auth.getUser()
+        val currentAuthorities = DbRecordsUtils.getCurrentAuthorities(auth)
+        return getRecordPerms(record, currentUser, currentAuthorities)
+    }
+
+    fun getRecordPerms(record: Any, user: String, authorities: Set<String>): DbRecordPermsContext {
         // Optimization to enable caching
         return RequestContext.doWithCtx(
             serviceFactory,
@@ -1178,11 +1184,14 @@ class DbRecordsDao(
                             record
                         }
                         if (recordToGetPerms != null) {
-                            DbRecordPermsSystemAdapter(
-                                permsComponent.getRecordPerms(recordToGetPerms)
-                            )
+                            val recordTypeId = if (recordToGetPerms is DbRecord) {
+                                recordToGetPerms.type.getLocalId()
+                            } else {
+                                recordsService.getAtt(recordToGetPerms, "_type?localId").asText()
+                            }
+                            DbRecordPermsContext(permsComponent.getRecordPerms(user, authorities, recordToGetPerms))
                         } else {
-                            DbRecordAllowedAllPerms
+                            DbRecordPermsContext(DbRecordAllowedAllPerms)
                         }
                     }
                 }
@@ -1205,7 +1214,7 @@ class DbRecordsDao(
         columns: List<DbColumnDef>,
         changedAssocs: MutableList<DbAssocRefsDiff>,
         isAssocForceDeletion: Boolean,
-        perms: DbRecordPerms? = null,
+        perms: DbRecordPermsContext? = null,
         multiAssocValues: Map<String, DbAssocAttValuesContainer> = emptyMap()
     ): List<DbColumnDef> {
 
@@ -1219,7 +1228,7 @@ class DbRecordsDao(
             if (!atts.has(dbColumnDef.name) && !multiAssocValues.containsKey(dbColumnDef.name)) {
                 continue
             }
-            if (perms?.isCurrentUserHasAttWritePerms(dbColumnDef.name) == false) {
+            if (perms?.hasAttWritePerms(dbColumnDef.name) == false) {
                 log.warn {
                     "User $currentUser can't change attribute ${dbColumnDef.name} " +
                         "for record ${getId()}@${recToMutate.extId}"
@@ -1321,6 +1330,7 @@ class DbRecordsDao(
             this,
             serviceFactory.attValuesConverter,
             serviceFactory.getEcosWebAppApi()?.getWebClientApi(),
+            modelServices.delegationService,
             assocsService,
             globalRefCalculator ?: DefaultDbGlobalRefCalculator()
         )
