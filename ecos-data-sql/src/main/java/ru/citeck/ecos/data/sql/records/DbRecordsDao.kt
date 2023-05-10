@@ -168,6 +168,7 @@ class DbRecordsDao(
             val result = daoCtx.recContentHandler.withContentDbDataAware {
                 EntityRef.create(daoCtx.appName, daoCtx.sourceId, mutate(recordToMutate))
             }
+            // this content record already cloned while mutation and should be deleted
             daoCtx.contentService?.removeContent(contentId)
             result
         }

@@ -92,7 +92,7 @@ class DbContentServiceImpl(
                 entity.uri
             ),
             emptyList(),
-            DbFindPage.ALL
+            DbFindPage.FIRST
         )
         if (entitiesWithSameUri.entities.isEmpty()) {
             contentStorageService.removeContent(entity.uri)
