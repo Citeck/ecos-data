@@ -166,9 +166,11 @@ class DbRecordsDao(
             attributes?.forEach { key, value ->
                 recordToMutate.setAtt(key, value)
             }
-            daoCtx.recContentHandler.withContentDbDataAware {
+            val result = daoCtx.recContentHandler.withContentDbDataAware {
                 EntityRef.create(daoCtx.appName, daoCtx.sourceId, mutate(recordToMutate))
             }
+            daoCtx.contentService?.removeContent(contentId)
+            result
         }
     }
 
