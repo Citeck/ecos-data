@@ -15,6 +15,9 @@ class RecMutConverter {
 
         return if (columnType == DbColumnType.JSON) {
             val converted = convertToClass(rawValue, multiple, DataValue::class.java)
+            if (converted == null || converted is DataValue && converted.isNull()) {
+                return null
+            }
             Json.mapper.toString(converted)
         } else {
             convertToClass(rawValue, multiple, columnType.type.java)

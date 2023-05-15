@@ -107,7 +107,8 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         }.getAtts()
 
         val emptyMandatoryAtts = attsForMandatoryCheck.filter {
-            recordAtts[it].isEmpty()
+            val value = recordAtts[it]
+            value.isNull() || (value.isArray() || value.isObject() || value.isTextual()) && value.isEmpty()
         }
         if (emptyMandatoryAtts.isNotEmpty()) {
             error("Mandatory attributes are empty: ${emptyMandatoryAtts.joinToString(", ")}")

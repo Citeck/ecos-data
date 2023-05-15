@@ -30,6 +30,7 @@ import ru.citeck.ecos.data.sql.records.refs.DbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.refs.DefaultDbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
+import ru.citeck.ecos.data.sql.records.utils.DbDateUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
@@ -46,10 +47,7 @@ import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.PredicateUtils
-import ru.citeck.ecos.records2.predicate.model.EmptyPredicate
-import ru.citeck.ecos.records2.predicate.model.Predicate
-import ru.citeck.ecos.records2.predicate.model.Predicates
-import ru.citeck.ecos.records2.predicate.model.ValuePredicate
+import ru.citeck.ecos.records2.predicate.model.*
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
@@ -284,7 +282,11 @@ class DbRecordsDao(
         if (language.isNotEmpty() && language != PredicateService.LANGUAGE_PREDICATE) {
             return RecsQueryRes()
         }
-        val originalPredicate = recsQuery.getQuery(Predicate::class.java)
+        val originalPredicate = if (recsQuery.query.isNull()) {
+            Predicates.alwaysTrue()
+        } else {
+            recsQuery.getQuery(Predicate::class.java)
+        }
 
         val ecosTypeRef = if (recsQuery.ecosType.isNotEmpty()) {
             ModelUtils.getTypeRef(recsQuery.ecosType)
@@ -435,7 +437,11 @@ class DbRecordsDao(
                         }
 
                         else -> {
-                            var newPred = if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
+
+                            val attDef = attributesById[attribute]
+                                ?: DbRecord.GLOBAL_ATTS[attribute]
+
+                            var newPred: Predicate = if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
                                 ValuePredicate(
                                     DbRecord.ATTS_MAPPING[attribute],
                                     currentPred.getType(),
@@ -444,10 +450,8 @@ class DbRecordsDao(
                             } else {
                                 currentPred
                             }
-                            val attDef = attributesById[newPred.getAttribute()]
-                                ?: DbRecord.GLOBAL_ATTS[newPred.getAttribute()]
 
-                            if (newPred.getType() == ValuePredicate.Type.EQ) {
+                            if (newPred is ValuePredicate && newPred.getType() == ValuePredicate.Type.EQ) {
                                 if (newPred.getAttribute() == DbEntity.NAME || attDef?.type == AttributeType.MLTEXT) {
                                     // MLText fields stored as json text like '{"en":"value"}'
                                     // and for equals predicate we should use '"value"' instead of 'value' to search
@@ -459,7 +463,7 @@ class DbRecordsDao(
                                     )
                                 }
                             }
-                            if (DbRecordsUtils.isAssocLikeAttribute(attDef)) {
+                            if (newPred is ValuePredicate && DbRecordsUtils.isAssocLikeAttribute(attDef)) {
                                 val newAttribute = if (assocsTableExists && attDef?.multiple == true) {
                                     val assocAtt = newPred.getAttribute()
                                     val joinAtt = "$assocAtt-${assocJoinsCounter++}"
@@ -476,6 +480,33 @@ class DbRecordsDao(
                                     newPred.getType(),
                                     replaceRefsToIds(newPred.getValue())
                                 )
+                            } else if (newPred is ValuePredicate &&
+                                (attDef?.type == AttributeType.DATE || attDef?.type == AttributeType.DATETIME)
+                            ) {
+
+                                val value = newPred.getValue()
+
+                                if (value.isTextual()) {
+
+                                    val textVal = DbDateUtils.normalizeDateTimePredicateValue(
+                                        value.asText(),
+                                        attDef.type == AttributeType.DATETIME
+                                    )
+                                    val rangeDelimIdx = textVal.indexOf('/')
+
+                                    newPred = if (rangeDelimIdx > 0 && textVal.length > rangeDelimIdx + 1) {
+
+                                        val rangeFrom = textVal.substring(0, rangeDelimIdx)
+                                        val rangeTo = textVal.substring(rangeDelimIdx + 1)
+
+                                        AndPredicate.of(
+                                            ValuePredicate.ge(newPred.getAttribute(), rangeFrom),
+                                            ValuePredicate.lt(newPred.getAttribute(), rangeTo)
+                                        )
+                                    } else {
+                                        ValuePredicate(newPred.getAttribute(), newPred.getType(), textVal)
+                                    }
+                                }
                             }
                             newPred
                         }
@@ -1186,16 +1217,12 @@ class DbRecordsDao(
                         } else {
                             record
                         }
-                        if (recordToGetPerms != null) {
-                            val recordTypeId = if (recordToGetPerms is DbRecord) {
-                                recordToGetPerms.type.getLocalId()
-                            } else {
-                                recordsService.getAtt(recordToGetPerms, "_type?localId").asText()
-                            }
-                            DbRecordPermsContext(permsComponent.getRecordPerms(user, authorities, recordToGetPerms))
+                        val perms = if (recordToGetPerms != null) {
+                            permsComponent.getRecordPerms(user, authorities, recordToGetPerms)
                         } else {
-                            DbRecordPermsContext(DbRecordAllowedAllPerms)
+                            DbRecordAllowedAllPerms
                         }
+                        DbRecordPermsContext(perms)
                     }
                 }
             }

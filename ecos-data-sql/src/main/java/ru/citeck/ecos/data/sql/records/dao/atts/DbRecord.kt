@@ -104,9 +104,17 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 .withType(AttributeType.ASSOC)
                 .build(),
             AttributeDef.create()
-                .withId(DbRecord.ATT_ASPECTS)
+                .withId(ATT_ASPECTS)
                 .withType(AttributeType.ASSOC)
                 .withMultiple(true)
+                .build(),
+            AttributeDef.create()
+                .withId(RecordConstants.ATT_CREATED)
+                .withType(AttributeType.DATETIME)
+                .build(),
+            AttributeDef.create()
+                .withId(RecordConstants.ATT_MODIFIED)
+                .withType(AttributeType.DATETIME)
                 .build()
         ).associateBy { it.id }
 
