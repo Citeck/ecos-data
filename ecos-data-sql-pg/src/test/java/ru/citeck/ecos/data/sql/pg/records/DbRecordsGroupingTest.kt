@@ -32,7 +32,8 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         createRecord(taskIdField to "task-1", amountField to 40)
 
         val result = records.query(
-            baseQuery.copy {
+            createQuery {
+                withSortBy(emptyList())
                 withQuery(Predicates.alwaysTrue())
                 withGroupBy(listOf(taskIdField))
             },

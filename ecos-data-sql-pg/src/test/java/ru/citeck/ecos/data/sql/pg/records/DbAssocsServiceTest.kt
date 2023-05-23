@@ -54,11 +54,11 @@ class DbAssocsServiceTest : DbRecordsTestBase() {
                 assertThat(targetAssocs.entities).allMatch { it.attribute == "test" }
                 assertThat(targetAssocs.entities.map { it.targetId }).containsExactly(*expectedTargets.toTypedArray())
             }
-            assocsService.createAssocs(1, "test", false, listOf(2, 3, 4))
+            assocsService.createAssocs(1, "test", false, listOf(2, 3, 4), 0L)
             checkAllAssocs(2, 3, 4)
-            assocsService.createAssocs(1, "test", false, listOf(2, 3, 4, 5))
+            assocsService.createAssocs(1, "test", false, listOf(2, 3, 4, 5), 0L)
             checkAllAssocs(2, 3, 4, 5)
-            assocsService.createAssocs(1, "test", false, listOf(10))
+            assocsService.createAssocs(1, "test", false, listOf(10), 0L)
             checkAllAssocs(2, 3, 4, 5, 10)
             assocsService.removeAssocs(1, "test", listOf(10, 2), false)
             checkAllAssocs(3, 4, 5)

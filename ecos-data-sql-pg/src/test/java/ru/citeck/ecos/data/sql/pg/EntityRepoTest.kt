@@ -3,7 +3,6 @@ package ru.citeck.ecos.data.sql.pg
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
@@ -61,14 +60,15 @@ class EntityRepoTest {
         newEntity = context.service.save(newEntity, columns)
 
         assertThat(newEntity.extId).isNotBlank()
-        assertThat(newEntity.creator).isEqualTo(AuthContext.getCurrentUser())
-        assertThat(newEntity.modifier).isEqualTo(AuthContext.getCurrentUser())
+        // this fields now filled in RecordsDao
+        // assertThat(newEntity.creator).isEqualTo(AuthContext.getCurrentUser())
+        // assertThat(newEntity.modifier).isEqualTo(AuthContext.getCurrentUser())
 
-        assertThat(newEntity.modified)
-            .isEqualTo(newEntity.created)
-            .isAfterOrEqualTo(instantBeforeSave)
+        // assertThat(newEntity.modified)
+        //     .isEqualTo(newEntity.created)
+        //     .isAfterOrEqualTo(instantBeforeSave)
 
-        assertThat(newEntity.deleted).isFalse()
+        assertThat(newEntity.deleted).isFalse
         assertThat(newEntity.status).isEmpty()
 
         findRes = context.service.findAll()

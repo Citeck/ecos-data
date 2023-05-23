@@ -75,12 +75,17 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     private val permsPolicy: ThreadLocal<QueryPermsPolicy>
 
+    private var schemaVersion: Int = -1
+    private var schemaVersionNextUpdateMs = 0L
+    private val useLastSchemaVersion: Boolean
+
     constructor(
         entityType: Class<T>,
         config: DbDataServiceConfig,
-        schemaContext: DbSchemaContext
+        schemaContext: DbSchemaContext,
+        useLastSchemaVersion: Boolean = false
     ) {
-
+        this.useLastSchemaVersion = useLastSchemaVersion
         this.config = config
         this.dataSource = schemaContext.dataSourceCtx.dataSource
         this.tableRef = DbTableRef(schemaContext.schema, config.table)
@@ -134,17 +139,28 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     override fun getSchemaVersion(): Int {
-        if (!config.storeTableMeta || !isTableExists()) {
+        if (useLastSchemaVersion) {
             return DbDataService.NEW_TABLE_SCHEMA_VERSION
         }
-        return schemaMeta.getValue(metaSchemaVersionKey, 0)
+        if (System.currentTimeMillis() < schemaVersionNextUpdateMs && schemaVersion > -1) {
+            return schemaVersion
+        }
+        if (!isTableExists()) {
+            schemaVersion = DbDataService.NEW_TABLE_SCHEMA_VERSION
+            return schemaVersion
+        }
+        schemaVersion = schemaMeta.getValue(metaSchemaVersionKey, 0)
+        schemaVersionNextUpdateMs = System.currentTimeMillis() + 60_000
+        return schemaVersion
     }
 
     override fun setSchemaVersion(version: Int) {
-        if (!config.storeTableMeta) {
+        if (useLastSchemaVersion) {
             return
         }
+        schemaVersion = version
         schemaMeta.setValue(metaSchemaVersionKey, version)
+        schemaCacheUpdateRequired.set(true)
     }
 
     override fun findByIds(ids: Set<Long>): List<T> {
@@ -152,10 +168,14 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             return emptyList()
         }
         return execReadOnlyQuery {
-            findByColumn(getTableContext(), "id", ids, false, ids.size)
+            findByColumn(getTableContext(), DbEntity.ID, ids, false, ids.size)
         }.map {
-            entityMapper.convertToEntity(it)
+            convertToEntity(it)
         }
+    }
+
+    private fun convertToEntity(data: Map<String, Any?>): T {
+        return entityMapper.convertToEntity(data, getSchemaVersion())
     }
 
     private fun findByColumn(
@@ -186,8 +206,22 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return findByAnyId(id)
     }
 
+    override fun isExistsByExtId(id: String): Boolean {
+        val res = findRaw(
+            Predicates.eq(DbEntity.EXT_ID, id),
+            emptyList(),
+            DbFindPage.FIRST,
+            false,
+            emptyList(),
+            emptyList(),
+            emptyMap(),
+            false
+        )
+        return res.entities.isNotEmpty()
+    }
+
     private fun findByAnyId(id: Any, withDeleted: Boolean = false): T? {
-        return findMapByAnyId(id, withDeleted)?.let { entityMapper.convertToEntity(it) }
+        return findMapByAnyId(id, withDeleted)?.let { convertToEntity(it) }
     }
 
     private fun findMapByAnyId(id: Any, withDeleted: Boolean = false): Map<String, Any?>? {
@@ -233,7 +267,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 emptyMap(),
                 false
             ).entities.map {
-                entityMapper.convertToEntity(it)
+                convertToEntity(it)
             }
         }
     }
@@ -251,7 +285,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 emptyMap(),
                 false
             ).entities.map {
-                entityMapper.convertToEntity(it)
+                convertToEntity(it)
             }
         }
     }
@@ -278,7 +312,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 emptyMap(),
                 true
             ).mapEntities {
-                entityMapper.convertToEntity(it)
+                convertToEntity(it)
             }
         }
     }
@@ -293,6 +327,30 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         assocJoins: Map<String, AssocJoin>,
         withTotalCount: Boolean
     ): DbFindRes<T> {
+        return findRaw(
+            predicate,
+            sort,
+            page,
+            withDeleted,
+            groupBy,
+            selectFunctions,
+            assocJoins,
+            withTotalCount
+        ).mapEntities {
+            convertToEntity(it)
+        }
+    }
+
+    override fun findRaw(
+        predicate: Predicate,
+        sort: List<DbFindSort>,
+        page: DbFindPage,
+        withDeleted: Boolean,
+        groupBy: List<String>,
+        selectFunctions: List<AggregateFunc>,
+        assocJoins: Map<String, AssocJoin>,
+        withTotalCount: Boolean
+    ): DbFindRes<Map<String, Any?>> {
         return execReadOnlyQueryWithPredicate(predicate, assocJoins, DbFindRes.empty()) { tableCtx, pred ->
             findInRepo(
                 tableCtx,
@@ -304,9 +362,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 selectFunctions,
                 assocJoins,
                 withTotalCount
-            ).mapEntities {
-                entityMapper.convertToEntity(it)
-            }
+            )
         }
     }
 
@@ -384,7 +440,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 entityMap
             }
 
-            entityRepo.save(tableCtx, entitiesToSave).map { entityMapper.convertToEntity(it) }
+            entityRepo.save(tableCtx, entitiesToSave).map { convertToEntity(it) }
         }
     }
 
@@ -610,8 +666,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
         if (currentColumns.isEmpty()) {
             schemaDao.createTable(dataSource, tableRef, expectedColumns)
-            setSchemaVersion(DbDataService.NEW_TABLE_SCHEMA_VERSION)
-
+            if (!mock) {
+                setSchemaVersion(DbDataService.NEW_TABLE_SCHEMA_VERSION)
+            }
             addIndexesAndConstraintsForNewColumns(expectedColumns, expectedIndexes, config.fkConstraints)
             return expectedColumns
         }
@@ -774,17 +831,11 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     private fun <T> execReadOnlyQuery(action: () -> T): T {
         try {
             return dataSource.withTransaction(true, action)
-        } catch (rootEx: SQLException) {
-            if (rootEx.message?.contains("(column|relation) .+ does not exist".toRegex()) == true) {
+        } catch (e: SQLException) {
+            if (e.message?.contains("(column|relation) .+ does not exist".toRegex()) == true) {
                 resetColumnsCache()
-                try {
-                    return dataSource.withTransaction(true, action)
-                } catch (e: Exception) {
-                    e.addSuppressed(rootEx)
-                    throw e
-                }
             }
-            throw rootEx
+            throw e
         }
     }
 

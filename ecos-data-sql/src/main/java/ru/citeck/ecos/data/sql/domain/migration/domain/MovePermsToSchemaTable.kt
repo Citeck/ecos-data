@@ -1,7 +1,6 @@
-package ru.citeck.ecos.data.sql.domain.migration.type
+package ru.citeck.ecos.data.sql.domain.migration.domain
 
 import mu.KotlinLogging
-import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigration
 import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigrationContext
 import ru.citeck.ecos.data.sql.perms.DbPermsEntity
 
@@ -40,7 +39,7 @@ class MovePermsToSchemaTable : DbDomainMigration {
         log.info { "Migration completed. Result: $migrationResult" }
     }
 
-    override fun getAppliedVersions(): Pair<Int, Int> {
-        return 0 to 1
+    override fun getAppliedVersions(): Int {
+        return 1
     }
 }

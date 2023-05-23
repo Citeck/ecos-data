@@ -227,8 +227,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
         val hasIdColumn = context.hasIdColumn()
 
-        val nowInstant = Instant.now()
-
         val entitiesToInsert = mutableListOf<EntityToInsert>()
         val entitiesToUpdate = mutableListOf<EntityToUpdate>()
         val resultIds = LongArray(entities.size) { -1 }
@@ -254,12 +252,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 entityMap[DbEntity.EXT_ID] = extId
             }
 
-            // todo
-            // if (!DbDataReqContext.withoutModifiedMeta.get()) {
-            entityMap[DbEntity.MODIFIED] = nowInstant
-            entityMap[DbEntity.MODIFIER] = AuthContext.getCurrentUser()
-            // }
-
             if (entityId == DbEntity.NEW_REC_ID) {
                 entitiesToInsert.add(EntityToInsert(entityIdx, entityMap))
             } else {
@@ -272,7 +264,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             updateImpl(context, entitiesToUpdate)
         }
         if (entitiesToInsert.isNotEmpty()) {
-            val insertIds = insertImpl(context, entitiesToInsert.map { it.data }, nowInstant)
+            val insertIds = insertImpl(context, entitiesToInsert.map { it.data })
             if (hasIdColumn) {
                 entitiesToInsert.forEachIndexed { idx, entity -> resultIds[entity.resIdIdx] = insertIds[idx] }
             }
@@ -283,8 +275,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
     private fun insertImpl(
         context: DbTableContext,
-        entities: List<Map<String, Any?>>,
-        nowInstant: Instant
+        entities: List<Map<String, Any?>>
     ): List<Long> {
 
         if (entities.isEmpty()) {
@@ -301,15 +292,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 attsToInsert[DbEntity.DELETED] = false
             }
             attsToInsert[DbEntity.UPD_VERSION] = 0L
-
-            val currentCreator = entity[DbEntity.CREATOR]
-            if (currentCreator == null || currentCreator == "") {
-                attsToInsert[DbEntity.CREATOR] = AuthContext.getCurrentUser()
-                val currentCreated = attsToInsert[DbEntity.CREATED]
-                if (currentCreated == null || currentCreated == Instant.EPOCH) {
-                    attsToInsert[DbEntity.CREATED] = nowInstant
-                }
-            }
             attsToInsert
         }
 

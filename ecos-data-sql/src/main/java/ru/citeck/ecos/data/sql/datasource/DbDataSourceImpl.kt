@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.datasource
 
 import mu.KotlinLogging
+import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import java.sql.*
 
@@ -20,7 +21,7 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
         withConnection { connection ->
             thSchemaCommands.get()?.add(query)
             if (!thSchemaMock.get()) {
-                log.info { "Schema update: $query" }
+                log.info { "[${getCurrentTxn()}] Schema update: $query" }
                 connection.createStatement().executeUpdate(query)
             }
         }
@@ -74,12 +75,16 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
 
     private fun logQuery(time: Long, query: String) {
         if (time < 1000) {
-            log.debug { "[SQL][$time] $query" }
+            log.debug { "[SQL][${getCurrentTxn()}][$time] $query" }
         } else if (time < 5000) {
-            log.info { "[SQL][$time] $query" }
+            log.info { "[SQL][${getCurrentTxn()}][$time] $query" }
         } else if (time < 10_000) {
-            log.warn { "[SQL][$time] $query" }
+            log.warn { "[SQL][${getCurrentTxn()}][$time] $query" }
         }
+    }
+
+    private fun getCurrentTxn(): String {
+        return TxnContext.getTxnOrNull()?.getId()?.toString() ?: "no-txn"
     }
 
     private fun setParams(connection: Connection, statement: PreparedStatement, params: List<Any?>) {

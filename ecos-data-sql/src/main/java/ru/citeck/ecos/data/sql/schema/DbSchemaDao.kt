@@ -6,6 +6,8 @@ import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
 
 interface DbSchemaDao {
 
+    fun addSchemaListener(schema: String, listener: DbSchemaListener)
+
     fun getColumns(dataSource: DbDataSource, tableRef: DbTableRef): List<DbColumnDef>
 
     fun createTable(dataSource: DbDataSource, tableRef: DbTableRef, columns: List<DbColumnDef>)

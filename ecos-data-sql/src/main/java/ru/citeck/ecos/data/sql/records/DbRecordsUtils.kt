@@ -40,10 +40,17 @@ object DbRecordsUtils {
         return isAssocLikeAttribute(def?.type)
     }
 
+    fun isEntityRefAttribute(type: AttributeType?): Boolean {
+        type ?: return false
+        // EntityRef attribute type may be added in future
+        // if (type == AttributeType.ENTITY_REF) {
+        //     return true
+        // }
+        return isAssocLikeAttribute(type)
+    }
+
     fun isAssocLikeAttribute(type: AttributeType?): Boolean {
-        if (type == null) {
-            return false
-        }
+        type ?: return false
         return type == AttributeType.ASSOC ||
             type == AttributeType.PERSON ||
             type == AttributeType.AUTHORITY_GROUP ||

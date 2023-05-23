@@ -1,6 +1,5 @@
 package ru.citeck.ecos.data.sql.records.assocs
 
-import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.records.attnames.DbEcosAttributesService
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -13,8 +12,7 @@ import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
-import ru.citeck.ecos.webapp.api.constants.AppName
-import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.txn.lib.TxnContext
 import java.time.Instant
 
 class DbAssocsService(
@@ -40,7 +38,13 @@ class DbAssocsService(
         return attsService.getIdsForAtts(listOf(attribute), createIfNotExists)[attribute] ?: -1L
     }
 
-    fun createAssocs(sourceId: Long, attribute: String, child: Boolean, targetIds: Collection<Long>): List<Long> {
+    fun createAssocs(
+        sourceId: Long,
+        attribute: String,
+        child: Boolean,
+        targetIds: Collection<Long>,
+        creatorId: Long
+    ): List<Long> {
 
         val attId = getIdForAtt(attribute, true)
 
@@ -80,12 +84,6 @@ class DbAssocsService(
                 maxIdxFindRes.entities[0].index + 1
             }
 
-            val creatorName = AuthContext.getCurrentUser().ifBlank { "system" }
-            val creatorId = refsService.getOrCreateIdByEntityRef(
-                EntityRef.create(AppName.EMODEL, "person", creatorName)
-            )
-            val created = Instant.now()
-
             dataService.save(
                 assocsToCreate.map {
                     val entity = DbAssocEntity()
@@ -95,7 +93,7 @@ class DbAssocsService(
                     entity.child = child
                     entity.index = index++
                     entity.creator = creatorId
-                    entity.created = created
+                    entity.created = Instant.now()
                     entity
                 }
             )
@@ -172,11 +170,17 @@ class DbAssocsService(
     }
 
     fun createTableIfNotExists() {
-        dataService.runMigrations(mock = false, diff = true)
+        TxnContext.doInTxn {
+            dataService.runMigrations(mock = false, diff = true)
+        }
     }
 
     fun isAssocsTableExists(): Boolean {
         return dataService.isTableExists()
+    }
+
+    fun resetColumnsCache() {
+        dataService.resetColumnsCache()
     }
 
     private fun mapToDto(entities: List<DbAssocEntity>): List<DbAssocDto> {

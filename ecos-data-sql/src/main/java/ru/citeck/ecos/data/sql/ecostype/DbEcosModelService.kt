@@ -14,7 +14,9 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
-class DbEcosModelService(modelServices: ModelServiceFactory) {
+class DbEcosModelService(
+    modelServices: ModelServiceFactory
+) {
 
     companion object {
         const val TYPE_ID_TEMP_FILE = "temp-file"

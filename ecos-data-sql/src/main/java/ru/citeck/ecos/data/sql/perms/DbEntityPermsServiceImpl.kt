@@ -12,6 +12,7 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
+import ru.citeck.ecos.txn.lib.TxnContext
 import java.util.HashSet
 
 class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntityPermsService {
@@ -49,7 +50,9 @@ class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntit
     }
 
     override fun createTableIfNotExists() {
-        dataService.runMigrations(mock = false, diff = true)
+        TxnContext.doInTxn {
+            dataService.runMigrations(mock = false, diff = true)
+        }
     }
 
     override fun setReadPerms(permissions: List<DbEntityPermsDto>) {
@@ -162,5 +165,9 @@ class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntit
 
     override fun isTableExists(): Boolean {
         return dataService.isTableExists()
+    }
+
+    override fun resetColumnsCache() {
+        return dataService.resetColumnsCache()
     }
 }

@@ -10,6 +10,8 @@ interface DbEntityMapper<T> {
 
     fun convertToEntity(data: Map<String, Any?>): T
 
+    fun convertToEntity(data: Map<String, Any?>, schemaVersion: Int): T
+
     fun convertToMap(entity: T): Map<String, Any?>
 
     fun getExtId(entity: T): String

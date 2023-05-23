@@ -9,6 +9,9 @@ import ru.citeck.ecos.data.sql.dto.DbIndexDef
 import ru.citeck.ecos.data.sql.repo.entity.annotation.ColumnType
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
+import ru.citeck.ecos.data.sql.repo.entity.legacy.DbLegacyEntity
+import ru.citeck.ecos.data.sql.repo.entity.legacy.DbLegacyTypes
+import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import java.lang.reflect.Array
 import java.net.URI
@@ -34,6 +37,7 @@ class DbEntityMapperImpl<T : Any>(
 
     private val columns: List<DbEntityColumn> = getColumnsImpl(entityType)
     private val indexes: List<DbIndexDef> = getIndexesImpl(entityType)
+    private val legacyConverters: List<Pair<Int, DbEntityMapper<DbLegacyEntity<T>>>> = getLegacyConverters(entityType)
 
     private val hasAttributesField = hasField(entityType, ATTRIBUTES_FIELD)
 
@@ -50,6 +54,18 @@ class DbEntityMapperImpl<T : Any>(
     }
 
     override fun convertToEntity(data: Map<String, Any?>): T {
+        return convertToEntity(data, DbDataService.NEW_TABLE_SCHEMA_VERSION)
+    }
+
+    override fun convertToEntity(data: Map<String, Any?>, schemaVersion: Int): T {
+
+        if (schemaVersion != DbDataService.NEW_TABLE_SCHEMA_VERSION && legacyConverters.isNotEmpty()) {
+            for (converter in legacyConverters) {
+                if (converter.first >= schemaVersion) {
+                    return converter.second.convertToEntity(data, schemaVersion).getAsEntity()
+                }
+            }
+        }
 
         val entityColumns = columns.associateBy { it.columnDef.name }
 
@@ -127,7 +143,11 @@ class DbEntityMapperImpl<T : Any>(
 
         return descriptors.mapNotNull { prop ->
 
-            if (prop.writeMethod == null || prop.readMethod == null || prop.name == ATTRIBUTES_FIELD) {
+            if (prop.writeMethod == null ||
+                prop.readMethod == null ||
+                prop.name == ATTRIBUTES_FIELD ||
+                prop.name.startsWith("legacy")
+            ) {
 
                 null
             } else {
@@ -183,6 +203,21 @@ class DbEntityMapperImpl<T : Any>(
                 .withUnique(it.unique)
                 .withCaseInsensitive(it.caseInsensitive)
                 .build()
+        }
+    }
+
+    private fun getLegacyConverters(type: KClass<*>): List<Pair<Int, DbEntityMapper<DbLegacyEntity<T>>>> {
+
+        val legacyTypes = type.java.getAnnotation(DbLegacyTypes::class.java) ?: return emptyList()
+
+        val typesList = legacyTypes.value.map {
+            val ver = it.java.getDeclaredField(DbLegacyEntity.MAX_SCHEMA_VERSION_FIELD_NAME).get(null) as Int
+            ver to it
+        }.sortedBy { it.first }
+
+        return typesList.map {
+            @Suppress("UNCHECKED_CAST")
+            it.first to DbEntityMapperImpl(it.second, converter) as DbEntityMapper<DbLegacyEntity<T>>
         }
     }
 }

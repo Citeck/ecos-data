@@ -14,6 +14,7 @@ import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
+import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
@@ -52,6 +53,7 @@ import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
+import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.test.commons.EcosWebAppApiMock
 import ru.citeck.ecos.test.commons.containers.TestContainers
@@ -211,7 +213,12 @@ abstract class DbRecordsTestBase {
             }
 
             dbDataSource = DbDataSourceImpl(jdbcDataSource)
-            dataSourceCtx = DbDataSourceContext(webAppApi.appName, dbDataSource, PgDataServiceFactory())
+            dataSourceCtx = DbDataSourceContext(
+                dbDataSource,
+                PgDataServiceFactory(),
+                DbMigrationService(),
+                webAppApi
+            )
 
             TxnContext.setManager(TransactionManagerImpl(webAppApi))
 
@@ -439,8 +446,8 @@ abstract class DbRecordsTestBase {
         return resCtx
     }
 
-    fun createQuery(): RecordsQuery {
-        return mainCtx.createQuery()
+    fun createQuery(action: RecordsQuery.Builder.() -> Unit = {}): RecordsQuery {
+        return mainCtx.createQuery(action)
     }
 
     fun createRef(id: String): RecordRef {
@@ -465,8 +472,11 @@ abstract class DbRecordsTestBase {
         content: ByteArray
     ): EntityRef {
         return RequestContext.doWithCtx {
-            tempCtx.dao.uploadFile(ecosType = TEMP_FILE_TYPE_ID, name = name, mimeType = mimeType.toString()) {
-                    writer ->
+            tempCtx.dao.uploadFile(
+                ecosType = TEMP_FILE_TYPE_ID,
+                name = name,
+                mimeType = mimeType.toString()
+            ) { writer ->
                 writer.writeBytes(content)
             }
         }
@@ -630,11 +640,7 @@ abstract class DbRecordsTestBase {
         val recAttWritePerms: MutableMap<Pair<EntityRef, String>, Set<String>> = mutableMapOf()
     ) {
 
-        val baseQuery = RecordsQuery.create {
-            withSourceId(dao.getId())
-            withLanguage(PredicateService.LANGUAGE_PREDICATE)
-            withQuery(VoidPredicate.INSTANCE)
-        }
+        val baseQuery = createQuery {}
 
         fun clear() {
             recReadPerms.clear()
@@ -643,12 +649,19 @@ abstract class DbRecordsTestBase {
             recAttWritePerms.clear()
         }
 
-        fun createQuery(): RecordsQuery {
-            return RecordsQuery.create()
+        fun createQuery(action: RecordsQuery.Builder.() -> Unit = {}): RecordsQuery {
+            val builder = RecordsQuery.create()
                 .withQuery(VoidPredicate.INSTANCE)
                 .withSourceId(dao.getId())
                 .withLanguage(PredicateService.LANGUAGE_PREDICATE)
-                .build()
+                .withSortBy(
+                    SortBy.create {
+                        attribute = RecordConstants.ATT_CREATED
+                        ascending = true
+                    }
+                )
+            action.invoke(builder)
+            return builder.build()
         }
 
         fun createRef(id: String): RecordRef {
@@ -717,6 +730,7 @@ abstract class DbRecordsTestBase {
                 conn.createStatement().use { it.executeUpdate("DEALLOCATE ALL") }
             }
         }
+
         fun setAuthoritiesWithAttReadPerms(rec: EntityRef, att: String, vararg authorities: String) {
             recAttReadPerms[rec.withDefaultAppName(APP_NAME) to att] = authorities.toSet()
         }

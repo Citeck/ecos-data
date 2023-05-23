@@ -70,6 +70,7 @@ import ru.citeck.ecos.webapp.api.content.EcosContentData
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
+import java.time.Instant
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
@@ -130,6 +131,26 @@ class DbRecordsDao(
         attributes: ObjectData? = null,
         writer: (EcosContentWriter) -> Unit
     ): EntityRef {
+        return TxnContext.doInTxn {
+            uploadFileInTxn(
+                ecosType = ecosType,
+                name = name,
+                mimeType = mimeType,
+                encoding = encoding,
+                attributes = attributes,
+                writer = writer
+            )
+        }
+    }
+
+    private fun uploadFileInTxn(
+        ecosType: String?,
+        name: String?,
+        mimeType: String?,
+        encoding: String?,
+        attributes: ObjectData?,
+        writer: (EcosContentWriter) -> Unit
+    ): EntityRef {
 
         val typeId = (ecosType ?: "").ifBlank { config.typeRef.getLocalId() }
         if (typeId.isBlank()) {
@@ -146,30 +167,30 @@ class DbRecordsDao(
         ) {
             error("Content attribute is not found: $contentAttribute")
         }
+        val currentUserRefId = daoCtx.getOrCreateUserRefId(AuthContext.getCurrentUser())
         val storageType = typeDef.contentConfig.storageType
-        return TxnContext.doInTxn {
-            val contentId = daoCtx.recContentHandler.uploadContent(
-                name,
-                mimeType,
-                encoding,
-                storageType,
-                writer
-            ) ?: error("File uploading failed")
+        val contentId = daoCtx.recContentHandler.uploadContent(
+            name,
+            mimeType,
+            encoding,
+            storageType,
+            currentUserRefId,
+            writer
+        ) ?: error("File uploading failed")
 
-            val recordToMutate = LocalRecordAtts()
-            recordToMutate.setAtt(contentAttribute, contentId)
-            recordToMutate.setAtt("name", name)
-            recordToMutate.setAtt(RecordConstants.ATT_TYPE, ModelUtils.getTypeRef(typeId))
-            attributes?.forEach { key, value ->
-                recordToMutate.setAtt(key, value)
-            }
-            val result = daoCtx.recContentHandler.withContentDbDataAware {
-                EntityRef.create(daoCtx.appName, daoCtx.sourceId, mutate(recordToMutate))
-            }
-            // this content record already cloned while mutation and should be deleted
-            daoCtx.contentService?.removeContent(contentId)
-            result
+        val recordToMutate = LocalRecordAtts()
+        recordToMutate.setAtt(contentAttribute, contentId)
+        recordToMutate.setAtt("name", name)
+        recordToMutate.setAtt(RecordConstants.ATT_TYPE, ModelUtils.getTypeRef(typeId))
+        attributes?.forEach { key, value ->
+            recordToMutate.setAtt(key, value)
         }
+        val result = daoCtx.recContentHandler.withContentDbDataAware {
+            EntityRef.create(daoCtx.appName, daoCtx.sourceId, mutate(recordToMutate))
+        }
+        // this content record already cloned while mutation and should be deleted
+        daoCtx.contentService?.removeContent(contentId)
+        return result
     }
 
     @JvmOverloads
@@ -252,11 +273,13 @@ class DbRecordsDao(
     }
 
     override fun getRecordsAtts(recordIds: List<String>): List<AttValue> {
-        return recordIds.map { id ->
-            if (id.isEmpty()) {
-                DbEmptyRecord(daoCtx)
-            } else {
-                findDbEntityByExtId(id)?.let { DbRecord(daoCtx, it) } ?: EmptyAttValue.INSTANCE
+        return TxnContext.doInTxn(readOnly = true) {
+            recordIds.map { id ->
+                if (id.isEmpty()) {
+                    DbEmptyRecord(daoCtx)
+                } else {
+                    findDbEntityByExtId(id)?.let { DbRecord(daoCtx, it) } ?: EmptyAttValue.INSTANCE
+                }
             }
         }
     }
@@ -277,6 +300,10 @@ class DbRecordsDao(
     }
 
     override fun queryRecords(recsQuery: RecordsQuery): RecsQueryRes<DbRecord> {
+        return TxnContext.doInTxn(readOnly = true) { queryRecordsInTxn(recsQuery) }
+    }
+
+    private fun queryRecordsInTxn(recsQuery: RecordsQuery): RecsQueryRes<DbRecord> {
 
         val language = recsQuery.language
         if (language.isNotEmpty() && language != PredicateService.LANGUAGE_PREDICATE) {
@@ -379,16 +406,21 @@ class DbRecordsDao(
                                         expandedValue.add(typeId)
                                         ecosTypeService.getAllChildrenIds(typeId, expandedValue)
                                     }
+                                    val expandedValueIds = recordRefService.getIdByEntityRefs(
+                                        expandedValue.map {
+                                            ModelUtils.getTypeRef(it)
+                                        }
+                                    )
                                     if (currentPred.getType() != ValuePredicate.Type.IN) {
-                                        if (expandedValue.size > 1) {
-                                            ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, expandedValue)
-                                        } else if (expandedValue.size == 1) {
-                                            ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValue.first())
+                                        if (expandedValueIds.size > 1) {
+                                            ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, expandedValueIds)
+                                        } else if (expandedValueIds.size == 1) {
+                                            ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValueIds.first())
                                         } else {
                                             Predicates.alwaysTrue()
                                         }
                                     } else {
-                                        ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValue)
+                                        ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValueIds)
                                     }
                                 }
 
@@ -397,7 +429,6 @@ class DbRecordsDao(
                                 }
                             }
                         }
-
                         DbRecord.ATT_ASPECTS -> {
                             val aspectsPredicate: Predicate = when (currentPred.getType()) {
                                 ValuePredicate.Type.EQ,
@@ -527,10 +558,11 @@ class DbRecordsDao(
             val typeIds = mutableListOf<String>()
             typeIds.add(ecosTypeRef.getLocalId())
             ecosTypeService.getAllChildrenIds(ecosTypeRef.getLocalId(), typeIds)
-            val typePred: Predicate = if (typeIds.size == 1) {
-                ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.EQ, typeIds[0])
+            val typeRefIds = recordRefService.getIdByEntityRefs(typeIds.map { ModelUtils.getTypeRef(it) })
+            val typePred: Predicate = if (typeRefIds.size == 1) {
+                ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.EQ, typeRefIds[0])
             } else {
-                ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, typeIds)
+                ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, typeRefIds)
             }
             predicate = Predicates.and(typePred, predicate)
         }
@@ -615,11 +647,22 @@ class DbRecordsDao(
 
         val extId = record.id.ifBlank { record.attributes[ATT_ID].asText() }
         if (extId.isNotBlank()) {
-            val typeFromRecord = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
-                dataService.findByExtId(extId)?.type
+            val entity = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
+                dataService.findByExtId(extId)
             }
-            if (!typeFromRecord.isNullOrBlank()) {
-                return typeFromRecord
+            val typeId: String = if (entity != null) {
+                if (entity.type > -1L) {
+                    recordRefService.getEntityRefById(entity.type).getLocalId()
+                } else if (entity.legacyType.isNotBlank()) {
+                    entity.legacyType
+                } else {
+                    ""
+                }
+            } else {
+                ""
+            }
+            if (typeId.isNotBlank()) {
+                return typeId
             }
         }
 
@@ -637,12 +680,20 @@ class DbRecordsDao(
         if (!config.updatable) {
             error("Records DAO is not mutable. Record can't be mutated: '${record.id}'")
         }
+        if (dataService.getSchemaVersion() != DbDataService.NEW_TABLE_SCHEMA_VERSION) {
+            error(
+                "Records can't be mutated until schema version will be fully migrated. " +
+                    "Current schema version: ${dataService.getSchemaVersion()} " +
+                    "Expected schema version: ${DbDataService.NEW_TABLE_SCHEMA_VERSION}"
+            )
+        }
         return TxnContext.doInTxn {
             val resultEntity = mutateInTxn(record)
             val resultRecId = resultEntity.extId
 
             var queryPermsPolicy = QueryPermsPolicy.OWN
-            queryPermsPolicy = ecosTypeService.getTypeInfo(resultEntity.type)?.queryPermsPolicy ?: queryPermsPolicy
+            val typeRef = recordRefService.getEntityRefById(resultEntity.type)
+            queryPermsPolicy = ecosTypeService.getTypeInfo(typeRef.getLocalId())?.queryPermsPolicy ?: queryPermsPolicy
 
             val txn = TxnContext.getTxn()
             if (queryPermsPolicy == QueryPermsPolicy.OWN) {
@@ -711,8 +762,8 @@ class DbRecordsDao(
         val isRunAsAdmin = AuthContext.isAdminAuth(runAsAuth)
         val isRunAsSystemOrAdmin = isRunAsSystem || isRunAsAdmin
 
-        val currentUser = runAsAuth.getUser()
-        val currentAuthorities = DbRecordsUtils.getCurrentAuthorities(runAsAuth)
+        val currentRunAsUser = runAsAuth.getUser()
+        val currentRunAsAuthorities = DbRecordsUtils.getCurrentAuthorities(runAsAuth)
 
         val extId = record.id.ifEmpty { record.attributes[ATT_ID].asText() }
         val currentAspectRefs = LinkedHashSet(typeAspects)
@@ -759,7 +810,7 @@ class DbRecordsDao(
                 entityToMutate.extId = customExtId
             } else {
                 dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
-                    if (dataService.findByExtId(customExtId) != null) {
+                    if (dataService.isExistsByExtId(customExtId)) {
                         log.error {
                             "Record with ID $customExtId already exists. You should mutate it directly. " +
                                 "Record: ${getId()}@$customExtId"
@@ -786,10 +837,19 @@ class DbRecordsDao(
 
         val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
 
+        val nowInstant = Instant.now()
+        val currentUserRefId = daoCtx.getOrCreateUserRefId(AuthContext.getCurrentUser())
+        if (isNewEntity) {
+            entityToMutate.created = nowInstant
+            entityToMutate.creator = currentUserRefId
+        }
+        entityToMutate.modified = nowInstant
+        entityToMutate.modifier = currentUserRefId
+
         var recordPerms = DbRecordPermsContext(DbRecordAllowedAllPerms)
         if (!isNewEntity && !isRunAsSystem) {
             if (!getUpdatedInTxnIds().contains(entityToMutate.extId)) {
-                recordPerms = getRecordPerms(entityToMutate.extId, currentUser, currentAuthorities)
+                recordPerms = getRecordPerms(entityToMutate.extId, currentRunAsUser, currentRunAsAuthorities)
                 if (!recordPerms.hasWritePerms()) {
                     error("Permissions Denied. You can't change record '${daoCtx.getGlobalRef(record.id)}'")
                 }
@@ -952,7 +1012,8 @@ class DbRecordsDao(
             recAttributes,
             entityToMutate,
             typeAttColumns,
-            typeInfo.contentConfig.storageType
+            typeInfo.contentConfig.storageType,
+            currentUserRefId
         )
 
         recAttributes.forEach { att, newValue ->
@@ -1055,6 +1116,7 @@ class DbRecordsDao(
             typeColumns,
             changedAssocs,
             isAssocForceDeletion,
+            currentUserRefId,
             perms,
             allAssocsValues
         )
@@ -1066,7 +1128,8 @@ class DbRecordsDao(
                     recAttributes,
                     optionalAtts,
                     changedAssocs,
-                    isAssocForceDeletion
+                    isAssocForceDeletion,
+                    currentUserRefId
                 )
             )
         }
@@ -1077,7 +1140,7 @@ class DbRecordsDao(
             fullColumns.add(DbRecord.COLUMN_IS_DRAFT)
         }
 
-        entityToMutate.type = typeInfo.id
+        entityToMutate.type = recordRefService.getOrCreateIdByEntityRef(ModelUtils.getTypeRef(typeInfo.id))
 
         if (recAttributes.has(StatusConstants.ATT_STATUS)) {
             val newStatus = recAttributes[StatusConstants.ATT_STATUS].asText()
@@ -1102,7 +1165,8 @@ class DbRecordsDao(
                     recAfterSave,
                     isNewEntity,
                     typeInfo.id,
-                    fullColumns
+                    fullColumns,
+                    currentUserRefId
                 )
             } else {
                 recAfterSave
@@ -1139,7 +1203,8 @@ class DbRecordsDao(
         entity: DbEntity,
         isNewRecord: Boolean,
         recTypeId: String,
-        columns: List<DbColumnDef>
+        columns: List<DbColumnDef>,
+        currentUserRefId: Long
     ): DbEntity {
 
         val typeRef = ModelUtils.getTypeRef(recTypeId)
@@ -1156,7 +1221,8 @@ class DbRecordsDao(
             atts,
             fullColumns,
             ArrayList(),
-            true
+            true,
+            currentUserRefId
         ).isNotEmpty()
 
         val dispName = component.computeDisplayName(DbRecord(daoCtx, entity), typeRef)
@@ -1244,6 +1310,7 @@ class DbRecordsDao(
         columns: List<DbColumnDef>,
         changedAssocs: MutableList<DbAssocRefsDiff>,
         isAssocForceDeletion: Boolean,
+        currentUserRefId: Long,
         perms: DbRecordPermsContext? = null,
         multiAssocValues: Map<String, DbAssocAttValuesContainer> = emptyMap()
     ): List<DbColumnDef> {
@@ -1279,7 +1346,8 @@ class DbRecordsDao(
                         recToMutate.refId,
                         dbColumnDef.name,
                         multiAssocValue.child,
-                        multiAssocValue.getAddedTargetsIds()
+                        multiAssocValue.getAddedTargetsIds(),
+                        currentUserRefId
                     )
 
                     if (removedTargetIds.isNotEmpty() || addedTargetIds.isNotEmpty()) {

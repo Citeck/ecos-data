@@ -7,4 +7,6 @@ interface DbEntityPermsService {
     fun createTableIfNotExists()
 
     fun isTableExists(): Boolean
+
+    fun resetColumnsCache()
 }

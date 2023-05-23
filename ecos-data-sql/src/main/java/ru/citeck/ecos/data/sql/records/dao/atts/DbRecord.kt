@@ -40,8 +40,10 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         const val ATT_NAME = "_name"
         const val ATT_ASPECTS = "_aspects"
         const val ATT_PERMISSIONS = "permissions"
+        const val ATT_PREVIEW_INFO = "previewInfo"
         const val ATT_CONTENT_VERSION = "version:version"
         const val ATT_CONTENT_VERSION_COMMENT = "version:comment"
+        const val ATT_IS_DRAFT = "_isDraft"
         const val ASSOC_SRC_ATT_PREFIX = "assoc_src_"
 
         const val ASPECT_VERSIONABLE = "versionable"
@@ -59,7 +61,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         )
 
         val DOC_NUM_COLUMN = DbColumnDef.create {
-            withName("_docNum")
+            withName(RecordConstants.ATT_DOC_NUM)
             withType(DbColumnType.INT)
         }
         val COMPUTABLE_OPTIONAL_COLUMNS = listOf(
@@ -94,7 +96,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         )
 
         val COLUMN_IS_DRAFT = DbColumnDef.create {
-            withName("_isDraft")
+            withName(ATT_IS_DRAFT)
             withType(DbColumnType.BOOLEAN)
         }
 
@@ -185,7 +187,14 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
         // assoc mapping
         val assocIdValues = mutableSetOf<Long>()
-        attTypes.filter { DbRecordsUtils.isAssocLikeAttribute(it.value) }.keys.forEach { attId ->
+        if (entity.creator != -1L) {
+            assocIdValues.add(entity.creator)
+        }
+        if (entity.modifier != -1L) {
+            assocIdValues.add(entity.modifier)
+        }
+
+        attTypes.filter { DbRecordsUtils.isEntityRefAttribute(it.value) }.keys.forEach { attId ->
             val value = recData[attId]
             if (value is Iterable<*>) {
                 for (elem in value) {
@@ -209,7 +218,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
         attTypes.forEach { (attId, attType) ->
             val value = recData[attId]
-            if (DbRecordsUtils.isAssocLikeAttribute(attType)) {
+            if (DbRecordsUtils.isEntityRefAttribute(attType)) {
                 if (attId == ATT_ASPECTS) {
                     val fullAspects = LinkedHashSet<String>()
                     typeInfo.aspects.forEach {
@@ -284,8 +293,8 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 }
                 result
             }
-            is Long -> assocMapping[value] ?: error("Assoc doesn't found for id $value")
-            else -> error("Unexpected assoc value type: ${value::class}")
+            is Long -> assocMapping[value] ?: error("Ref doesn't found for id $value")
+            else -> error("Unexpected ref value type: ${value::class}")
         }
     }
 
@@ -506,11 +515,10 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             ATT_NAME -> displayName
             RecordConstants.ATT_MODIFIED, "cm:modified" -> entity.modified
             RecordConstants.ATT_CREATED, "cm:created" -> entity.created
-            RecordConstants.ATT_MODIFIER -> getAsPersonRef(entity.modifier)
-            RecordConstants.ATT_CREATOR -> getAsPersonRef(entity.creator)
+            RecordConstants.ATT_MODIFIER -> toEntityRef(entity.modifier)
+            RecordConstants.ATT_CREATOR -> toEntityRef(entity.creator)
             StatusConstants.ATT_STATUS -> {
                 val statusId = entity.status
-                val typeInfo = ctx.ecosTypeService.getTypeInfo(entity.type) ?: return statusId
                 val statusDef = typeInfo.model.statuses.firstOrNull { it.id == statusId } ?: return statusId
                 val attValue = ctx.attValuesConverter.toAttValue(statusDef) ?: EmptyAttValue.INSTANCE
                 return DbStatusValue(statusDef, attValue)
@@ -518,7 +526,8 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             ATT_PERMISSIONS -> permsValue
             RecordConstants.ATT_CONTENT -> getDefaultContent()
             RecordConstants.ATT_PARENT -> additionalAtts[RecordConstants.ATT_PARENT]
-            "previewInfo" -> getDefaultContent()?.getContentValue()?.getAtt("previewInfo")
+            ATT_PREVIEW_INFO -> getDefaultContent()?.getContentValue()?.getAtt(ATT_PREVIEW_INFO)
+            ATT_IS_DRAFT -> additionalAtts[ATT_IS_DRAFT] ?: false
             else -> {
                 if (name.startsWith(ASSOC_SRC_ATT_PREFIX)) {
                     val assocName = name.substring(ASSOC_SRC_ATT_PREFIX.length)
@@ -592,14 +601,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
         )
     }
 
-    private fun getAsPersonRef(name: String): Any {
-        if (name.isBlank()) {
-            return EntityRef.EMPTY
-        }
-        return ctx.authoritiesApi?.getAuthorityRef(name) ?: return name
-    }
-
     override fun getType(): EntityRef {
-        return ModelUtils.getTypeRef(entity.type)
+        return ModelUtils.getTypeRef(typeInfo.id)
     }
 }

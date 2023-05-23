@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.domain
 
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
+import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigrationContext
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
@@ -27,16 +28,21 @@ class DbDomainFactory(
     val webAppApi: EcosWebAppApi
 ) {
 
-    private val dataSourceContext = DbDataSourceContext(
-        webAppApi.getProperties().appName,
-        dataSource,
-        dataServiceFactory
-    )
-
     private val migrationService = DbMigrationService()
+
+    private val dataSourceContext = DbDataSourceContext(
+        dataSource,
+        dataServiceFactory,
+        migrationService,
+        webAppApi
+    )
 
     fun create(domainConfig: DbDomainConfig): Builder {
         return Builder(domainConfig)
+    }
+
+    private fun migrateSchema(context: DbSchemaContext) {
+        migrationService.runSchemaMigrations(context)
     }
 
     inner class Builder(val domainConfig: DbDomainConfig) {
@@ -107,10 +113,10 @@ class DbDomainFactory(
                     ?: error("Migration context is null for '${domainConfig.recordsDao.id}'")
 
                 if (webAppApi.isReady()) {
-                    migrationService.runMigrations(ctx)
+                    migrationService.runDomainMigrations(ctx)
                 } else {
                     webAppApi.doBeforeAppReady {
-                        migrationService.runMigrations(ctx)
+                        migrationService.runDomainMigrations(ctx)
                     }
                 }
             }

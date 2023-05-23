@@ -36,6 +36,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         )
 
         val instantBeforeCreate = Instant.now()
+        Thread.sleep(1)
 
         val testAttValue = "abc"
         val ref = TxnContext.doInTxn {

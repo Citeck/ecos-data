@@ -1,7 +1,7 @@
-package ru.citeck.ecos.data.sql.domain.migration.type
+package ru.citeck.ecos.data.sql.domain.migration.domain
 
 import mu.KotlinLogging
-import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigration
+import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigrationContext
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
@@ -12,6 +12,8 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.constants.AppName
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class MoveAssocsToAssocsTable : DbDomainMigration {
 
@@ -75,23 +77,27 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
         getAssocs(mainTypeRef.getLocalId())
 
         var lastId = -1L
-        fun findImpl(): DbFindRes<DbEntity> {
+        fun findImpl(): DbFindRes<Map<String, Any?>> {
             val excludedTypesPredicate = if (excludedTypes.isEmpty()) {
                 Predicates.alwaysTrue()
             } else {
                 Predicates.not(Predicates.inVals(DbEntity.TYPE, excludedTypes))
             }
-            val result = context.dataService.find(
+            val result = context.dataService.findRaw(
                 Predicates.and(
                     Predicates.gt(DbEntity.ID, lastId),
                     excludedTypesPredicate
                 ),
                 listOf(DbFindSort(DbEntity.ID, true)),
                 DbFindPage(0, 100),
-                true
+                true,
+                emptyList(),
+                emptyList(),
+                emptyMap(),
+                false
             )
             if (result.entities.isNotEmpty()) {
-                lastId = result.entities.last().id
+                lastId = result.entities.last()[DbEntity.ID] as Long
             }
             return result
         }
@@ -103,25 +109,31 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
         var findRes = findImpl()
         log.info { "Start migration. Total count: ${findRes.totalCount}" }
 
+        val systemUserRefId = daoCtx.recordRefService.getOrCreateIdByEntityRef(
+            EntityRef.create(AppName.EMODEL, "person", AuthUser.SYSTEM)
+        )
+
         while (findRes.entities.isNotEmpty()) {
             TxnContext.doInNewTxn {
                 dataSource.withTransaction(readOnly = false, requiresNew = true) {
                     findRes.entities.forEach { entity ->
+                        val type = entity[DbEntity.TYPE] as String
                         val (
                             targetAssocsAtts,
                             childAssocsAtts
-                        ) = getAssocs(entity.type)
+                        ) = getAssocs(type)
 
+                        val refId = entity[DbEntity.REF_ID] as Long
                         targetAssocsAtts.forEach {
-                            val targetIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
+                            val targetIds = DbAttValueUtils.anyToSetOfLongs(entity[it.id])
                             if (targetIds.isNotEmpty()) {
-                                assocsService.createAssocs(entity.refId, it.id, false, targetIds)
+                                assocsService.createAssocs(refId, it.id, false, targetIds, systemUserRefId)
                             }
                         }
                         childAssocsAtts.forEach {
-                            val childrenIds = DbAttValueUtils.anyToSetOfLongs(entity.attributes[it.id])
+                            val childrenIds = DbAttValueUtils.anyToSetOfLongs(entity[it.id])
                             if (childrenIds.isNotEmpty()) {
-                                assocsService.createAssocs(entity.refId, it.id, true, childrenIds)
+                                assocsService.createAssocs(refId, it.id, true, childrenIds, systemUserRefId)
                             }
                         }
                         processed++
@@ -137,7 +149,7 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
         log.info { "Migration completed. Processed: $processed" }
     }
 
-    override fun getAppliedVersions(): Pair<Int, Int> {
-        return 1 to 2
+    override fun getAppliedVersions(): Int {
+        return 2
     }
 }

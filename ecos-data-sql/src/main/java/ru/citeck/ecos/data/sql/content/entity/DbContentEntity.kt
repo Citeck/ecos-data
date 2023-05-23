@@ -54,5 +54,5 @@ class DbContentEntity {
 
     var created: Instant = Instant.EPOCH
 
-    var creator: String = ""
+    var creator: Long = -1
 }

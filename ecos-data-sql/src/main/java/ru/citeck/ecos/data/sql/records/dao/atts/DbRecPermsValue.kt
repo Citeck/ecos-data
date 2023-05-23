@@ -29,7 +29,7 @@ class DbRecPermsValue(
     }
 
     override fun has(name: String): Boolean {
-        val perms = recordPermsValue ?: return true
+        val perms = recordPermsValue
         if (name.equals("Write", true)) {
             return perms.hasWritePerms()
         }

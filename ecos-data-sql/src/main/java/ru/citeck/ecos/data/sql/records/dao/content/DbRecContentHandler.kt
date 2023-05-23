@@ -104,10 +104,11 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         mimeType: String?,
         encoding: String?,
         storage: String?,
+        creatorRefId: Long,
         writer: (EcosContentWriter) -> Unit
     ): Long? {
         val contentService = ctx.contentService ?: return null
-        return contentService.uploadContent(name, mimeType, encoding, storage, writer).getDbId()
+        return contentService.uploadContent(name, mimeType, encoding, storage, creatorRefId, writer).getDbId()
     }
 
     fun uploadContent(
@@ -115,7 +116,8 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         attribute: String,
         contentData: DataValue,
         multiple: Boolean,
-        storage: String
+        storage: String,
+        creatorRefId: Long
     ): Any? {
 
         val contentService = ctx.contentService ?: return null
@@ -127,27 +129,27 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
             return if (multiple) {
                 val newArray = DataValue.createArr()
                 contentData.forEach {
-                    val contentId = uploadContent(record, attribute, it, false, storage)
+                    val contentId = uploadContent(record, attribute, it, false, storage, creatorRefId)
                     if (contentId != null) {
                         newArray.add(contentId)
                     }
                 }
                 newArray
             } else {
-                uploadContent(record, attribute, contentData[0], false, storage)
+                uploadContent(record, attribute, contentData[0], false, storage, creatorRefId)
             }
         }
         if (!contentData.isObject()) {
             if (contentData.isLong()) {
                 if (isContentDbDataAware() || AuthContext.isRunAsSystem()) {
-                    return contentService.cloneContent(contentData.asLong()).getDbId()
+                    return contentService.cloneContent(contentData.asLong(), creatorRefId).getDbId()
                 }
             } else if (contentData.isTextual()) {
                 val contentText = contentData.asText()
                 val appNameDelimIdx = contentText.indexOf(EntityRef.APP_NAME_DELIMITER)
                 val srcIdDelimIdx = contentText.indexOf(EntityRef.SOURCE_ID_DELIMITER)
                 if (srcIdDelimIdx != -1 && appNameDelimIdx < srcIdDelimIdx) {
-                    return uploadFromEntity(EntityRef.valueOf(contentText), storage)
+                    return uploadFromEntity(EntityRef.valueOf(contentText), storage, creatorRefId)
                 }
             }
             return null
@@ -182,7 +184,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
             name = contentData["originalName"].asText().ifBlank { contentData["name"].asText() }
             val entityRef = data["entityRef"].asText()
             if (entityRef.isNotBlank()) {
-                return uploadFromEntity(EntityRef.valueOf(entityRef), storage)
+                return uploadFromEntity(EntityRef.valueOf(entityRef), storage, creatorRefId)
             } else {
                 val nodeRef = data["nodeRef"].asText()
                 if (nodeRef.isNotBlank()) {
@@ -199,12 +201,12 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         if (dataBytes == null) {
             return null
         }
-        return contentService.uploadContent(name, mimeType, null, storage) {
+        return contentService.uploadContent(name, mimeType, null, storage, creatorRefId) {
             it.writeBytes(dataBytes)
         }.getDbId()
     }
 
-    private fun uploadFromEntity(entityRef: EntityRef, storage: String): Long? {
+    private fun uploadFromEntity(entityRef: EntityRef, storage: String, creatorRefId: Long): Long? {
 
         val contentService = ctx.contentService ?: return null
 
@@ -213,7 +215,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
                 ctx.recordsService.getAtts(entityRef, ContentLocationAtts::class.java)
             }
             if (atts.dbSchema == ctx.tableRef.schema && atts.contentId != null && atts.contentId >= 0) {
-                return contentService.cloneContent(atts.contentId).getDbId()
+                return contentService.cloneContent(atts.contentId, creatorRefId).getDbId()
             }
         }
         ctx.contentApi ?: error("Content API is null")
@@ -226,7 +228,8 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
                     name = metaAtts.name,
                     mimeType = metaAtts.mimeType,
                     encoding = metaAtts.encoding,
-                    storage = storage
+                    storage = storage,
+                    creatorRefId = creatorRefId
                 ) { it.writeStream(input) }.getDbId()
             }
         }

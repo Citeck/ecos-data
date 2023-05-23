@@ -1,7 +1,6 @@
 package ru.citeck.ecos.data.sql.content
 
 import ru.citeck.ecos.commons.mime.MimeTypes
-import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
@@ -38,6 +37,7 @@ class DbContentServiceImpl(
         mimeType: String?,
         encoding: String?,
         storage: String?,
+        creatorRefId: Long,
         writer: (EcosContentWriter) -> Unit
     ): DbEcosContentData {
 
@@ -67,7 +67,7 @@ class DbContentServiceImpl(
         entity.mimeType = nnMimeType
         entity.encoding = nnEncoding
         entity.created = Instant.now()
-        entity.creator = AuthContext.getCurrentUser()
+        entity.creator = creatorRefId
         entity.sha256 = sha256
         entity.size = size
         entity.uri = dataUri
@@ -99,11 +99,11 @@ class DbContentServiceImpl(
         }
     }
 
-    override fun cloneContent(id: Long): DbEcosContentData {
+    override fun cloneContent(id: Long, creatorRefId: Long): DbEcosContentData {
         val entity = dataService.findById(id) ?: error("Content doesn't found by id '$id'")
         entity.id = DbContentEntity.NEW_REC_ID
         entity.created = Instant.now()
-        entity.creator = AuthContext.getCurrentUser()
+        entity.creator = creatorRefId
         return EcosContentDataImpl(dataService.save(entity))
     }
 
@@ -117,7 +117,19 @@ class DbContentServiceImpl(
         return result
     }
 
+    override fun resetColumnsCache() {
+        dataService.resetColumnsCache()
+    }
+
+    fun getDataService(): DbDataService<DbContentEntity> {
+        return dataService
+    }
+
     private inner class EcosContentDataImpl(val entity: DbContentEntity) : DbEcosContentData {
+
+        private val creatorName: String by lazy {
+            schemaCtx.recordRefService.getEntityRefById(entity.creator).getLocalId()
+        }
 
         override fun getDbId(): Long {
             return entity.id
@@ -132,7 +144,7 @@ class DbContentServiceImpl(
         }
 
         override fun getCreator(): String {
-            return entity.creator
+            return creatorName
         }
 
         override fun getEncoding(): String {

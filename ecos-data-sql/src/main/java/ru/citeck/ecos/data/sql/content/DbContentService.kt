@@ -9,6 +9,7 @@ interface DbContentService {
         mimeType: String?,
         encoding: String?,
         storage: String?,
+        creatorRefId: Long,
         writer: (EcosContentWriter) -> Unit
     ): DbEcosContentData
 
@@ -16,5 +17,7 @@ interface DbContentService {
 
     fun getContent(id: Long): DbEcosContentData?
 
-    fun cloneContent(id: Long): DbEcosContentData
+    fun cloneContent(id: Long, creatorRefId: Long): DbEcosContentData
+
+    fun resetColumnsCache()
 }

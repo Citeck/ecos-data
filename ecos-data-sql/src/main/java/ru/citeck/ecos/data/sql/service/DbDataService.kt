@@ -15,7 +15,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 interface DbDataService<T : Any> {
 
     companion object {
-        const val NEW_TABLE_SCHEMA_VERSION = 2
+        const val NEW_TABLE_SCHEMA_VERSION = 4
     }
 
     fun <T> doWithPermsPolicy(permsPolicy: QueryPermsPolicy?, action: () -> T): T
@@ -29,6 +29,8 @@ interface DbDataService<T : Any> {
     fun findByIds(ids: Set<Long>): List<T>
 
     fun findByExtId(id: String): T?
+
+    fun isExistsByExtId(id: String): Boolean
 
     fun findAll(): List<T>
 
@@ -52,6 +54,17 @@ interface DbDataService<T : Any> {
         assocJoins: Map<String, AssocJoin>,
         withTotalCount: Boolean
     ): DbFindRes<T>
+
+    fun findRaw(
+        predicate: Predicate,
+        sort: List<DbFindSort>,
+        page: DbFindPage,
+        withDeleted: Boolean,
+        groupBy: List<String>,
+        selectFunctions: List<AggregateFunc>,
+        assocJoins: Map<String, AssocJoin>,
+        withTotalCount: Boolean
+    ): DbFindRes<Map<String, Any?>>
 
     fun getCount(predicate: Predicate): Long
 

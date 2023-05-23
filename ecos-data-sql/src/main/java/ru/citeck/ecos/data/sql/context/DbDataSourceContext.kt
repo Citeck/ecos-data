@@ -1,17 +1,23 @@
 package ru.citeck.ecos.data.sql.context
 
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
+import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
+import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 class DbDataSourceContext(
-    val appName: String,
     val dataSource: DbDataSource,
-    dataServiceFactory: DbDataServiceFactory
+    dataServiceFactory: DbDataServiceFactory,
+    private val migrationService: DbMigrationService,
+    private val webAppApi: EcosWebAppApi
 ) {
+    val appName: String = webAppApi.getProperties().appName
     val converter: DbTypesConverter = DbTypesConverter()
     val entityRepo: DbEntityRepo = dataServiceFactory.createEntityRepo()
     val schemaDao: DbSchemaDao = dataServiceFactory.createSchemaDao()
@@ -22,7 +28,37 @@ class DbDataSourceContext(
         dataServiceFactory.registerConverters(converter)
     }
 
+    fun <T> doInNewTxn(action: () -> T): T {
+        return TxnContext.doInNewTxn {
+            dataSource.withTransaction(readOnly = false, requiresNew = true) {
+                action.invoke()
+            }
+        }
+    }
+
+    fun <T> doInNewRoTxn(action: () -> T): T {
+        return TxnContext.doInNewTxn {
+            dataSource.withTransaction(readOnly = true, requiresNew = true) {
+                action.invoke()
+            }
+        }
+    }
+
     fun getSchemaContext(schema: String): DbSchemaContext {
-        return schemasByName.computeIfAbsent(schema) { k -> DbSchemaContext(k, this) }
+        val newContextWasCreated = AtomicBoolean()
+        val result = schemasByName.computeIfAbsent(schema) { k ->
+            newContextWasCreated.set(true)
+            DbSchemaContext(k, this)
+        }
+        if (newContextWasCreated.get()) {
+            if (webAppApi.isReady()) {
+                migrationService.runSchemaMigrations(result)
+            } else {
+                webAppApi.doBeforeAppReady {
+                    migrationService.runSchemaMigrations(result)
+                }
+            }
+        }
+        return result
     }
 }

@@ -33,7 +33,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         recAttributes: ObjectData,
         recToMutate: DbEntity,
         columns: List<EcosAttColumnDef>,
-        contentStorageType: String
+        contentStorageType: String,
+        creatorRefId: Long
     ) {
 
         for (column in columns) {
@@ -49,7 +50,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                     column.attribute.id,
                     contentData,
                     column.column.multiple,
-                    contentStorageType
+                    contentStorageType,
+                    creatorRefId
                 )
             } else if (DbRecordsUtils.isAssocLikeAttribute(column.attribute)) {
                 val assocValue = recAttributes[column.attribute.id]
@@ -125,44 +127,44 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
 
     fun replaceRefsById(recAttributes: ObjectData, columns: List<EcosAttColumnDef>) {
 
-        val assocAtts = columns.filter {
-            DbRecordsUtils.isAssocLikeAttribute(it.attribute)
+        val entityRefAtts = columns.filter {
+            DbRecordsUtils.isEntityRefAttribute(it.attribute.type)
         }.map { it.attribute.id }
             .toMutableList()
 
         if (recAttributes.has(RecordConstants.ATT_PARENT)) {
-            assocAtts.add(RecordConstants.ATT_PARENT)
+            entityRefAtts.add(RecordConstants.ATT_PARENT)
         }
         if (recAttributes.has(DbRecord.ATT_ASPECTS)) {
-            assocAtts.add(DbRecord.ATT_ASPECTS)
+            entityRefAtts.add(DbRecord.ATT_ASPECTS)
         }
 
-        if (assocAtts.isNotEmpty()) {
-            val assocRefs = mutableSetOf<EntityRef>()
-            for (assocId in assocAtts) {
-                if (recAttributes.has(assocId)) {
-                    extractRecordRefs(recAttributes[assocId], assocRefs)
+        if (entityRefAtts.isNotEmpty()) {
+            val entityRefs = mutableSetOf<EntityRef>()
+            for (attId in entityRefAtts) {
+                if (recAttributes.has(attId)) {
+                    extractRecordRefs(recAttributes[attId], entityRefs)
                 } else {
                     OperationType.values().forEach { op ->
-                        val attValue = recAttributes[op.prefix + assocId]
-                        extractRecordRefs(attValue, assocRefs)
+                        val attValue = recAttributes[op.prefix + attId]
+                        extractRecordRefs(attValue, entityRefs)
                     }
                 }
             }
             val idByRef = mutableMapOf<EntityRef, Long>()
-            if (assocRefs.isNotEmpty()) {
-                val refsList = assocRefs.toList()
+            if (entityRefs.isNotEmpty()) {
+                val refsList = entityRefs.toList()
                 val refsId = ctx.recordRefService.getOrCreateIdByEntityRefs(refsList)
                 for ((idx, ref) in refsList.withIndex()) {
                     idByRef[ref] = refsId[idx]
                 }
             }
-            assocAtts.forEach { assocId ->
-                if (recAttributes.has(assocId)) {
-                    recAttributes[assocId] = replaceRecordRefsToId(recAttributes[assocId], idByRef)
+            entityRefAtts.forEach { attId ->
+                if (recAttributes.has(attId)) {
+                    recAttributes[attId] = replaceRecordRefsToId(recAttributes[attId], idByRef)
                 } else {
                     OperationType.values().forEach { op ->
-                        val attWithPrefix = op.prefix + assocId
+                        val attWithPrefix = op.prefix + attId
                         if (recAttributes.has(attWithPrefix)) {
                             val value = recAttributes[attWithPrefix]
                             recAttributes[attWithPrefix] = replaceRecordRefsToId(value, idByRef)

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
+import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaEntity
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaService
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaServiceImpl
@@ -12,6 +13,7 @@ import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
+import ru.citeck.ecos.test.commons.EcosWebAppApiMock
 import ru.citeck.ecos.test.commons.containers.TestContainers
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 
@@ -43,7 +45,12 @@ class DbSchemaMetaTest {
         }
         val dataSource = DbDataSourceImpl(jdbcDataSource)
 
-        val dsCtx = DbDataSourceContext("test", dataSource, PgDataServiceFactory())
+        val dsCtx = DbDataSourceContext(
+            dataSource,
+            PgDataServiceFactory(),
+            DbMigrationService(),
+            EcosWebAppApiMock("test")
+        )
         val schemaCtx = dsCtx.getSchemaContext("")
         val dbSchemaDao = dsCtx.schemaDao
 

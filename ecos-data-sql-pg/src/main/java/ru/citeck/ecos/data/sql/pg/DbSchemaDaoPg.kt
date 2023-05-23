@@ -6,6 +6,9 @@ import ru.citeck.ecos.data.sql.dto.*
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
 import ru.citeck.ecos.data.sql.dto.fk.FkCascadeActionOptions
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
+import ru.citeck.ecos.data.sql.schema.DbSchemaListener
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
 
@@ -34,6 +37,12 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
             DbColumnType.LONG,
             DbColumnType.UUID
         )
+    }
+
+    private val listeners: MutableMap<String, MutableList<DbSchemaListener>> = ConcurrentHashMap()
+
+    override fun addSchemaListener(schema: String, listener: DbSchemaListener) {
+        listeners.computeIfAbsent(schema) { CopyOnWriteArrayList() }.add(listener)
     }
 
     override fun getColumns(dataSource: DbDataSource, tableRef: DbTableRef): List<DbColumnDef> {
@@ -71,9 +80,10 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
             dataSource.query(
                 "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = '${tableRef.schema}')",
                 emptyList()
-            ) {
-                if (!it.next() || !it.getBoolean(1)) {
+            ) { rs ->
+                if (!rs.next() || !rs.getBoolean(1)) {
                     dataSource.updateSchema("CREATE SCHEMA IF NOT EXISTS \"${tableRef.schema}\"")
+                    listeners[tableRef.schema]?.forEach { it.onSchemaCreated() }
                 }
             }
         }

@@ -5,16 +5,20 @@ import ru.citeck.ecos.data.sql.dto.DbColumnConstraint.*
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Index
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
+import ru.citeck.ecos.data.sql.repo.entity.legacy.DbLegacyEntity0
+import ru.citeck.ecos.data.sql.repo.entity.legacy.DbLegacyTypes
 import java.time.Instant
 
 @Indexes(
     Index(columns = [DbEntity.EXT_ID], unique = true),
     Index(columns = [DbEntity.REF_ID], unique = true),
+    Index(columns = [DbEntity.TYPE]),
     Index(columns = [DbEntity.DELETED]),
     Index(columns = [DbEntity.MODIFIED]),
     Index(columns = [DbEntity.CREATED]),
     Index(columns = [DbEntity.NAME], caseInsensitive = true)
 )
+@DbLegacyTypes(DbLegacyEntity0::class)
 class DbEntity {
 
     companion object {
@@ -50,19 +54,19 @@ class DbEntity {
     var modified: Instant = Instant.EPOCH
 
     @Constraints(NOT_NULL)
-    var modifier: String = ""
+    var modifier: Long = -1
 
     @Constraints(NOT_NULL)
     var created: Instant = Instant.EPOCH
 
     @Constraints(NOT_NULL)
-    var creator: String = ""
+    var creator: Long = -1
 
     @Constraints(NOT_NULL)
     var deleted: Boolean = false
 
     @Constraints(NOT_NULL)
-    var type: String = ""
+    var type: Long = -1
 
     @Constraints(NOT_NULL)
     var status: String = ""
@@ -71,6 +75,8 @@ class DbEntity {
     var name: MLText = MLText.EMPTY
 
     var attributes: MutableMap<String, Any?> = LinkedHashMap()
+
+    var legacyType: String = ""
 
     fun copy(): DbEntity {
         val newEntity = DbEntity()

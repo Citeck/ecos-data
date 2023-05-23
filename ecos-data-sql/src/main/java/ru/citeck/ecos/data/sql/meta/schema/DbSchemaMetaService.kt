@@ -21,4 +21,6 @@ interface DbSchemaMetaService {
     fun setValue(key: String, value: Any?)
 
     fun setValue(key: List<String>, value: Any?)
+
+    fun resetColumnsCache()
 }

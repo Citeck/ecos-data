@@ -24,7 +24,8 @@ class DbSchemaMetaServiceImpl : DbSchemaMetaService {
             DbDataServiceConfig.create()
                 .withTable(DbSchemaMetaEntity.TABLE)
                 .build(),
-            schemaCtx
+            schemaCtx,
+            useLastSchemaVersion = true
         )
     )
 
@@ -80,6 +81,10 @@ class DbSchemaMetaServiceImpl : DbSchemaMetaService {
         }
         entity.value = DataValue.create(value).toString()
         dataService.save(entity)
+    }
+
+    override fun resetColumnsCache() {
+        dataService.resetColumnsCache()
     }
 
     private fun getScopedKey(key: String): String {

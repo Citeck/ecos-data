@@ -11,4 +11,16 @@ class DbDomainMigrationContext(
     val schemaContext: DbSchemaContext,
     val recordsDao: DbRecordsDao,
     val config: DbDomainConfig
-)
+) {
+
+    val dataSource = schemaContext.dataSourceCtx.dataSource
+    val schemaDao = schemaContext.dataSourceCtx.schemaDao
+
+    fun <T> doInNewTxn(action: () -> T): T {
+        return schemaContext.dataSourceCtx.doInNewTxn(action)
+    }
+
+    fun <T> doInNewRoTxn(action: () -> T): T {
+        return schemaContext.dataSourceCtx.doInNewRoTxn(action)
+    }
+}

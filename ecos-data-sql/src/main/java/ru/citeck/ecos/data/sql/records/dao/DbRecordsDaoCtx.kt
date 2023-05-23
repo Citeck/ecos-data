@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao
 
+import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
@@ -24,6 +25,7 @@ import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.value.AttValuesConverter
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
+import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.content.EcosContentApi
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.web.client.EcosWebClientApi
@@ -66,10 +68,17 @@ class DbRecordsDaoCtx(
     fun getEntityMeta(entity: DbEntity): DbEntityMeta {
 
         val aspectsIds = DbAttValueUtils.collectLongValues(entity.attributes[DbRecord.ATT_ASPECTS])
-        val aspectsRefs = recordRefService.getEntityRefsByIds(aspectsIds).toMutableSet()
-        val typeId = entity.type.ifBlank {
-            config.typeRef.getLocalId()
+        val refsIds = ArrayList(aspectsIds)
+        if (entity.type != -1L) {
+            refsIds.add(entity.type)
         }
+        val refsById = recordRefService.getEntityRefsByIdsMap(refsIds)
+        val aspectsRefs = aspectsIds.map {
+            refsById[it] ?: error("Aspect ref doesn't found for id $it")
+        }.toMutableSet()
+
+        val typeId = refsById[entity.type]?.getLocalId()
+            ?: entity.legacyType.ifBlank { config.typeRef.getLocalId() }
         val typeInfo = ecosTypeService.getTypeInfoNotNull(typeId)
         typeInfo.aspects.forEach {
             aspectsRefs.add(it.ref)
@@ -110,5 +119,15 @@ class DbRecordsDaoCtx(
             nonSystemAtts,
             allAttributes
         )
+    }
+
+    fun getOrCreateUserRefId(userName: String): Long {
+        return recordRefService.getOrCreateIdByEntityRef(getUserRef(userName))
+    }
+
+    fun getUserRef(userName: String): EntityRef {
+        val nonEmptyUserName = userName.ifBlank { AuthUser.ANONYMOUS }
+        return authoritiesApi?.getPersonRef(nonEmptyUserName)
+            ?: EntityRef.create(AppName.EMODEL, "person", nonEmptyUserName)
     }
 }
