@@ -144,19 +144,23 @@ class MigrateMetaFieldsToRefs : DbDomainMigration {
 
         log.info { "First stage of migration completed with processed count $processedCount. Let's switch columns" }
 
-        fun renameColumn(from: String, to: String) {
+        fun renameColumn(from: String, to: String, dropNotNullConstraints: Boolean = false) {
             val query = "ALTER TABLE ${tableRef.fullName} RENAME COLUMN $from TO $to;"
-            dataSource.update(query, emptyList())
+            dataSource.updateSchema(query)
+            if (dropNotNullConstraints) {
+                dataSource.updateSchema("ALTER TABLE ${tableRef.fullName} ALTER \"$to\" DROP NOT NULL;")
+            }
         }
 
-        renameColumn(DbEntity.TYPE, "__legacy_${DbEntity.TYPE}")
-        renameColumn(DbEntity.CREATOR, "__legacy_${DbEntity.CREATOR}")
-        renameColumn(DbEntity.MODIFIER, "__legacy_${DbEntity.MODIFIER}")
+        context.doInNewTxn {
+            renameColumn(DbEntity.TYPE, "__legacy_${DbEntity.TYPE}", true)
+            renameColumn(DbEntity.CREATOR, "__legacy_${DbEntity.CREATOR}", true)
+            renameColumn(DbEntity.MODIFIER, "__legacy_${DbEntity.MODIFIER}", true)
 
-        renameColumn(TEMP_FIELD_TYPE_REF, DbEntity.TYPE)
-        renameColumn(TEMP_FIELD_CREATOR_REF, DbEntity.CREATOR)
-        renameColumn(TEMP_FIELD_MODIFIER_REF, DbEntity.MODIFIER)
-
+            renameColumn(TEMP_FIELD_TYPE_REF, DbEntity.TYPE)
+            renameColumn(TEMP_FIELD_CREATOR_REF, DbEntity.CREATOR)
+            renameColumn(TEMP_FIELD_MODIFIER_REF, DbEntity.MODIFIER)
+        }
         log.info { "Migration completed" }
     }
 

@@ -143,7 +143,13 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
     }
 
     @Synchronized
-    override fun setColumnType(dataSource: DbDataSource, tableRef: DbTableRef, name: String, multiple: Boolean, newType: DbColumnType) {
+    override fun setColumnType(
+        dataSource: DbDataSource,
+        tableRef: DbTableRef,
+        name: String,
+        multiple: Boolean,
+        newType: DbColumnType
+    ) {
 
         dataSource.withMetaData { metaData ->
 
@@ -197,7 +203,11 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
         }
     }
 
-    override fun createFkConstraints(dataSource: DbDataSource, tableRef: DbTableRef, constraints: List<DbFkConstraint>) {
+    override fun createFkConstraints(
+        dataSource: DbDataSource,
+        tableRef: DbTableRef,
+        constraints: List<DbFkConstraint>
+    ) {
 
         constraints.forEach { constraint ->
 
@@ -232,7 +242,12 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
         }
     }
 
-    override fun setColumnConstraints(dataSource: DbDataSource, tableRef: DbTableRef, columnName: String, constraints: List<DbColumnConstraint>) {
+    override fun setColumnConstraints(
+        dataSource: DbDataSource,
+        tableRef: DbTableRef,
+        columnName: String,
+        constraints: List<DbColumnConstraint>
+    ) {
 
         for (constraint in constraints) {
 

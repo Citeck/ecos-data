@@ -88,7 +88,7 @@ class ChangeContentCreatorType : DbSchemaMigration {
 
         fun renameColumn(from: String, to: String) {
             val query = "ALTER TABLE ${tableRef.fullName} RENAME COLUMN $from TO $to;"
-            context.dataSourceCtx.dataSource.update(query, emptyList())
+            context.dataSourceCtx.dataSource.updateSchema(query)
         }
 
         renameColumn(DbContentEntity.CREATOR, "__legacy_${DbContentEntity.CREATOR}")
