@@ -27,6 +27,7 @@ class DbContentValue(
         const val CONTENT_DATA = "content-data"
 
         const val ATT_NAME = "name"
+        const val ATT_CONTENT_NAME = "contentName"
         const val ATT_EXTENSION = "ext"
         const val ATT_SHA256 = "sha256"
         const val ATT_URL = "url"
@@ -102,6 +103,7 @@ class DbContentValue(
 
         return when (name) {
             ATT_NAME -> contentData.getName()
+            ATT_CONTENT_NAME -> contentData.getName()
             ATT_EXTENSION -> contentData.getName().substringAfterLast('.')
             ATT_SHA256 -> contentData.getSha256()
             ATT_SIZE -> contentData.getSize()
