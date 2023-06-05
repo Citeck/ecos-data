@@ -11,8 +11,10 @@ import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.txn.lib.TxnContext
 import java.util.UUID
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
-class RecordsDaoWritePermsTest : DbRecordsTestBase() {
+class RecordsDaoPermsTest : DbRecordsTestBase() {
 
     @Test
     fun createInTxnPermsTest() {
@@ -48,7 +50,7 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
     }
 
     @Test
-    fun test() {
+    fun `write permissions test`() {
         registerAtts(
             listOf(
                 AttributeDef.create {
@@ -99,5 +101,58 @@ class RecordsDaoWritePermsTest : DbRecordsTestBase() {
                 assertThat(records.getAtt(ref, "test").asText()).isEqualTo(value)
             }
         }
+    }
+
+    @Test
+    fun `custom permissions exists test`() {
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("test")
+                }
+            )
+        )
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
+
+        val user = "user0"
+        val permission = "createProcessInstance"
+
+        val ref = RecordRef.create(recordsDao.getId(), "test-rec")
+        AuthContext.runAs(user) {
+            createRecord("id" to ref.id)
+        }
+        setCustomPermissions(ref, listOf(user), permission)
+
+        val createProcessInstancePermsValue = AuthContext.runAs(user) {
+            records.getAtt(ref, "permissions._has.$permission?bool").asBoolean()
+        }
+
+        assertTrue(createProcessInstancePermsValue)
+    }
+
+    @Test
+    fun `custom permissions not exists test`() {
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("test")
+                }
+            )
+        )
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
+
+        val user = "user0"
+        val permission = "createProcessInstance"
+
+        val ref = RecordRef.create(recordsDao.getId(), "test-rec")
+        AuthContext.runAs(user) {
+            createRecord("id" to ref.id)
+        }
+
+        val createProcessInstancePermsValue = AuthContext.runAs(user) {
+            records.getAtt(ref, "permissions._has.$permission?bool").asBoolean()
+        }
+
+        assertFalse(createProcessInstancePermsValue)
     }
 }

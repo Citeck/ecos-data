@@ -11,6 +11,11 @@ class DbRecPermsValue(
 
     companion object {
         const val ATT_AUTHORITIES_WITH_READ_PERMS = "authoritiesWithReadPerms"
+        const val ATT_ALL_ALLOWED_PERMS = "allAllowedPerms"
+
+        const val PERMS_READ = "Read"
+        const val PERMS_WRITE = "Write"
+        const val PERMS_ALLOWED_ALL = "AllowedAll"
     }
 
     private val recordPermsValue: DbRecordPermsContext by lazy {
@@ -24,18 +29,20 @@ class DbRecPermsValue(
     override fun getAtt(name: String): Any? {
         return when (name) {
             ATT_AUTHORITIES_WITH_READ_PERMS -> recordPermsValue.getAuthoritiesWithReadPermission()
+            ATT_ALL_ALLOWED_PERMS -> recordPermsValue.getAllowedPermissions()
             else -> null
         }
     }
 
     override fun has(name: String): Boolean {
         val perms = recordPermsValue
-        if (name.equals("Write", true)) {
+        if (name.equals(PERMS_WRITE, true)) {
             return perms.hasWritePerms()
         }
-        if (name.equals("Read", true)) {
+        if (name.equals(PERMS_READ, true)) {
             return perms.hasReadPerms()
         }
-        return super.has(name)
+
+        return perms.isAllowed(name)
     }
 }
