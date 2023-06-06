@@ -220,7 +220,9 @@ abstract class DbRecordsTestBase {
                 webAppApi
             )
 
-            TxnContext.setManager(TransactionManagerImpl(webAppApi))
+            val txnManager = TransactionManagerImpl()
+            txnManager.init(webAppApi)
+            TxnContext.setManager(txnManager)
 
             recordsServiceFactory = object : RecordsServiceFactory() {
                 override fun getEcosWebAppApi(): EcosWebAppApi {
