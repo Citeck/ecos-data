@@ -121,7 +121,7 @@ class RecordsDaoPermsTest : DbRecordsTestBase() {
         AuthContext.runAs(user) {
             createRecord("id" to ref.id)
         }
-        setCustomPermissions(ref, listOf(user), permission)
+        addAdditionalPermission(ref, user, permission)
 
         val createProcessInstancePermsValue = AuthContext.runAs(user) {
             records.getAtt(ref, "permissions._has.$permission?bool").asBoolean()

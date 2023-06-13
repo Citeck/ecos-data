@@ -23,7 +23,7 @@ class DefaultDbPermsComponent(
                 canRead = true,
                 canWrite = true,
                 authoritiesWithReadPerms = listOf(AuthGroup.EVERYONE),
-                allAllowedPerms = listOf(DbRecPermsValue.PERMS_ALLOWED_ALL)
+                additionalPerms = listOf(DbRecPermsValue.ADDITIONAL_PERMS_ALL)
             )
         } else {
             AuthContext.runAs(user, authorities.toList()) {
@@ -43,22 +43,14 @@ class DefaultDbPermsComponent(
         @AttName("${DbRecord.ATT_PERMISSIONS}.${DbRecPermsValue.ATT_AUTHORITIES_WITH_READ_PERMS}[]!")
         val authoritiesWithReadPerms: List<String>,
 
-        @AttName("${DbRecord.ATT_PERMISSIONS}.${DbRecPermsValue.ATT_ALL_ALLOWED_PERMS}[]!")
-        val allAllowedPerms: List<String>,
+        @AttName("${DbRecord.ATT_PERMISSIONS}.${DbRecPermsValue.ATT_ADDITIONAL_PERMS}[]!")
+        val additionalPerms: List<String>,
     )
 
     private inner class DefaultRecPerms(private val parentPerms: ParentPermsAtts) : DbRecordPerms {
-        override fun isAllowed(permission: String): Boolean {
-            val parentAllowedPerms = parentPerms.allAllowedPerms
-            if (parentAllowedPerms.size == 1 && parentAllowedPerms.contains(DbRecPermsValue.PERMS_ALLOWED_ALL)) {
-                return true
-            }
 
-            return parentPerms.allAllowedPerms.contains(permission)
-        }
-
-        override fun getAllowedPermissions(): Set<String> {
-            return parentPerms.allAllowedPerms.toSet()
+        override fun getAdditionalPerms(): Set<String> {
+            return parentPerms.additionalPerms.toSet()
         }
 
         override fun getAuthoritiesWithReadPermission(): Set<String> {

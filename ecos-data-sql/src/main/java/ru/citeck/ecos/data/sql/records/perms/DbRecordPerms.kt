@@ -2,9 +2,7 @@ package ru.citeck.ecos.data.sql.records.perms
 
 interface DbRecordPerms {
 
-    fun isAllowed(permission: String): Boolean
-
-    fun getAllowedPermissions(): Set<String>
+    fun getAdditionalPerms(): Set<String>
 
     fun getAuthoritiesWithReadPermission(): Set<String>
 

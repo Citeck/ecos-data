@@ -26,11 +26,7 @@ class DbRecordPermsContext(
         return AuthContext.runAsSystem { perms.hasAttReadPerms(name) }
     }
 
-    fun isAllowed(permission: String): Boolean {
-        return AuthContext.runAsSystem { perms.isAllowed(permission) }
-    }
-
-    fun getAllowedPermissions(): Set<String> {
-        return AuthContext.runAsSystem { perms.getAllowedPermissions() }
+    fun getAdditionalPerms(): Set<String> {
+        return AuthContext.runAsSystem { perms.getAdditionalPerms() }
     }
 }

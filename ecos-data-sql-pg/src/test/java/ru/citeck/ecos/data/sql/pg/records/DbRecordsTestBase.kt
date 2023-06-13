@@ -52,6 +52,7 @@ import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
+import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
 import ru.citeck.ecos.records3.record.request.RequestContext
@@ -335,8 +336,12 @@ abstract class DbRecordsTestBase {
         mainCtx.addAuthoritiesWithReadPerms(rec, authorities)
     }
 
-    fun setCustomPermissions(rec: EntityRef, authorities: Collection<String>, permission: String) {
-        mainCtx.setCustomPermission(rec, authorities, permission)
+    fun addAdditionalPermission(rec: EntityRef, authority: String, permission: String) {
+        mainCtx.addAdditionalPermission(rec, authority, permission)
+    }
+
+    fun addAdditionalPermission(rec: EntityRef, authorities: Collection<String>, permission: String) {
+        mainCtx.addAdditionalPermission(rec, authorities, permission)
     }
 
     fun addAuthoritiesWithReadPerms(rec: EntityRef, vararg authorities: String) {
@@ -367,7 +372,7 @@ abstract class DbRecordsTestBase {
 
         val defaultPermsComponent = DefaultDbPermsComponent(records)
 
-        val recPerms: MutableMap<EntityRef, Pair<String, Set<String>>> = mutableMapOf()
+        val recAdditionalPerms: MutableMap<EntityRef, MutableMap<String, MutableSet<String>>> = mutableMapOf()
         val recReadPerms: MutableMap<EntityRef, Set<String>> = mutableMapOf()
         val recWritePerms: MutableMap<EntityRef, Set<String>> = mutableMapOf()
         val recAttReadPerms: MutableMap<Pair<EntityRef, String>, Set<String>> = mutableMapOf()
@@ -375,15 +380,21 @@ abstract class DbRecordsTestBase {
 
         val permsComponent = object : DbPermsComponent {
             override fun getRecordPerms(user: String, authorities: Set<String>, record: Any): DbRecordPerms {
-                val globalRef = records.getAtt(record, "?id").toEntityRef().withDefaultAppName(APP_NAME)
+                val globalRef = records.getAtt(record, ScalarType.ID_SCHEMA)
+                    .toEntityRef()
+                    .withDefaultAppName(APP_NAME)
                 return object : DbRecordPerms {
-                    override fun isAllowed(permission: String): Boolean {
-                        val (recPermission, toAuthorities) = recPerms[globalRef] ?: return false
-                        return permission == recPermission && authorities.any { toAuthorities.contains(it) }
-                    }
 
-                    override fun getAllowedPermissions(): Set<String> {
-                        return emptySet()
+                    override fun getAdditionalPerms(): Set<String> {
+                        val perms = recAdditionalPerms[globalRef] ?: emptyMap()
+                        if (perms.isEmpty()) {
+                            return emptySet()
+                        }
+                        val additionalPerms = HashSet<String>(perms[user] ?: emptySet())
+                        authorities.forEach { auth ->
+                            additionalPerms.addAll(perms[auth] ?: emptySet())
+                        }
+                        return additionalPerms
                     }
 
                     override fun getAuthoritiesWithReadPermission(): Set<String> {
@@ -452,7 +463,7 @@ abstract class DbRecordsTestBase {
             recordsDao,
             typeRef,
             dataService,
-            recPerms,
+            recAdditionalPerms,
             recReadPerms,
             recWritePerms,
             recAttReadPerms,
@@ -650,7 +661,7 @@ abstract class DbRecordsTestBase {
         val dao: DbRecordsDao,
         val typeRef: EntityRef,
         val dataService: DbDataService<DbEntity>,
-        val recPerms: MutableMap<EntityRef, Pair<String, Set<String>>> = mutableMapOf(),
+        val recAdditionalPerms: MutableMap<EntityRef, MutableMap<String, MutableSet<String>>> = mutableMapOf(),
         val recReadPerms: MutableMap<EntityRef, Set<String>> = mutableMapOf(),
         val recWritePerms: MutableMap<EntityRef, Set<String>> = mutableMapOf(),
         val recAttReadPerms: MutableMap<Pair<EntityRef, String>, Set<String>> = mutableMapOf(),
@@ -660,7 +671,7 @@ abstract class DbRecordsTestBase {
         val baseQuery = createQuery {}
 
         fun clear() {
-            recPerms.clear()
+            recAdditionalPerms.clear()
             recReadPerms.clear()
             recWritePerms.clear()
             recAttReadPerms.clear()
@@ -766,8 +777,15 @@ abstract class DbRecordsTestBase {
             addAuthoritiesWithReadPerms(rec, authorities)
         }
 
-        fun setCustomPermission(rec: EntityRef, authorities: Collection<String>, permission: String) {
-            recPerms[rec.withDefaultAppName(APP_NAME)] = permission to authorities.toSet()
+        fun addAdditionalPermission(rec: EntityRef, authority: String, permission: String) {
+            addAdditionalPermission(rec, listOf(authority), permission)
+        }
+
+        fun addAdditionalPermission(rec: EntityRef, authorities: Collection<String>, permission: String) {
+            val recPerms = recAdditionalPerms.computeIfAbsent(rec.withDefaultAppName(APP_NAME)) { HashMap() }
+            authorities.forEach { auth ->
+                recPerms.computeIfAbsent(auth) { HashSet() }.add(permission)
+            }
         }
 
         fun setAuthoritiesWithReadPerms(rec: EntityRef, authorities: Collection<String>) {
