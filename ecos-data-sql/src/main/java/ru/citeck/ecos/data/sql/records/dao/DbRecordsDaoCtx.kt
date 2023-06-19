@@ -6,14 +6,15 @@ import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
-import ru.citeck.ecos.data.sql.records.DbRecordsDeleteDao
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.content.DbRecContentHandler
+import ru.citeck.ecos.data.sql.records.dao.delete.DbRecordsDeleteDao
 import ru.citeck.ecos.data.sql.records.dao.events.DbRecEventsHandler
 import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler
 import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutConverter
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.RecMutAttOperationsHandler
+import ru.citeck.ecos.data.sql.records.dao.query.DbRecordsQueryDao
 import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
 import ru.citeck.ecos.data.sql.records.refs.DbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
@@ -56,6 +57,7 @@ class DbRecordsDaoCtx(
     val mutAttOperationHandler: RecMutAttOperationsHandler by lazy { RecMutAttOperationsHandler() }
     val recEventsHandler: DbRecEventsHandler by lazy { DbRecEventsHandler(this) }
     val deleteDao: DbRecordsDeleteDao by lazy { DbRecordsDeleteDao(this) }
+    val queryDao: DbRecordsQueryDao by lazy { DbRecordsQueryDao(this) }
 
     fun getLocalRef(extId: String): EntityRef {
         return EntityRef.create(appName, sourceId, extId)

@@ -13,17 +13,14 @@ class DbPermsEntity(
     @Constraints(NOT_NULL)
     var entityRefId: Long,
     @Constraints(NOT_NULL)
-    var authorityId: Long,
-    @Constraints(NOT_NULL)
-    var allowed: Boolean
+    var authorityId: Long
 ) {
     companion object {
         const val TABLE = "ecos_read_perms"
 
         const val ENTITY_REF_ID = "__entity_ref_id"
         const val AUTHORITY_ID = "__authority_id"
-        const val ALLOWED = "__allowed"
     }
 
-    constructor() : this(-1, -1, true)
+    constructor() : this(-1, -1)
 }

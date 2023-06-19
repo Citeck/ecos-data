@@ -9,6 +9,7 @@ import ru.citeck.ecos.data.sql.domain.migration.domain.MoveAssocsToAssocsTable
 import ru.citeck.ecos.data.sql.domain.migration.domain.MovePermsToSchemaTable
 import ru.citeck.ecos.data.sql.domain.migration.schema.ChangeContentCreatorType
 import ru.citeck.ecos.data.sql.domain.migration.schema.DbSchemaMigration
+import ru.citeck.ecos.data.sql.domain.migration.schema.RemoveAllowedFlagFromPerms
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.txn.lib.TxnContext
 
@@ -27,6 +28,7 @@ class DbMigrationService {
         domainMigrations.add(MigrateMetaFieldsToRefs())
 
         schemaMigrations.add(ChangeContentCreatorType())
+        schemaMigrations.add(RemoveAllowedFlagFromPerms())
     }
 
     fun runDomainMigrations(context: DbDomainMigrationContext) {

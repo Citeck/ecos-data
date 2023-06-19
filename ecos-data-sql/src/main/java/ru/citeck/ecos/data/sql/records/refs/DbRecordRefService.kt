@@ -165,6 +165,10 @@ class DbRecordRefService(
         dataService.resetColumnsCache()
     }
 
+    fun getDataService(): DbDataService<DbRecordRefEntity> {
+        return dataService
+    }
+
     private fun fixEntityRef(entityRef: EntityRef): EntityRef {
         if (entityRef.getAppName().isNotBlank()) {
             return entityRef

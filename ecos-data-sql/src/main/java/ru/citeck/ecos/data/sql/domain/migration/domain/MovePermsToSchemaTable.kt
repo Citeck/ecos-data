@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.domain.migration.domain
 
 import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigrationContext
+import ru.citeck.ecos.data.sql.domain.migration.schema.RemoveAllowedFlagFromPerms
 import ru.citeck.ecos.data.sql.perms.DbPermsEntity
 
 class MovePermsToSchemaTable : DbDomainMigration {
@@ -24,13 +25,23 @@ class MovePermsToSchemaTable : DbDomainMigration {
 
         context.schemaContext.entityPermsService.createTableIfNotExists()
 
-        val migrationQuery = "INSERT INTO ${targetTableRef.fullName}" +
-            "(${DbPermsEntity.ENTITY_REF_ID},${DbPermsEntity.AUTHORITY_ID},${DbPermsEntity.ALLOWED}) " +
-            "SELECT " +
+        val columns = context.schemaContext.getColumns(DbPermsEntity.TABLE)
+        val hasAllowed = columns.any { it.name == RemoveAllowedFlagFromPerms.COLUMN_ALLOWED }
+
+        var migrationQuery = "INSERT INTO ${targetTableRef.fullName}" +
+            "(${DbPermsEntity.ENTITY_REF_ID},${DbPermsEntity.AUTHORITY_ID}"
+
+        if (hasAllowed) {
+            migrationQuery += ",${RemoveAllowedFlagFromPerms.COLUMN_ALLOWED}"
+        }
+        migrationQuery += ") SELECT " +
             "recs.__ref_id as __entity_ref_id," +
-            "perms.__authority_id," +
-            "perms.__allowed " +
-            "FROM ${permsTableRef.fullName} perms JOIN ${tableRef.fullName} recs on perms.__record_id = recs.id;"
+            "perms.__authority_id"
+        if (hasAllowed) {
+            migrationQuery += ",perms.__allowed"
+        }
+        migrationQuery += " FROM ${permsTableRef.fullName} perms JOIN ${tableRef.fullName} recs on perms.__record_id = recs.id;"
+
         log.info { "Migrate permissions from $permsTableRef to $targetTableRef. Query: $migrationQuery" }
 
         val dataSource = context.schemaContext.dataSourceCtx.dataSource

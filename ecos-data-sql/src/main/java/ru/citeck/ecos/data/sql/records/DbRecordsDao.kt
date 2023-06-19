@@ -22,6 +22,7 @@ import ru.citeck.ecos.data.sql.records.dao.atts.DbAssocAttValuesContainer
 import ru.citeck.ecos.data.sql.records.dao.atts.DbEmptyRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
+import ru.citeck.ecos.data.sql.records.dao.delete.DbRecordsDeleteDao
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
@@ -30,28 +31,19 @@ import ru.citeck.ecos.data.sql.records.refs.DbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.refs.DefaultDbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
-import ru.citeck.ecos.data.sql.records.utils.DbDateUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
-import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbDataService
-import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
-import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
 import ru.citeck.ecos.model.lib.ModelServiceFactory
-import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
-import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
-import ru.citeck.ecos.records2.predicate.PredicateService
-import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.*
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
-import ru.citeck.ecos.records3.record.atts.schema.resolver.AttContext
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.records3.record.dao.AbstractRecordsDao
@@ -69,17 +61,14 @@ import ru.citeck.ecos.txn.lib.transaction.Transaction
 import ru.citeck.ecos.webapp.api.content.EcosContentData
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.entity.EntityRef
-import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.time.Instant
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.regex.Pattern
 import kotlin.collections.ArrayList
 import kotlin.collections.HashSet
 import kotlin.collections.LinkedHashMap
 import kotlin.collections.LinkedHashSet
-import kotlin.math.min
 
 class DbRecordsDao(
     private val config: DbRecordsDaoConfig,
@@ -103,8 +92,6 @@ class DbRecordsDao(
         private const val ATT_CUSTOM_NAME = "name"
 
         private const val ASPECT_VERSIONABLE_DATA = "${DbRecord.ASPECT_VERSIONABLE}-data"
-
-        private val AGG_FUNC_PATTERN = Pattern.compile("^(\\w+)\\((\\w+|\\*)\\)$")
 
         private val log = KotlinLogging.logger {}
     }
@@ -300,319 +287,9 @@ class DbRecordsDao(
     }
 
     override fun queryRecords(recsQuery: RecordsQuery): RecsQueryRes<DbRecord> {
-        return TxnContext.doInTxn(readOnly = true) { queryRecordsInTxn(recsQuery) }
-    }
-
-    private fun queryRecordsInTxn(recsQuery: RecordsQuery): RecsQueryRes<DbRecord> {
-
-        val language = recsQuery.language
-        if (language.isNotEmpty() && language != PredicateService.LANGUAGE_PREDICATE) {
-            return RecsQueryRes()
+        return TxnContext.doInTxn(readOnly = true) {
+            daoCtx.queryDao.queryRecords(recsQuery)
         }
-        val originalPredicate = if (recsQuery.query.isNull()) {
-            Predicates.alwaysTrue()
-        } else {
-            recsQuery.getQuery(Predicate::class.java)
-        }
-
-        val ecosTypeRef = if (recsQuery.ecosType.isNotEmpty()) {
-            ModelUtils.getTypeRef(recsQuery.ecosType)
-        } else {
-            val queryTypePred = PredicateUtils.filterValuePredicates(originalPredicate) {
-                it.getAttribute() == RecordConstants.ATT_TYPE && it.getValue().asText().isNotBlank()
-            }.orElse(null)
-            if (queryTypePred is ValuePredicate) {
-                EntityRef.valueOf(queryTypePred.getValue().asText())
-            } else {
-                config.typeRef
-            }
-        }
-
-        val attributesById: Map<String, AttributeDef>
-        val typeAspects: Set<EntityRef>
-        var queryPermsPolicy = QueryPermsPolicy.OWN
-
-        if (ecosTypeRef.isNotEmpty()) {
-            val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.getLocalId())
-            attributesById = typeInfo?.model?.getAllAttributes()?.associateBy { it.id } ?: emptyMap()
-            typeAspects = typeInfo?.aspects?.map { it.ref }?.toSet() ?: emptySet()
-            queryPermsPolicy = typeInfo?.queryPermsPolicy ?: queryPermsPolicy
-        } else {
-            attributesById = emptyMap()
-            typeAspects = emptySet()
-        }
-        if (AuthContext.isRunAsSystem()) {
-            queryPermsPolicy = QueryPermsPolicy.PUBLIC
-        }
-
-        fun replaceRefsToIds(value: DataValue): DataValue {
-            if (value.isArray()) {
-                return DataValue.create(
-                    recordRefService.getIdByEntityRefs(
-                        value.mapNotNull {
-                            val txt = if (it.isTextual()) {
-                                it.asText()
-                            } else {
-                                ""
-                            }
-                            if (txt.isNotEmpty()) {
-                                txt.toEntityRef()
-                            } else {
-                                null
-                            }
-                        }
-                    )
-                )
-            }
-            if (value.isTextual()) {
-                val txt = value.asText()
-                if (txt.isEmpty()) {
-                    return value
-                }
-                val refIds = recordRefService.getIdByEntityRefs(
-                    listOf(txt.toEntityRef())
-                )
-                return DataValue.create(refIds.firstOrNull() ?: -1)
-            }
-            return value
-        }
-
-        var typePredicateExists = false
-        val assocJoins = mutableMapOf<String, AssocJoin>()
-        var assocJoinsCounter = 0
-        val assocsTableExists = assocsService.isAssocsTableExists()
-
-        var predicate =
-            PredicateUtils.mapAttributePredicates(recsQuery.getQuery(Predicate::class.java)) { currentPred ->
-                val attribute = currentPred.getAttribute()
-                if (currentPred is ValuePredicate) {
-                    when (attribute) {
-                        RecordConstants.ATT_TYPE -> {
-                            typePredicateExists = true
-                            val value = currentPred.getValue()
-                            when (currentPred.getType()) {
-                                ValuePredicate.Type.EQ,
-                                ValuePredicate.Type.CONTAINS,
-                                ValuePredicate.Type.IN -> {
-                                    val expandedValue = mutableSetOf<String>()
-                                    if (value.isArray()) {
-                                        value.forEach { typeRef ->
-                                            val typeId = typeRef.asText().toEntityRef().getLocalId()
-                                            expandedValue.add(typeId)
-                                            ecosTypeService.getAllChildrenIds(typeId, expandedValue)
-                                        }
-                                    } else {
-                                        val typeId = EntityRef.valueOf(value.asText()).getLocalId()
-                                        expandedValue.add(typeId)
-                                        ecosTypeService.getAllChildrenIds(typeId, expandedValue)
-                                    }
-                                    val expandedValueIds = recordRefService.getIdByEntityRefs(
-                                        expandedValue.map {
-                                            ModelUtils.getTypeRef(it)
-                                        }
-                                    )
-                                    if (currentPred.getType() != ValuePredicate.Type.IN) {
-                                        if (expandedValueIds.size > 1) {
-                                            ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, expandedValueIds)
-                                        } else if (expandedValueIds.size == 1) {
-                                            ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValueIds.first())
-                                        } else {
-                                            Predicates.alwaysTrue()
-                                        }
-                                    } else {
-                                        ValuePredicate(DbEntity.TYPE, currentPred.getType(), expandedValueIds)
-                                    }
-                                }
-
-                                else -> {
-                                    Predicates.alwaysFalse()
-                                }
-                            }
-                        }
-                        DbRecord.ATT_ASPECTS -> {
-                            val aspectsPredicate: Predicate = when (currentPred.getType()) {
-                                ValuePredicate.Type.EQ,
-                                ValuePredicate.Type.CONTAINS -> {
-                                    val value = currentPred.getValue()
-                                    if (value.isTextual()) {
-                                        if (typeAspects.contains(value.asText().toEntityRef())) {
-                                            Predicates.alwaysTrue()
-                                        } else {
-                                            currentPred
-                                        }
-                                    } else {
-                                        currentPred
-                                    }
-                                }
-
-                                ValuePredicate.Type.IN -> {
-                                    val aspects = currentPred.getValue().toList(EntityRef::class.java)
-                                    if (aspects.any { typeAspects.contains(it) }) {
-                                        Predicates.alwaysTrue()
-                                    } else {
-                                        currentPred
-                                    }
-                                }
-
-                                else -> currentPred
-                            }
-                            if (aspectsPredicate is ValuePredicate) {
-                                ValuePredicate(
-                                    aspectsPredicate.getAttribute(),
-                                    aspectsPredicate.getType(),
-                                    replaceRefsToIds(aspectsPredicate.getValue())
-                                )
-                            } else {
-                                aspectsPredicate
-                            }
-                        }
-
-                        else -> {
-
-                            val attDef = attributesById[attribute]
-                                ?: DbRecord.GLOBAL_ATTS[attribute]
-
-                            var newPred: Predicate = if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
-                                ValuePredicate(
-                                    DbRecord.ATTS_MAPPING[attribute],
-                                    currentPred.getType(),
-                                    currentPred.getValue()
-                                )
-                            } else {
-                                currentPred
-                            }
-
-                            if (newPred is ValuePredicate && newPred.getType() == ValuePredicate.Type.EQ) {
-                                if (newPred.getAttribute() == DbEntity.NAME || attDef?.type == AttributeType.MLTEXT) {
-                                    // MLText fields stored as json text like '{"en":"value"}'
-                                    // and for equals predicate we should use '"value"' instead of 'value' to search
-                                    // and replace "EQ" to "CONTAINS"
-                                    newPred = ValuePredicate(
-                                        newPred.getAttribute(),
-                                        ValuePredicate.Type.CONTAINS,
-                                        DataValue.createStr(newPred.getValue().toString())
-                                    )
-                                }
-                            }
-                            if (newPred is ValuePredicate && DbRecordsUtils.isAssocLikeAttribute(attDef)) {
-                                val newAttribute = if (assocsTableExists && attDef?.multiple == true) {
-                                    val assocAtt = newPred.getAttribute()
-                                    val joinAtt = "$assocAtt-${assocJoinsCounter++}"
-                                    assocJoins[joinAtt] = AssocJoin(
-                                        daoCtx.assocsService.getIdForAtt(assocAtt),
-                                        assocAtt
-                                    )
-                                    joinAtt
-                                } else {
-                                    newPred.getAttribute()
-                                }
-                                newPred = ValuePredicate(
-                                    newAttribute,
-                                    newPred.getType(),
-                                    replaceRefsToIds(newPred.getValue())
-                                )
-                            } else if (newPred is ValuePredicate &&
-                                (attDef?.type == AttributeType.DATE || attDef?.type == AttributeType.DATETIME)
-                            ) {
-
-                                val value = newPred.getValue()
-
-                                if (value.isTextual()) {
-
-                                    val textVal = DbDateUtils.normalizeDateTimePredicateValue(
-                                        value.asText(),
-                                        attDef.type == AttributeType.DATETIME
-                                    )
-                                    val rangeDelimIdx = textVal.indexOf('/')
-
-                                    newPred = if (rangeDelimIdx > 0 && textVal.length > rangeDelimIdx + 1) {
-
-                                        val rangeFrom = textVal.substring(0, rangeDelimIdx)
-                                        val rangeTo = textVal.substring(rangeDelimIdx + 1)
-
-                                        AndPredicate.of(
-                                            ValuePredicate.ge(newPred.getAttribute(), rangeFrom),
-                                            ValuePredicate.lt(newPred.getAttribute(), rangeTo)
-                                        )
-                                    } else {
-                                        ValuePredicate(newPred.getAttribute(), newPred.getType(), textVal)
-                                    }
-                                }
-                            }
-                            newPred
-                        }
-                    }
-                } else if (currentPred is EmptyPredicate) {
-                    if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
-                        EmptyPredicate(DbRecord.ATTS_MAPPING[attribute])
-                    } else {
-                        currentPred
-                    }
-                } else {
-                    log.error { "Unknown predicate type: ${currentPred::class}" }
-                    null
-                }
-            } ?: Predicates.alwaysTrue()
-
-        if (!typePredicateExists && config.typeRef.getLocalId() != ecosTypeRef.getLocalId()) {
-            val typeIds = mutableListOf<String>()
-            typeIds.add(ecosTypeRef.getLocalId())
-            ecosTypeService.getAllChildrenIds(ecosTypeRef.getLocalId(), typeIds)
-            val typeRefIds = recordRefService.getIdByEntityRefs(typeIds.map { ModelUtils.getTypeRef(it) })
-            val typePred: Predicate = if (typeRefIds.size == 1) {
-                ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.EQ, typeRefIds[0])
-            } else {
-                ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, typeRefIds)
-            }
-            predicate = Predicates.and(typePred, predicate)
-        }
-
-        val selectFunctions = mutableListOf<AggregateFunc>()
-        AttContext.getCurrentNotNull().getSchemaAtt().inner.forEach {
-            if (it.name.contains("(")) {
-                val matcher = AGG_FUNC_PATTERN.matcher(it.name)
-                if (matcher.matches()) {
-                    selectFunctions.add(
-                        AggregateFunc(
-                            it.name,
-                            matcher.group(1),
-                            matcher.group(2)
-                        )
-                    )
-                }
-            }
-        }
-
-        val page = recsQuery.page
-
-        val findRes = dataService.doWithPermsPolicy(queryPermsPolicy) {
-            dataService.find(
-                predicate,
-                recsQuery.sortBy.map {
-                    DbFindSort(DbRecord.ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.ascending)
-                },
-                DbFindPage(
-                    page.skipCount,
-                    if (page.maxItems == -1) {
-                        config.queryMaxItems
-                    } else {
-                        min(page.maxItems, config.queryMaxItems)
-                    }
-                ),
-                false,
-                recsQuery.groupBy,
-                selectFunctions,
-                assocJoins,
-                true
-            )
-        }
-
-        val queryRes = RecsQueryRes<DbRecord>()
-        queryRes.setTotalCount(findRes.totalCount)
-        queryRes.setRecords(findRes.entities.map { DbRecord(daoCtx, it) })
-        queryRes.setHasMore(findRes.totalCount > findRes.entities.size + page.skipCount)
-
-        return queryRes
     }
 
     override fun delete(recordIds: List<String>): List<DelStatus> {
@@ -1251,9 +928,7 @@ class DbRecordsDao(
                 result.add(
                     DbEntityPermsDto(
                         refId,
-                        getRecordPerms(recordIdsList[idx]).getAuthoritiesWithReadPermission(),
-                        // todo
-                        emptySet()
+                        getRecordPerms(recordIdsList[idx]).getAuthoritiesWithReadPermission()
                     )
                 )
             }

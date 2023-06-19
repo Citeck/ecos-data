@@ -74,7 +74,8 @@ class DbAssocsService(
                 true,
                 listOf(DbAssocEntity.SOURCE_ID),
                 listOf(AggregateFunc(DbAssocEntity.INDEX, "max", DbAssocEntity.INDEX)),
-                emptyMap(),
+                emptyList(),
+                emptyList(),
                 false
             )
 

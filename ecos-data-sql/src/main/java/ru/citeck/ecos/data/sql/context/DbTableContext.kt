@@ -24,9 +24,9 @@ interface DbTableContext {
 
     fun getTableRef(): DbTableRef
 
-    fun getColumnByName(name: String): DbColumnDef?
+    fun getColumnByName(name: String?): DbColumnDef?
 
-    fun hasColumn(name: String): Boolean
+    fun hasColumn(name: String?): Boolean
 
     fun hasIdColumn(): Boolean
 
@@ -39,4 +39,6 @@ interface DbTableContext {
     fun getCurrentUserAuthorityIds(): Set<Long>
 
     fun getQueryPermsPolicy(): QueryPermsPolicy
+
+    fun isSameSchema(other: DbTableContext): Boolean
 }

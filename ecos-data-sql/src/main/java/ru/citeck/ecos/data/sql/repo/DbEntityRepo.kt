@@ -6,6 +6,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
+import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.records2.predicate.model.Predicate
 
 interface DbEntityRepo {
@@ -18,7 +19,8 @@ interface DbEntityRepo {
         withDeleted: Boolean,
         groupBy: List<String>,
         selectFunctions: List<AggregateFunc>,
-        assocJoins: Map<String, AssocJoin>,
+        assocJoins: List<AssocJoin>,
+        assocTableJoins: List<AssocTableJoin>,
         withTotalCount: Boolean
     ): DbFindRes<Map<String, Any?>>
 
@@ -26,7 +28,8 @@ interface DbEntityRepo {
         context: DbTableContext,
         predicate: Predicate,
         groupBy: List<String>,
-        assocJoins: Map<String, AssocJoin>
+        assocJoins: List<AssocJoin>,
+        assocTableJoins: List<AssocTableJoin>,
     ): Long
 
     fun save(context: DbTableContext, entities: List<Map<String, Any?>>): List<Map<String, Any?>>

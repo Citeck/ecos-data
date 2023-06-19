@@ -24,4 +24,8 @@ class DbRecordRefEntity {
 
     @Constraints(DbColumnConstraint.NOT_NULL)
     var extId: String = ""
+
+    override fun toString(): String {
+        return "{\"id\":$id,\"extId\":\"$extId\"}"
+    }
 }

@@ -75,7 +75,8 @@ class MigrateMetaFieldsToRefs : DbDomainMigration {
                 true,
                 emptyList(),
                 emptyList(),
-                emptyMap(),
+                emptyList(),
+                emptyList(),
                 withTotalCount
             ).mapEntities {
                 val id = it[DbEntity.ID] as Long

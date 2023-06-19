@@ -65,7 +65,6 @@ class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntit
         val allAuthorities = mutableSetOf<String>()
         permissions.forEach {
             allAuthorities.addAll(it.readAllowed)
-            allAuthorities.addAll(it.readDenied)
         }
         setReadPermsInDb(permissions, ensureAuthoritiesExists(allAuthorities))
     }
@@ -76,7 +75,7 @@ class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntit
 
             val entityRefId = entityPerms.entityRefId
 
-            val currentPerms: List<DbPermsEntity> = dataService.findAll(
+            val currentAllowedPerms: List<DbPermsEntity> = dataService.findAll(
                 Predicates.eq(DbPermsEntity.ENTITY_REF_ID, entityRefId)
             )
 
@@ -85,53 +84,37 @@ class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntit
                     authorityIdByName[it] ?: error("Authority id doesn't found for '$it'")
                 }
             )
-            val deniedAuth = HashSet(
-                entityPerms.readDenied.map {
-                    authorityIdByName[it] ?: error("Authority id doesn't found for '$it'")
-                }
-            )
 
-            val permsAuthToDelete = currentPerms.filter {
-                if (it.allowed) {
-                    !allowedAuth.contains(it.authorityId)
-                } else {
-                    !deniedAuth.contains(it.authorityId)
-                }
+            val allowedPermsAuthToDelete = currentAllowedPerms.filter {
+                !allowedAuth.contains(it.authorityId)
             }.map {
                 it.authorityId
             }
-            if (permsAuthToDelete.isNotEmpty()) {
+            if (allowedPermsAuthToDelete.isNotEmpty()) {
                 dataService.forceDelete(
                     Predicates.and(
                         Predicates.eq(DbPermsEntity.ENTITY_REF_ID, entityRefId),
-                        ValuePredicate(DbPermsEntity.AUTHORITY_ID, ValuePredicate.Type.IN, permsAuthToDelete)
+                        ValuePredicate(DbPermsEntity.AUTHORITY_ID, ValuePredicate.Type.IN, allowedPermsAuthToDelete)
                     )
                 )
             }
 
-            for (perms in currentPerms) {
-                if (perms.allowed) {
-                    allowedAuth.remove(perms.authorityId)
-                } else {
-                    deniedAuth.remove(perms.authorityId)
-                }
+            for (perms in currentAllowedPerms) {
+                allowedAuth.remove(perms.authorityId)
             }
 
-            if (allowedAuth.isEmpty() && deniedAuth.isEmpty()) {
+            if (allowedAuth.isEmpty()) {
                 return
             }
 
-            val entitiesToSave = ArrayList<DbPermsEntity>(allowedAuth.size + deniedAuth.size)
-            fun addEntityToSave(allowed: Boolean, authorityId: Long) {
+            val entitiesToSave = ArrayList<DbPermsEntity>(allowedAuth.size)
+
+            allowedAuth.forEach {
                 val entity = DbPermsEntity()
                 entity.entityRefId = entityRefId
-                entity.authorityId = authorityId
-                entity.allowed = allowed
+                entity.authorityId = it
                 entitiesToSave.add(entity)
             }
-
-            allowedAuth.forEach { addEntityToSave(true, it) }
-            deniedAuth.forEach { addEntityToSave(false, it) }
 
             dataService.save(entitiesToSave)
         }

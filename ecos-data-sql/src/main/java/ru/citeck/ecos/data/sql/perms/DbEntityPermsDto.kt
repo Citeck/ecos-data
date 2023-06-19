@@ -6,9 +6,7 @@ data class DbEntityPermsDto(
     /**
      * Authorities which is allowed to read entity
      */
-    val readAllowed: Set<String>,
-    /**
-     * Authorities which is not allowed to read entity
-     */
-    val readDenied: Set<String>
+    val readAllowed: Set<String>
+
+    // possibly readDenied field in future
 )

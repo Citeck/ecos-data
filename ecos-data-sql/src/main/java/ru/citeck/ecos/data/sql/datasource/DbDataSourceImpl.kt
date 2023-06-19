@@ -74,11 +74,11 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
     }
 
     private fun logQuery(time: Long, query: String) {
-        if (time < 1000) {
+        if (time < 10_000) {
             log.debug { "[SQL][${getCurrentTxn()}][$time] $query" }
-        } else if (time < 5000) {
+        } else if (time < 30_000) {
             log.info { "[SQL][${getCurrentTxn()}][$time] $query" }
-        } else if (time < 10_000) {
+        } else {
             log.warn { "[SQL][${getCurrentTxn()}][$time] $query" }
         }
     }

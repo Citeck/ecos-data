@@ -9,6 +9,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
+import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.predicate.model.Predicate
 
@@ -51,7 +52,8 @@ interface DbDataService<T : Any> {
         withDeleted: Boolean,
         groupBy: List<String>,
         selectFunctions: List<AggregateFunc>,
-        assocJoins: Map<String, AssocJoin>,
+        assocJoins: List<AssocJoin>,
+        assocTableJoins: List<AssocTableJoin>,
         withTotalCount: Boolean
     ): DbFindRes<T>
 
@@ -62,7 +64,8 @@ interface DbDataService<T : Any> {
         withDeleted: Boolean,
         groupBy: List<String>,
         selectFunctions: List<AggregateFunc>,
-        assocJoins: Map<String, AssocJoin>,
+        assocJoins: List<AssocJoin>,
+        assocTableJoins: List<AssocTableJoin>,
         withTotalCount: Boolean
     ): DbFindRes<Map<String, Any?>>
 

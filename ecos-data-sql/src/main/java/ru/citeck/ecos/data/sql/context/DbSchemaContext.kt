@@ -31,7 +31,7 @@ class DbSchemaContext(
     val dataSourceCtx: DbDataSourceContext,
 ) {
     companion object {
-        const val NEW_SCHEMA_VERSION = 1
+        const val NEW_SCHEMA_VERSION = 2
     }
 
     val schemaMetaService: DbSchemaMetaService = DbSchemaMetaServiceImpl(this)
