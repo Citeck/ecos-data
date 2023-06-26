@@ -345,26 +345,30 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         for (entity in entities) {
 
             val attributes = entity.data
-            val version: Long = attributes[DbEntity.UPD_VERSION] as? Long
-                ?: error("Missing attribute: ${DbEntity.UPD_VERSION}")
-
-            var newVersion = version + 1
-            if (newVersion >= Int.MAX_VALUE) {
-                newVersion = 0L
-            }
-
             val attsToUpdate = LinkedHashMap(attributes)
-            attsToUpdate[DbEntity.UPD_VERSION] = newVersion
+
+            var currentVersion: Long = -1
+            if (context.hasColumn(DbEntity.UPD_VERSION)) {
+                currentVersion = attributes[DbEntity.UPD_VERSION] as? Long
+                    ?: error("Missing attribute: ${DbEntity.UPD_VERSION}")
+
+                var newVersion = currentVersion + 1
+                if (newVersion >= Int.MAX_VALUE) {
+                    newVersion = 0L
+                }
+                attsToUpdate[DbEntity.UPD_VERSION] = newVersion
+            }
 
             val columns = context.getColumns().filter { attsToUpdate.containsKey(it.name) }
 
             val valuesForDb = prepareValuesForDb(columns, typesConverter, listOf(attsToUpdate))
             val setPlaceholders = valuesForDb.joinToString(",") { "\"${it.name}\"=${it.placeholder}" }
 
-            val query = "UPDATE ${tableRef.fullName} SET $setPlaceholders " +
-                "WHERE \"${DbEntity.ID}\"='${entity.id}' " +
-                "AND \"${DbEntity.UPD_VERSION}\"=$version"
-
+            var query = "UPDATE ${tableRef.fullName} SET $setPlaceholders " +
+                "WHERE \"${DbEntity.ID}\"='${entity.id}'"
+            if (currentVersion > -1) {
+                query += " AND \"${DbEntity.UPD_VERSION}\"=$currentVersion"
+            }
             if (dataSource.update(query, valuesForDb.map { it.values[0] }).first() != 1L) {
                 error("Concurrent modification of record with id: ${entity.id}")
             }
@@ -665,7 +669,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             return
         }
         val tableRef = context.getTableRef()
-        val assocsTableName = tableRef.withTable(DbAssocEntity.TABLE).fullName
+        val assocsTableName = tableRef.withTable(DbAssocEntity.MAIN_TABLE).fullName
         query.append(
             "EXISTS(SELECT 1 FROM $assocsTableName a WHERE " +
                 "a.${DbAssocEntity.SOURCE_ID}=\"$table\".${DbEntity.REF_ID} " +

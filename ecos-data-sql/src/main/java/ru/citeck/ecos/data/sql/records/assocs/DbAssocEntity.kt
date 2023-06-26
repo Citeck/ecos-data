@@ -13,7 +13,8 @@ import java.time.Instant
 class DbAssocEntity {
 
     companion object {
-        const val TABLE = "ecos_associations"
+        const val MAIN_TABLE = "ecos_associations"
+        const val DELETED_TABLE = "ecos_associations_deleted"
 
         const val NEW_REC_ID = -1L
 
@@ -27,6 +28,9 @@ class DbAssocEntity {
         const val CREATED = "__created"
         const val CREATOR = "__creator"
     }
+
+    @Constraints(DbColumnConstraint.PRIMARY_KEY)
+    var id: Long = NEW_REC_ID
 
     @Constraints(DbColumnConstraint.NOT_NULL)
     var sourceId: Long = -1
@@ -44,11 +48,21 @@ class DbAssocEntity {
     var index: Int = 0
 
     @Constraints(DbColumnConstraint.NOT_NULL)
-    var deleted: Boolean = false
-
-    @Constraints(DbColumnConstraint.NOT_NULL)
     var created: Instant = Instant.EPOCH
 
     @Constraints(DbColumnConstraint.NOT_NULL)
     var creator: Long = -1
+
+    fun copy(): DbAssocEntity {
+        val result = DbAssocEntity()
+        result.id = id
+        result.sourceId = sourceId
+        result.targetId = targetId
+        result.attributeId = attributeId
+        result.child = child
+        result.index = index
+        result.created = created
+        result.creator = creator
+        return result
+    }
 }

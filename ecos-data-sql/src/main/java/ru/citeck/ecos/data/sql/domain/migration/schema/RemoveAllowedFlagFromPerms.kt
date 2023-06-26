@@ -13,9 +13,12 @@ class RemoveAllowedFlagFromPerms : DbSchemaMigration {
         if (!context.entityPermsService.isTableExists()) {
             return
         }
-        val tableRef = context.getTableRef(DbPermsEntity.TABLE)
-        val query = "ALTER TABLE ${tableRef.fullName} DROP COLUMN \"$COLUMN_ALLOWED\";"
-        context.dataSourceCtx.dataSource.updateSchema(query)
+        val hasAllowedColumn = context.getColumns(DbPermsEntity.TABLE).any { it.name == COLUMN_ALLOWED }
+        if (hasAllowedColumn) {
+            val tableRef = context.getTableRef(DbPermsEntity.TABLE)
+            val query = "ALTER TABLE ${tableRef.fullName} DROP COLUMN \"$COLUMN_ALLOWED\";"
+            context.dataSourceCtx.dataSource.updateSchema(query)
+        }
     }
 
     override fun getAppliedVersions(): Int {

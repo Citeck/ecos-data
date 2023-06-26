@@ -22,13 +22,20 @@ class DbAssocsService(
     private val dataService: DbDataService<DbAssocEntity> = DbDataServiceImpl(
         DbAssocEntity::class.java,
         DbDataServiceConfig.create {
-            withTable(DbAssocEntity.TABLE)
+            withTable(DbAssocEntity.MAIN_TABLE)
+        },
+        schemaCtx
+    )
+
+    private val deletedDataService: DbDataService<DbAssocEntity> = DbDataServiceImpl(
+        DbAssocEntity::class.java,
+        DbDataServiceConfig.create {
+            withTable(DbAssocEntity.DELETED_TABLE)
         },
         schemaCtx
     )
 
     private val attsService = DbEcosAttributesService(schemaCtx)
-    private val refsService = schemaCtx.recordRefService
 
     fun getIdsForAtts(attributes: Collection<String>, createIfNotExists: Boolean = false): Map<String, Long> {
         return attsService.getIdsForAtts(attributes, createIfNotExists)
@@ -56,7 +63,8 @@ class DbAssocsService(
                 Predicates.eq(DbAssocEntity.CHILD, child)
             ),
             emptyList(),
-            DbFindPage.ALL
+            DbFindPage.ALL,
+            true
         )
         val assocsToCreate = LinkedHashSet(targetIds)
         existingAssocs.entities.forEach {
@@ -85,37 +93,38 @@ class DbAssocsService(
                 maxIdxFindRes.entities[0].index + 1
             }
 
-            dataService.save(
-                assocsToCreate.map {
-                    val entity = DbAssocEntity()
-                    entity.sourceId = sourceId
-                    entity.targetId = it
-                    entity.attributeId = attId
-                    entity.child = child
-                    entity.index = index++
-                    entity.creator = creatorId
-                    entity.created = Instant.now()
-                    entity
-                }
+            deletedDataService.forceDelete(
+                Predicates.and(
+                    Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId),
+                    Predicates.eq(DbAssocEntity.ATTRIBUTE, attId),
+                    ValuePredicate(DbAssocEntity.TARGET_ID, ValuePredicate.Type.IN, assocsToCreate)
+                )
             )
+
+            val entitiesToCreate = assocsToCreate.map {
+                val entity = DbAssocEntity()
+                entity.sourceId = sourceId
+                entity.targetId = it
+                entity.attributeId = attId
+                entity.child = child
+                entity.index = index++
+                entity.creator = creatorId
+                entity.created = Instant.now()
+                entity
+            }
+            dataService.save(entitiesToCreate)
         }
         return assocsToCreate.toList()
     }
 
     fun removeAssocs(sourceId: Long, force: Boolean) {
-        val predicate = Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId)
-        if (force) {
-            dataService.forceDelete(predicate)
-        } else {
-            dataService.delete(predicate)
-        }
+        deleteByPredicate(Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId), force)
     }
 
     fun removeAssocs(sourceId: Long, attribute: String, targetIds: Collection<Long>, force: Boolean): List<Long> {
         if (targetIds.isEmpty()) {
             return emptyList()
         }
-
         fun createPredicateForIds(ids: Collection<Long>): Predicate {
             return Predicates.and(
                 Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId),
@@ -131,13 +140,35 @@ class DbAssocsService(
         }
 
         val targetsToRemove = existentAssocs.map { it.targetId }
-        val predicate = createPredicateForIds(targetsToRemove)
+        deleteByPredicate(createPredicateForIds(targetsToRemove), force)
+        return targetsToRemove
+    }
+
+    private fun deleteByPredicate(predicate: Predicate, force: Boolean) {
         if (force) {
             dataService.forceDelete(predicate)
         } else {
-            dataService.delete(predicate)
+            fun findNext(): List<DbAssocEntity> {
+                return dataService.find(
+                    predicate,
+                    emptyList(),
+                    DbFindPage(0, 100),
+                    true
+                ).entities
+            }
+            var searchRes = findNext()
+            while (searchRes.isNotEmpty()) {
+                deletedDataService.save(
+                    searchRes.map {
+                        val entity = it.copy()
+                        entity.id = DbAssocEntity.NEW_REC_ID
+                        entity
+                    }
+                )
+                dataService.forceDelete(searchRes)
+                searchRes = findNext()
+            }
         }
-        return targetsToRemove
     }
 
     fun getTargetAssocs(sourceId: Long, attribute: String, page: DbFindPage): DbFindRes<DbAssocDto> {
@@ -173,6 +204,7 @@ class DbAssocsService(
     fun createTableIfNotExists() {
         TxnContext.doInTxn {
             dataService.runMigrations(mock = false, diff = true)
+            deletedDataService.runMigrations(mock = false, diff = true)
         }
     }
 
