@@ -243,14 +243,15 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                             }
                         }
                         if (newPred is ValuePredicate && DbRecordsUtils.isAssocLikeAttribute(attDef)) {
-                            val newAttribute = if (assocsTableExists) {
-                                val assocAtt = newPred.getAttribute()
+                            val assocAtt = newPred.getAttribute()
+                            val newAttribute = if (assocAtt != RecordConstants.ATT_PARENT && assocsTableExists) {
                                 val joinAtt = "$assocAtt-${assocJoinsCounter++}"
                                 assocJoins.add(
                                     AssocJoin(
                                         assocsService.getIdForAtt(assocAtt),
                                         joinAtt,
-                                        assocAtt
+                                        assocAtt,
+                                        true
                                     )
                                 )
                                 joinAtt

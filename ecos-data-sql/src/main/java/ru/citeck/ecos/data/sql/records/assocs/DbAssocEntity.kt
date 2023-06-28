@@ -8,7 +8,7 @@ import java.time.Instant
 
 @Indexes(
     Index(columns = [DbAssocEntity.SOURCE_ID, DbAssocEntity.ATTRIBUTE, DbAssocEntity.TARGET_ID], unique = true),
-    Index(columns = [DbAssocEntity.TARGET_ID, DbAssocEntity.ATTRIBUTE])
+    Index(columns = [DbAssocEntity.TARGET_ID, DbAssocEntity.ATTRIBUTE, DbAssocEntity.SOURCE_ID], unique = true)
 )
 class DbAssocEntity {
 
@@ -24,7 +24,6 @@ class DbAssocEntity {
         const val ATTRIBUTE = "__attribute_id"
         const val CHILD = "__child"
         const val INDEX = "__index"
-        const val DELETED = "__deleted"
         const val CREATED = "__created"
         const val CREATOR = "__creator"
     }

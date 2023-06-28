@@ -661,7 +661,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         context: DbTableContext,
         query: StringBuilder,
         table: String,
-        attId: Long,
+        assocJoin: AssocJoin,
         values: Collection<Long>
     ) {
         if (values.isEmpty()) {
@@ -670,11 +670,19 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
         val tableRef = context.getTableRef()
         val assocsTableName = tableRef.withTable(DbAssocEntity.MAIN_TABLE).fullName
-        query.append(
-            "EXISTS(SELECT 1 FROM $assocsTableName a WHERE " +
+        val attId = assocJoin.attId
+        query.append("EXISTS(SELECT 1 FROM $assocsTableName a WHERE ")
+        if (assocJoin.target) {
+            query.append(
                 "a.${DbAssocEntity.SOURCE_ID}=\"$table\".${DbEntity.REF_ID} " +
-                "AND a.${DbAssocEntity.ATTRIBUTE}=$attId AND a.${DbAssocEntity.TARGET_ID} IN ("
-        )
+                    "AND a.${DbAssocEntity.ATTRIBUTE}=$attId AND a.${DbAssocEntity.TARGET_ID} IN ("
+            )
+        } else {
+            query.append(
+                "a.${DbAssocEntity.TARGET_ID}=\"$table\".${DbEntity.REF_ID} " +
+                    "AND a.${DbAssocEntity.ATTRIBUTE}=$attId AND a.${DbAssocEntity.SOURCE_ID} IN ("
+            )
+        }
         values.forEach {
             query.append(it).append(",")
         }
@@ -810,13 +818,21 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val tableRef = context.getTableRef()
         val permsTableName = tableRef.withTable(DbPermsEntity.TABLE).fullName
+        val isCheckPermsByParent = context.getQueryPermsPolicy() == QueryPermsPolicy.PARENT
 
         val permsAlias = "\"$PERMS_TABLE_ALIAS\""
         val condition = StringBuilder()
+        val permsJoinCondition = "$permsAlias.\"${DbPermsEntity.ENTITY_REF_ID}\"=\"${RECORD_TABLE_ALIAS}\".$permsColumn"
+
+        if (isCheckPermsByParent) {
+            condition.append("(")
+        }
+
         condition.append("EXISTS(SELECT 1 FROM ")
             .append(permsTableName).append(" ").append(permsAlias)
-            .append(" WHERE $permsAlias.\"${DbPermsEntity.ENTITY_REF_ID}\"=\"${RECORD_TABLE_ALIAS}\".$permsColumn AND")
-            .append(" $permsAlias.\"${DbPermsEntity.AUTHORITY_ID}\" IN (")
+            .append(" WHERE ")
+            .append(permsJoinCondition)
+            .append(" AND $permsAlias.\"${DbPermsEntity.AUTHORITY_ID}\" IN (")
 
         condition.append("")
         authorities.forEach {
@@ -824,6 +840,13 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
         condition.setLength(condition.length - 1)
         condition.append("))")
+        if (isCheckPermsByParent) {
+            condition.append(" OR NOT EXISTS(SELECT 1 FROM ").append(permsTableName).append(" ")
+                .append(permsAlias)
+                .append(" WHERE ")
+                .append(permsJoinCondition)
+                .append("))")
+        }
 
         return condition.toString()
     }
@@ -908,7 +931,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                             return false
                         }
                         val longs = DbAttValueUtils.anyToSetOfLongs(value)
-                        addAssocCondition(context, query, table, assocJoin.attId, longs)
+                        addAssocCondition(context, query, table, assocJoin, longs)
                         return true
                     }
                     val assocTableJoin = assocTableJoins[attribute]

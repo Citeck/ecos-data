@@ -30,14 +30,19 @@ class DbRecordsParentTest : DbRecordsTestBase() {
             "_parentAtt" to "childAssoc"
         )
 
-        val result = records.query(
-            baseQuery.copy()
-                .withQuery(
-                    Predicates.eq("_parent", "alfresco/@abc")
-                ).build()
-        )
-        assertThat(result.getRecords()).hasSize(1)
-        assertThat(result.getRecords()[0]).isEqualTo(ref)
+        fun queryTest() {
+            val result = records.query(
+                baseQuery.copy()
+                    .withQuery(
+                        Predicates.eq("_parent", "alfresco/@abc")
+                    ).build()
+            )
+            assertThat(result.getRecords()).hasSize(1)
+            assertThat(result.getRecords()[0]).isEqualTo(ref)
+        }
+        queryTest()
+        assocsService.createTableIfNotExists()
+        queryTest()
     }
 
     @Test
