@@ -1,13 +1,22 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
+import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.AttValueDelegate
 
 data class DbStatusValue(val def: StatusDef, val value: AttValue) : AttValueDelegate(value) {
 
+    override fun getId(): Any {
+        return asText()
+    }
+
     override fun getDisplayName(): Any {
-        return def.name
+        return if (MLText.isEmpty(def.name)) {
+            "Status '${def.id}'"
+        } else {
+            def.name
+        }
     }
 
     override fun asText(): String {

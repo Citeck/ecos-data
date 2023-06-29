@@ -120,7 +120,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                     }
                 ),
                 false,
-                recsQuery.groupBy,
+                recsQuery.groupBy.map { DbRecord.ATTS_MAPPING.getOrDefault(it, it) },
                 selectFunctions,
                 predicateData.assocJoins,
                 predicateData.assocTableJoins,
