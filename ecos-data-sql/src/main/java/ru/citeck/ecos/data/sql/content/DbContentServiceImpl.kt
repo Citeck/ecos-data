@@ -6,6 +6,7 @@ import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
+import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
@@ -87,11 +88,14 @@ class DbContentServiceImpl(
         val entity = dataService.findById(id) ?: return
         dataService.forceDelete(entity)
         val entitiesWithSameUri = dataService.find(
-            Predicates.eq(
-                DbContentEntity.URI,
-                entity.uri
-            ),
-            emptyList(),
+            DbFindQuery.create {
+                withPredicate(
+                    Predicates.eq(
+                        DbContentEntity.URI,
+                        entity.uri
+                    )
+                )
+            },
             DbFindPage.FIRST
         )
         if (entitiesWithSameUri.entities.isEmpty()) {

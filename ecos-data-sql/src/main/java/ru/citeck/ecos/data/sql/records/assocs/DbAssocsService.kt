@@ -3,12 +3,14 @@ package ru.citeck.ecos.data.sql.records.assocs
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.records.attnames.DbEcosAttributesService
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
+import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
-import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
+import ru.citeck.ecos.data.sql.service.expression.token.ColumnToken
+import ru.citeck.ecos.data.sql.service.expression.token.FunctionToken
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
@@ -73,17 +75,21 @@ class DbAssocsService(
         if (assocsToCreate.isNotEmpty()) {
 
             val maxIdxFindRes = dataService.find(
-                Predicates.and(
-                    Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId),
-                    Predicates.eq(DbAssocEntity.ATTRIBUTE, attId)
-                ),
-                emptyList(),
+                DbFindQuery.create {
+                    withPredicate(
+                        Predicates.and(
+                            Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId),
+                            Predicates.eq(DbAssocEntity.ATTRIBUTE, attId)
+                        )
+                    )
+                    withDeleted(true)
+                    withGroupBy(listOf(DbAssocEntity.SOURCE_ID))
+                    addExpression(
+                        DbAssocEntity.INDEX,
+                        FunctionToken("max", listOf(ColumnToken(DbAssocEntity.INDEX)))
+                    )
+                },
                 DbFindPage.FIRST,
-                true,
-                listOf(DbAssocEntity.SOURCE_ID),
-                listOf(AggregateFunc(DbAssocEntity.INDEX, "max", DbAssocEntity.INDEX)),
-                emptyList(),
-                emptyList(),
                 false
             )
 
@@ -156,6 +162,7 @@ class DbAssocsService(
                     true
                 ).entities
             }
+
             var searchRes = findNext()
             while (searchRes.isNotEmpty()) {
                 deletedDataService.save(

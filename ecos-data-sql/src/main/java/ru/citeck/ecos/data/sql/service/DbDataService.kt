@@ -5,9 +5,9 @@ import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
+import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
-import ru.citeck.ecos.data.sql.service.aggregation.AggregateFunc
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
@@ -51,11 +51,14 @@ interface DbDataService<T : Any> {
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
-        selectFunctions: List<AggregateFunc>,
         assocJoins: List<AssocJoin>,
         assocTableJoins: List<AssocTableJoin>,
         withTotalCount: Boolean
     ): DbFindRes<T>
+
+    fun find(query: DbFindQuery, page: DbFindPage): DbFindRes<T>
+
+    fun find(query: DbFindQuery, page: DbFindPage, withTotalCount: Boolean): DbFindRes<T>
 
     fun findRaw(
         predicate: Predicate,
@@ -63,11 +66,12 @@ interface DbDataService<T : Any> {
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
-        selectFunctions: List<AggregateFunc>,
         assocJoins: List<AssocJoin>,
         assocTableJoins: List<AssocTableJoin>,
         withTotalCount: Boolean
     ): DbFindRes<Map<String, Any?>>
+
+    fun findRaw(query: DbFindQuery, page: DbFindPage, withTotalCount: Boolean): DbFindRes<Map<String, Any?>>
 
     fun getCount(predicate: Predicate): Long
 

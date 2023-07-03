@@ -57,7 +57,6 @@ class ChangeContentCreatorType : DbSchemaMigration {
                 emptyList(),
                 emptyList(),
                 emptyList(),
-                emptyList(),
                 false
             ).entities
         }

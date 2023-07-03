@@ -94,7 +94,6 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
                 emptyList(),
                 emptyList(),
                 emptyList(),
-                emptyList(),
                 false
             )
             if (result.entities.isNotEmpty()) {
