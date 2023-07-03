@@ -46,7 +46,16 @@ object ExpressionParser {
                 val argsLastIdx = toIdxNws - 1
                 if (argsFirstIdx <= argsLastIdx) {
                     split(value, argsFirstIdx, argsLastIdx, ',') { innerFrom, innerTo ->
-                        args.add(parseToken(value, innerFrom, innerTo).first)
+                        if (innerFrom == innerTo && value[innerFrom] == '*') {
+                            args.add(AllFieldsToken)
+                        } else {
+                            val tokens = parseTokens(value, innerFrom, innerTo)
+                            if (tokens.size == 1) {
+                                args.add(tokens[0])
+                            } else {
+                                args.add(BracesToken(tokens))
+                            }
+                        }
                     }
                 }
                 FunctionToken(name, args) to toIdx

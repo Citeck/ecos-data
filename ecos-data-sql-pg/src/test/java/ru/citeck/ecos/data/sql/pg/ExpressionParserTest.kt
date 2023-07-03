@@ -35,6 +35,19 @@ class ExpressionParserTest {
         assertExpr("('qwers')", BracesToken(ScalarToken("qwers")))
         assertExpr("count(*)", FunctionToken("count", listOf(AllFieldsToken)))
         assertExpr("date_trunc(_created)", FunctionToken("date_trunc", listOf(ColumnToken("_created"))))
+        assertExpr(
+            "date_trunc(_created + 1)",
+            FunctionToken(
+                "date_trunc",
+                listOf(
+                    BracesToken(
+                        ColumnToken("_created"),
+                        OperatorToken(OperatorToken.Type.PLUS),
+                        ScalarToken(1L)
+                    )
+                )
+            )
+        )
 
         for (operatorType in OperatorToken.Type.values()) {
             assertExpr(
