@@ -1,6 +1,16 @@
 package ru.citeck.ecos.data.sql.service.expression.token
 
-class BracesToken(val tokens: List<ExpressionToken>) : ExpressionToken {
+class GroupToken(val tokens: List<ExpressionToken>) : ExpressionToken {
+
+    companion object {
+        fun wrapIfRequired(tokens: List<ExpressionToken>): ExpressionToken {
+            return if (tokens.size == 1) {
+                tokens.first()
+            } else {
+                GroupToken(tokens)
+            }
+        }
+    }
 
     constructor(vararg tokens: ExpressionToken) : this(tokens.toList())
 
@@ -22,18 +32,20 @@ class BracesToken(val tokens: List<ExpressionToken>) : ExpressionToken {
         var operandExpected = true
         for (token in tokens) {
             if (operandExpected) {
-                if (token is OperatorToken || token is NullConditionToken) {
+                if (token is OperatorToken || token is NullConditionToken || token is AtTimeZoneToken) {
                     error("Invalid tokens: $tokens")
                 }
             } else {
-                if (token !is OperatorToken && token !is NullConditionToken) {
+                if (token !is OperatorToken && token !is NullConditionToken && token !is AtTimeZoneToken) {
                     error("Invalid tokens: $tokens")
                 }
             }
             if (token is AllFieldsToken) {
                 error("All fields token '*' can be used only within count function")
             }
-            operandExpected = !operandExpected
+            if (token !is NullConditionToken && token !is AtTimeZoneToken) {
+                operandExpected = !operandExpected
+            }
         }
     }
 
@@ -44,7 +56,7 @@ class BracesToken(val tokens: List<ExpressionToken>) : ExpressionToken {
         if (javaClass != other?.javaClass) {
             return false
         }
-        other as BracesToken
+        other as GroupToken
         if (tokens != other.tokens) {
             return false
         }

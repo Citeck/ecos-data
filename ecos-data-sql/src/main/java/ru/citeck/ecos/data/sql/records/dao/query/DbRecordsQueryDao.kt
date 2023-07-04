@@ -8,6 +8,7 @@ import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
+import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.utils.DbDateUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -16,9 +17,6 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
-import ru.citeck.ecos.data.sql.service.expression.ExpressionParser
-import ru.citeck.ecos.data.sql.service.expression.ExpressionTools
-import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
@@ -32,7 +30,6 @@ import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.min
 
 class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
@@ -72,39 +69,18 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             }
         }
 
-        val expressionCounter = AtomicInteger()
-        val expressionAliases = HashMap<ExpressionToken, String>()
-        val expressions = LinkedHashMap<String, ExpressionToken>()
-        val expressionAliasesByAttribute = LinkedHashMap<String, String>()
-        val hasGroupBy = recsQuery.groupBy.isNotEmpty()
+        val expressionsCtx = DbExpressionAttsContext(recsQuery.groupBy.isNotEmpty())
 
-        fun registerExpression(attribute: String): String {
-
-            var expression = ExpressionParser.parse(attribute)
-            if (!hasGroupBy) {
-                expression = ExpressionTools.resolveAggregateFunctionsForNonGroupedQuery(expression)
-            }
-            expression = ExpressionTools.mapColumnNames(expression) { DbRecord.ATTS_MAPPING.getOrDefault(it, it) }
-
-            val alias = expressionAliases.computeIfAbsent(expression) {
-                val newAlias = "expr_${expressionCounter.getAndIncrement()}"
-                expressions[newAlias] = expression
-                newAlias
-            }
-            expressionAliasesByAttribute[attribute] = alias
-            return alias
-        }
-
-        AttContext.getCurrentNotNull().getSchemaAtt().inner.forEach {
+        AttContext.getCurrent()?.getSchemaAtt()?.inner?.forEach {
             if (it.name.contains("(")) {
-                registerExpression(it.name)
+                expressionsCtx.register(it.name)
             }
         }
 
         val predicateData = processPredicate(
             ecosTypeRef.getLocalId(),
             recsQuery.getQuery(Predicate::class.java)
-        ) { registerExpression(it) }
+        ) { expressionsCtx.register(it) }
 
         var predicate = predicateData.predicate
 
@@ -127,14 +103,20 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             val dbQuery = DbFindQuery.create {
                 withPredicate(predicate)
                 withSortBy(
-                    recsQuery.sortBy.filter { !it.attribute.contains('.') }.map {
-                        DbFindSort(DbRecord.ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.ascending)
+                    recsQuery.sortBy.mapNotNull {
+                        if (it.attribute.contains('(')) {
+                            DbFindSort(expressionsCtx.register(it.attribute), it.ascending)
+                        } else if (!it.attribute.contains(".")) {
+                            DbFindSort(DbRecord.ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.ascending)
+                        } else {
+                            null
+                        }
                     }
                 )
                 withGroupBy(
                     recsQuery.groupBy.map {
                         if (it.contains('(')) {
-                            registerExpression(it)
+                            expressionsCtx.register(it)
                         } else {
                             DbRecord.ATTS_MAPPING.getOrDefault(it, it)
                         }
@@ -142,7 +124,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                 )
                 withAssocJoins(predicateData.assocJoins)
                 withAssocTableJoins(predicateData.assocTableJoins)
-                withExpressions(expressions)
+                withExpressions(expressionsCtx.getExpressions())
             }
 
             dataService.find(
@@ -159,20 +141,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             )
         }
 
-        val entities = if (expressionAliasesByAttribute.isNotEmpty()) {
-            findRes.entities.map {
-                val entity = it.copy()
-                expressionAliasesByAttribute.forEach { attAndAlias ->
-                    entity.attributes[attAndAlias.key] = entity.attributes[attAndAlias.value]
-                }
-                expressionAliasesByAttribute.values.toSet().forEach { alias ->
-                    entity.attributes.remove(alias)
-                }
-                entity
-            }
-        } else {
-            findRes.entities
-        }
+        val entities = expressionsCtx.mapEntitiesAtts(findRes.entities)
 
         val queryRes = RecsQueryRes<DbRecord>()
         queryRes.setTotalCount(findRes.totalCount)

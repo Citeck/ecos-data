@@ -20,6 +20,7 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
 import ru.citeck.ecos.data.sql.records.dao.atts.DbAssocAttValuesContainer
 import ru.citeck.ecos.data.sql.records.dao.atts.DbEmptyRecord
+import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
 import ru.citeck.ecos.data.sql.records.dao.delete.DbRecordsDeleteDao
@@ -34,6 +35,7 @@ import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.service.DbDataService
+import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
@@ -44,6 +46,7 @@ import ru.citeck.ecos.records2.predicate.model.*
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
+import ru.citeck.ecos.records3.record.atts.schema.resolver.AttContext
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.records3.record.dao.AbstractRecordsDao
@@ -260,21 +263,32 @@ class DbRecordsDao(
     }
 
     override fun getRecordsAtts(recordIds: List<String>): List<AttValue> {
+
+        val expressionsCtx = DbExpressionAttsContext(false)
+
+        AttContext.getCurrent()?.getSchemaAtt()?.inner?.forEach {
+            if (it.name.contains("(")) {
+                expressionsCtx.register(it.name)
+            }
+        }
+
         return TxnContext.doInTxn(readOnly = true) {
             recordIds.map { id ->
                 if (id.isEmpty()) {
                     DbEmptyRecord(daoCtx)
                 } else {
-                    findDbEntityByExtId(id)?.let { DbRecord(daoCtx, it) } ?: EmptyAttValue.INSTANCE
+                    findDbEntityByExtId(id, expressionsCtx.getExpressions())?.let {
+                        DbRecord(daoCtx, expressionsCtx.mapEntityAtts(it))
+                    } ?: EmptyAttValue.INSTANCE
                 }
             }
         }
     }
 
-    private fun findDbEntityByExtId(extId: String): DbEntity? {
+    private fun findDbEntityByExtId(extId: String, expressions: Map<String, ExpressionToken> = emptyMap()): DbEntity? {
 
         val entity = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
-            dataService.findByExtId(extId)
+            dataService.findByExtId(extId, expressions)
         } ?: return null
 
         if (getUpdatedInTxnIds().contains(extId) || AuthContext.isRunAsSystem()) {

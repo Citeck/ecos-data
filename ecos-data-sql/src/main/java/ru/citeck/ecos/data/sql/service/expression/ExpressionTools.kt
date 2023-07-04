@@ -16,51 +16,52 @@ object ExpressionTools {
         "bit_or",
     )
 
-    fun mapColumnNames(token: ExpressionToken, mapFunc: (String) -> String): ExpressionToken {
+    fun <T : ExpressionToken> mapTokens(
+        token: ExpressionToken,
+        type: Class<T>,
+        mapFunc: (T) -> ExpressionToken
+    ): ExpressionToken {
 
-        return when (token) {
-            is BracesToken -> {
+        when (token) {
+            is GroupToken -> {
                 val newTokens = ArrayList<ExpressionToken>()
                 token.tokens.forEach { innerToken ->
-                    newTokens.add(mapColumnNames(innerToken, mapFunc))
+                    newTokens.add(mapTokens(innerToken, type, mapFunc))
                 }
-                BracesToken(newTokens)
+                GroupToken(newTokens)
             }
+
             is FunctionToken -> {
-                val newArgs = token.args.map { mapColumnNames(it, mapFunc) }
+                val newArgs = token.args.map { mapTokens(it, type, mapFunc) }
                 FunctionToken(token.name, newArgs)
             }
+
             is CaseToken -> {
                 val newBranches = token.branches.map {
-                    val condition = mapColumnNames(it.condition, mapFunc)
-                    val thenRes = mapColumnNames(it.thenResult, mapFunc)
+                    val condition = mapTokens(it.condition, type, mapFunc)
+                    val thenRes = mapTokens(it.thenResult, type, mapFunc)
                     CaseToken.Branch(condition, thenRes)
                 }
-                val newOrElse = token.orElse?.let { mapColumnNames(it, mapFunc) }
+                val newOrElse = token.orElse?.let { mapTokens(it, type, mapFunc) }
                 CaseToken(newBranches, newOrElse)
             }
-            is ColumnToken -> {
-                val newColumnName = mapFunc(token.name)
-                if (newColumnName != token.name) {
-                    ColumnToken(newColumnName)
-                } else {
-                    token
-                }
-            }
-            else -> {
-                token
-            }
+        }
+
+        return if (type.isInstance(token)) {
+            mapFunc.invoke(type.cast(token))
+        } else {
+            token
         }
     }
 
     fun resolveAggregateFunctionsForNonGroupedQuery(token: ExpressionToken): ExpressionToken {
 
-        return if (token is BracesToken) {
+        return if (token is GroupToken) {
             val newTokens = ArrayList<ExpressionToken>()
             token.tokens.forEach { innerToken ->
                 newTokens.add(resolveAggregateFunctionsForNonGroupedQuery(innerToken))
             }
-            BracesToken(newTokens)
+            GroupToken(newTokens)
         } else if (token is FunctionToken) {
             if (AGGREGATE_FUNCTIONS.contains(token.name) && token.args.size == 1) {
                 if (token.name == "count") {
@@ -70,7 +71,7 @@ object ExpressionTools {
                         CaseToken(
                             listOf(
                                 CaseToken.Branch(
-                                    BracesToken(token.args[0], NullConditionToken(false)),
+                                    GroupToken(token.args[0], NullConditionToken(false)),
                                     ScalarToken(1L)
                                 )
                             ),

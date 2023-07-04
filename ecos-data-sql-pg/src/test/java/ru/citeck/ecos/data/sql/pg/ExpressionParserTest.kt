@@ -30,9 +30,27 @@ class ExpressionParserTest {
         assertInvalidExpr("(")
         assertInvalidExpr(")")
         assertInvalidExpr("([)]")
+        assertInvalidExpr("(qq[qq)]")
+        assertInvalidExpr("interval '1 month")
+        assertInvalidExpr("interval '1 month $'")
 
-        assertExpr("(now())", BracesToken(FunctionToken("now", emptyList())))
-        assertExpr("('qwers')", BracesToken(ScalarToken("qwers")))
+        assertExpr(
+            "(now()::date AT TIME ZONE 'UTC')",
+            GroupToken(
+                CastToken(FunctionToken("now", emptyList()), "date"),
+                AtTimeZoneToken("UTC")
+            )
+        )
+        assertExpr(
+            "(date_trunc('month', _created) + interval '1 month - 1 day')",
+            GroupToken(
+                FunctionToken("date_trunc", listOf(ScalarToken("month"), ColumnToken("_created"))),
+                OperatorToken(OperatorToken.Type.PLUS),
+                IntervalToken("1 month - 1 day")
+            )
+        )
+        assertExpr("(now())", GroupToken(FunctionToken("now", emptyList())))
+        assertExpr("('qwers')", GroupToken(ScalarToken("qwers")))
         assertExpr("count(*)", FunctionToken("count", listOf(AllFieldsToken)))
         assertExpr("date_trunc(_created)", FunctionToken("date_trunc", listOf(ColumnToken("_created"))))
         assertExpr(
@@ -40,7 +58,7 @@ class ExpressionParserTest {
             FunctionToken(
                 "date_trunc",
                 listOf(
-                    BracesToken(
+                    GroupToken(
                         ColumnToken("_created"),
                         OperatorToken(OperatorToken.Type.PLUS),
                         ScalarToken(1L)
@@ -52,7 +70,7 @@ class ExpressionParserTest {
         for (operatorType in OperatorToken.Type.values()) {
             assertExpr(
                 "(a ${operatorType.value} b)",
-                BracesToken(
+                GroupToken(
                     ColumnToken("a"),
                     OperatorToken(operatorType),
                     ColumnToken("b")
@@ -62,11 +80,11 @@ class ExpressionParserTest {
 
         assertExpr(
             "(CASE WHEN a > 0 AND b < 10 THEN 10 ELSE 5 END)",
-            BracesToken(
+            GroupToken(
                 CaseToken(
                     listOf(
                         CaseToken.Branch(
-                            BracesToken(
+                            GroupToken(
                                 ColumnToken("a"),
                                 OperatorToken(OperatorToken.Type.GREATER),
                                 ScalarToken(0L),
@@ -85,9 +103,9 @@ class ExpressionParserTest {
 
         assertExpr(
             "((field0 + field1) / 10)",
-            BracesToken(
+            GroupToken(
                 listOf(
-                    BracesToken(
+                    GroupToken(
                         listOf(
                             ColumnToken("field0"),
                             OperatorToken(OperatorToken.Type.PLUS),
@@ -100,7 +118,7 @@ class ExpressionParserTest {
             )
         )
 
-        val expected0 = BracesToken(
+        val expected0 = GroupToken(
             listOf(
                 FunctionToken("someFunc", listOf(ColumnToken("someColumn1"), ColumnToken("someColumn2"))),
                 OperatorToken(OperatorToken.Type.MULTIPLY),
@@ -110,7 +128,7 @@ class ExpressionParserTest {
                 OperatorToken(OperatorToken.Type.MULTIPLY),
                 ScalarToken(123L),
                 OperatorToken(OperatorToken.Type.DIV),
-                BracesToken(
+                GroupToken(
                     listOf(
                         ColumnToken("abc"),
                         OperatorToken(OperatorToken.Type.PLUS),
@@ -118,7 +136,7 @@ class ExpressionParserTest {
                         OperatorToken(OperatorToken.Type.MULTIPLY),
                         ColumnToken("qqqqQ"),
                         OperatorToken(OperatorToken.Type.PLUS),
-                        BracesToken(
+                        GroupToken(
                             listOf(
                                 ColumnToken("Qq"),
                                 OperatorToken(OperatorToken.Type.PLUS),

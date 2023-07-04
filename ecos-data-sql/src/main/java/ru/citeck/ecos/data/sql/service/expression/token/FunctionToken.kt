@@ -31,12 +31,20 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
         val OTHER_FUNCTIONS = setOf(
             "coalesce"
         )
+        val CUSTOM_FUNCTIONS = setOf(
+            "startOfMonth",
+            "endOfMonth"
+        )
         private val ALLOWED_FUNCTIONS = setOf(
             *DATETIME_FUNCTIONS.toTypedArray(),
             *NUM_FUNCTIONS.toTypedArray(),
             *CONVERSION_FUNCTIONS.toTypedArray(),
             *STRING_FUNCTIONS.toTypedArray(),
-            *OTHER_FUNCTIONS.toTypedArray()
+            *OTHER_FUNCTIONS.toTypedArray(),
+            *CUSTOM_FUNCTIONS.toTypedArray()
+        )
+        val FUNCTIONS_WITHOUT_BRACES = setOf(
+            "current_date"
         )
     }
 
@@ -48,7 +56,11 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
     }
 
     override fun toString(): String {
-        return "$name(${args.joinToString()})"
+        return if (FUNCTIONS_WITHOUT_BRACES.contains(name)) {
+            name
+        } else {
+            "$name(${args.joinToString()})"
+        }
     }
 
     override fun validate() {

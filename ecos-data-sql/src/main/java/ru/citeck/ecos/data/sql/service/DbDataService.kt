@@ -10,6 +10,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
+import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.predicate.model.Predicate
 
@@ -30,6 +31,8 @@ interface DbDataService<T : Any> {
     fun findByIds(ids: Set<Long>): List<T>
 
     fun findByExtId(id: String): T?
+
+    fun findByExtId(id: String, expressions: Map<String, ExpressionToken>): T?
 
     fun isExistsByExtId(id: String): Boolean
 

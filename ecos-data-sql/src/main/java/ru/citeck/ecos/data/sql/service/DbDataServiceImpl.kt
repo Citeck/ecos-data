@@ -31,6 +31,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
+import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.predicate.PredicateUtils
@@ -185,12 +186,14 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         column: String,
         values: Collection<Any>,
         withDeleted: Boolean,
-        limit: Int
+        limit: Int,
+        expressions: Map<String, ExpressionToken> = emptyMap()
     ): List<Map<String, Any?>> {
 
         val query = DbFindQuery.create()
             .withPredicate(ValuePredicate(column, ValuePredicate.Type.IN, values))
             .withDeleted(withDeleted)
+            .withExpressions(expressions)
             .build()
 
         return findInRepo(context, query, DbFindPage(0, limit), false).entities
@@ -204,6 +207,10 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return findByAnyId(id)
     }
 
+    override fun findByExtId(id: String, expressions: Map<String, ExpressionToken>): T? {
+        return findByAnyId(id, expressions = expressions)
+    }
+
     override fun isExistsByExtId(id: String): Boolean {
         val query = DbFindQuery.create {
             withPredicate(Predicates.eq(DbEntity.EXT_ID, id))
@@ -212,18 +219,30 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return res.entities.isNotEmpty()
     }
 
-    private fun findByAnyId(id: Any, withDeleted: Boolean = false): T? {
-        return findMapByAnyId(id, withDeleted)?.let { convertToEntity(it) }
+    private fun findByAnyId(
+        id: Any,
+        withDeleted: Boolean = false,
+        expressions: Map<String, ExpressionToken> = emptyMap()
+    ): T? {
+        return findMapByAnyId(id, withDeleted, expressions)?.let { convertToEntity(it) }
     }
 
-    private fun findMapByAnyId(id: Any, withDeleted: Boolean = false): Map<String, Any?>? {
+    private fun findMapByAnyId(
+        id: Any,
+        withDeleted: Boolean = false,
+        expressions: Map<String, ExpressionToken> = emptyMap()
+    ): Map<String, Any?>? {
         getTableContext()
         return execReadOnlyQuery {
-            findMapByAnyIdInEntityRepo(id, withDeleted)
+            findMapByAnyIdInEntityRepo(id, withDeleted, expressions)
         }
     }
 
-    private fun findMapByAnyIdInEntityRepo(id: Any, withDeleted: Boolean = false): Map<String, Any?>? {
+    private fun findMapByAnyIdInEntityRepo(
+        id: Any,
+        withDeleted: Boolean = false,
+        expressions: Map<String, ExpressionToken> = emptyMap()
+    ): Map<String, Any?>? {
         val idColumn = when (id) {
             is String -> DbEntity.EXT_ID
             is Long -> DbEntity.ID
@@ -234,7 +253,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             idColumn,
             listOf(id),
             withDeleted,
-            1
+            1,
+            expressions
         ).firstOrNull()
     }
 

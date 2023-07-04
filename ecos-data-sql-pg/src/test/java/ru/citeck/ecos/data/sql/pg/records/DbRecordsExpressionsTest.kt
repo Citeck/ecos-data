@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
+import java.time.Instant
+import java.util.*
 
 class DbRecordsExpressionsTest : DbRecordsTestBase() {
 
@@ -92,6 +95,115 @@ class DbRecordsExpressionsTest : DbRecordsTestBase() {
 
         assertThat(result3).hasSize(1)
         assertThat(result3[0].getAtt(expr3).asLong()).isEqualTo(1L)
+    }
+
+    @Test
+    fun sortByTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("num")
+                    withType(AttributeType.NUMBER)
+                },
+                AttributeDef.create {
+                    withId("txt")
+                }
+            )
+        )
+
+        createRecord("num" to 1, "txt" to "text0")
+        createRecord("num" to 2, "txt" to "text0")
+        createRecord("num" to 3, "txt" to "text1")
+        createRecord("num" to 4, "txt" to "text1")
+        createRecord("num" to 5, "txt" to "text1")
+
+        val res1 = records.query(
+            baseQuery.copy {
+                withSortBy(listOf(SortBy("sum(num)", true)))
+                withGroupBy(listOf("txt"))
+            },
+            listOf("txt", "sum(num)")
+        ).getRecords()
+
+        assertThat(res1).hasSize(2)
+        assertThat(res1[0]["txt"].asText()).isEqualTo("text0")
+        assertThat(res1[1]["txt"].asText()).isEqualTo("text1")
+
+        val res2 = records.query(
+            baseQuery.copy {
+                withSortBy(listOf(SortBy("sum(num)", false)))
+                withGroupBy(listOf("txt"))
+            },
+            listOf("txt", "sum(num)")
+        ).getRecords()
+
+        assertThat(res2).hasSize(2)
+        assertThat(res2[0]["txt"].asText()).isEqualTo("text1")
+        assertThat(res2[1]["txt"].asText()).isEqualTo("text0")
+    }
+
+    @Test
+    fun intervalTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("datetime")
+                    withType(AttributeType.DATETIME)
+                }
+            )
+        )
+        val ref = createRecord("datetime" to Instant.parse("2023-01-01T00:00:00Z"))
+
+        val date0 = records.getAtt(ref, "(datetime + interval '1 month')").asText()
+        assertThat(date0).isEqualTo("2023-02-01T00:00:00Z")
+
+        val date1 = records.getAtt(ref, "(datetime + interval '1 month - 1 day')").asText()
+        assertThat(date1).isEqualTo("2023-01-31T00:00:00Z")
+
+        val date2 = records.getAtt(ref, "startOfMonth(0)").asText()
+        assertThat(date2).isEqualTo(getStartOfMonth(0).toString())
+        val date3 = records.getAtt(ref, "startOfMonth(1)").asText()
+        assertThat(date3).isEqualTo(getStartOfMonth(1).toString())
+        val date4 = records.getAtt(ref, "startOfMonth(-1)").asText()
+        assertThat(date4).isEqualTo(getStartOfMonth(-1).toString())
+
+        val date5 = records.getAtt(ref, "endOfMonth(0)").asText()
+        assertThat(date5).isEqualTo(getEndOfMonth(0).toString())
+        val date6 = records.getAtt(ref, "endOfMonth(1)").asText()
+        assertThat(date6).isEqualTo(getEndOfMonth(1).toString())
+        val date7 = records.getAtt(ref, "endOfMonth(-1)").asText()
+        assertThat(date7).isEqualTo(getEndOfMonth(-1).toString())
+    }
+
+    private fun getEndOfMonth(diff: Int): Instant {
+        val calendar = Calendar.getInstance()
+        calendar.timeZone = TimeZone.getTimeZone("UTC")
+        calendar.timeInMillis = Instant.now().toEpochMilli()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.DAY_OF_MONTH, 1)
+        calendar.set(Calendar.MILLISECOND, 0)
+        calendar.add(Calendar.MONTH, diff + 1)
+        calendar.add(Calendar.DAY_OF_MONTH, -1)
+        return Instant.ofEpochMilli(calendar.timeInMillis)
+    }
+
+    private fun getStartOfMonth(diff: Int): Instant {
+        val calendar = Calendar.getInstance()
+        calendar.timeZone = TimeZone.getTimeZone("UTC")
+        calendar.timeInMillis = Instant.now().toEpochMilli()
+        if (diff != 0) {
+            calendar.add(Calendar.MONTH, diff)
+        }
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.DAY_OF_MONTH, 1)
+        calendar.set(Calendar.MILLISECOND, 0)
+        return Instant.ofEpochMilli(calendar.timeInMillis)
     }
 
     @Test

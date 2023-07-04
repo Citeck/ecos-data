@@ -629,7 +629,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
 
         addGrouping(query, table, expressions, groupBy)
-        addSortAndPage(query, table, sort, page)
+        addSortAndPage(query, table, expressions, sort, page)
 
         return query.toString()
     }
@@ -715,19 +715,29 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         query.setLength(query.length - 1)
     }
 
-    private fun addSortAndPage(query: StringBuilder, table: String, sorting: List<DbFindSort>, page: DbFindPage) {
+    private fun addSortAndPage(
+        query: StringBuilder,
+        table: String,
+        expressions: Map<String, ExpressionToken>,
+        sorting: List<DbFindSort>,
+        page: DbFindPage
+    ) {
 
         if (sorting.isNotEmpty()) {
             query.append(" ORDER BY ")
             for (sort in sorting) {
-                val columnName = if (sort.column == DbEntity.CREATED) {
-                    // this replacement improve query performance
-                    // works only if ID counter in postgres without cache
-                    DbEntity.ID
+                if (expressions.containsKey(sort.column)) {
+                    query.append(sort.column)
                 } else {
-                    sort.column
+                    val columnName = if (sort.column == DbEntity.CREATED) {
+                        // this replacement improve query performance
+                        // works only if ID counter in postgres without cache
+                        DbEntity.ID
+                    } else {
+                        sort.column
+                    }
+                    appendRecordColumnName(query, table, columnName)
                 }
-                appendRecordColumnName(query, table, columnName)
                 if (sort.ascending) {
                     query.append(" ASC ")
                 } else {
