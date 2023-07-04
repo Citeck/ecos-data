@@ -18,7 +18,8 @@ object SqlDataServiceTestUtils {
             dbDataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test")
+            EcosWebAppApiMock("test"),
+            emptyList()
         )
         val schemaCtx = dsCtx.getSchemaContext("sql-data-service-test-utils-schema")
 

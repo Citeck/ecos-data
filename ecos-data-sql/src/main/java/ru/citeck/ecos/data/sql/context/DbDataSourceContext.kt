@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.context
 
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorage
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
@@ -8,6 +9,7 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
+import sun.security.ec.point.ProjectivePoint.Mutable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -15,7 +17,8 @@ class DbDataSourceContext(
     val dataSource: DbDataSource,
     dataServiceFactory: DbDataServiceFactory,
     private val migrationService: DbMigrationService,
-    private val webAppApi: EcosWebAppApi
+    private val webAppApi: EcosWebAppApi,
+    private val contentStorages: List<EcosContentStorage>
 ) {
     val appName: String = webAppApi.getProperties().appName
     val converter: DbTypesConverter = DbTypesConverter()
@@ -48,7 +51,7 @@ class DbDataSourceContext(
         val newContextWasCreated = AtomicBoolean()
         val result = schemasByName.computeIfAbsent(schema) { k ->
             newContextWasCreated.set(true)
-            DbSchemaContext(k, this)
+            DbSchemaContext(k, this, contentStorages)
         }
         if (newContextWasCreated.get()) {
             if (webAppApi.isReady()) {

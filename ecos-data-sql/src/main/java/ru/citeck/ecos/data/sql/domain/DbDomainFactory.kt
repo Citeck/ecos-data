@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.domain
 
 import ru.citeck.ecos.data.sql.content.DbContentService
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorage
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
@@ -25,7 +26,8 @@ class DbDomainFactory(
     val computedAttsComponent: DbComputedAttsComponent,
     val defaultListeners: List<DbRecordsListener>,
     dataServiceFactory: DbDataServiceFactory,
-    val webAppApi: EcosWebAppApi
+    val webAppApi: EcosWebAppApi,
+    contentStorages: List<EcosContentStorage>
 ) {
 
     private val migrationService = DbMigrationService()
@@ -34,7 +36,8 @@ class DbDomainFactory(
         dataSource,
         dataServiceFactory,
         migrationService,
-        webAppApi
+        webAppApi,
+        contentStorages
     )
 
     fun create(domainConfig: DbDomainConfig): Builder {

@@ -49,7 +49,8 @@ class DbSchemaMetaTest {
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test")
+            EcosWebAppApiMock("test"),
+            emptyList()
         )
         val schemaCtx = dsCtx.getSchemaContext("")
         val dbSchemaDao = dsCtx.schemaDao

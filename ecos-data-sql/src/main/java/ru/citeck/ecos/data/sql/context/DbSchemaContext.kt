@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.context
 
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.DbContentServiceImpl
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorage
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl
 import ru.citeck.ecos.data.sql.content.storage.local.DbContentDataEntity
@@ -29,6 +30,7 @@ import java.io.OutputStream
 class DbSchemaContext(
     val schema: String,
     val dataSourceCtx: DbDataSourceContext,
+    contentStorages: List<EcosContentStorage>
 ) {
     companion object {
         const val NEW_SCHEMA_VERSION = 3
@@ -66,6 +68,7 @@ class DbSchemaContext(
     val contentService: DbContentService = DbContentServiceImpl(contentStorageService, this)
 
     init {
+        contentStorages.forEach { contentStorageService.register(it) }
         contentStorageService.register(
             EcosContentLocalStorage(
                 DbDataServiceImpl(
