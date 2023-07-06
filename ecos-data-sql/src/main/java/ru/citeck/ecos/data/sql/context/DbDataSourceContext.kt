@@ -9,7 +9,6 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
-import sun.security.ec.point.ProjectivePoint.Mutable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 

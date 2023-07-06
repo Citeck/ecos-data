@@ -22,7 +22,7 @@ object ExpressionTools {
         mapFunc: (T) -> ExpressionToken
     ): ExpressionToken {
 
-        when (token) {
+        val tokenWithInnerTokensMapped = when (token) {
             is GroupToken -> {
                 val newTokens = ArrayList<ExpressionToken>()
                 token.tokens.forEach { innerToken ->
@@ -35,7 +35,6 @@ object ExpressionTools {
                 val newArgs = token.args.map { mapTokens(it, type, mapFunc) }
                 FunctionToken(token.name, newArgs)
             }
-
             is CaseToken -> {
                 val newBranches = token.branches.map {
                     val condition = mapTokens(it.condition, type, mapFunc)
@@ -45,12 +44,13 @@ object ExpressionTools {
                 val newOrElse = token.orElse?.let { mapTokens(it, type, mapFunc) }
                 CaseToken(newBranches, newOrElse)
             }
+            else -> token
         }
 
-        return if (type.isInstance(token)) {
-            mapFunc.invoke(type.cast(token))
+        return if (type.isInstance(tokenWithInnerTokensMapped)) {
+            mapFunc.invoke(type.cast(tokenWithInnerTokensMapped))
         } else {
-            token
+            tokenWithInnerTokensMapped
         }
     }
 

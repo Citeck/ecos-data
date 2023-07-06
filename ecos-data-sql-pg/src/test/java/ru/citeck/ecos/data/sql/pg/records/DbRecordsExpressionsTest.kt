@@ -7,6 +7,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
 import java.time.Instant
+import java.time.ZoneId
 import java.util.*
 
 class DbRecordsExpressionsTest : DbRecordsTestBase() {
@@ -141,6 +142,39 @@ class DbRecordsExpressionsTest : DbRecordsTestBase() {
         assertThat(res2).hasSize(2)
         assertThat(res2[0]["txt"].asText()).isEqualTo("text1")
         assertThat(res2[1]["txt"].asText()).isEqualTo("text0")
+    }
+
+    @Test
+    fun dateTruncTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("datetime")
+                    withType(AttributeType.DATETIME)
+                }
+            )
+        )
+
+        createRecord("datetime" to Instant.parse("2022-01-01T10:00:00Z"))
+        createRecord("datetime" to Instant.parse("2022-01-01T20:00:00Z"))
+
+        val expression = "date_trunc('month', _created)"
+        val queryRes = records.query(
+            baseQuery.copy {
+                withSortBy(SortBy(expression, true))
+                withGroupBy(listOf(expression))
+            },
+            listOf(expression)
+        ).getRecords()
+
+        assertThat(queryRes).hasSize(1)
+        // todo: here should be UTC, but for now date_trunc return result for system timezone
+        val expectedDateTime = Instant.parse(queryRes[0].getAtt(expression).asText())
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toString()
+        assertThat(queryRes[0].getAtt(expression).asText()).isEqualTo(expectedDateTime)
     }
 
     @Test
