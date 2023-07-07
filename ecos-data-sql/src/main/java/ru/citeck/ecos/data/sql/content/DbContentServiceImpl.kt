@@ -2,8 +2,10 @@ package ru.citeck.ecos.data.sql.content
 
 import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
+import ru.citeck.ecos.data.sql.content.storage.EcosContentDataUrl
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
-import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
+import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
@@ -15,7 +17,6 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.io.InputStream
-import java.net.URI
 import java.time.Instant
 import java.util.UUID
 
@@ -37,23 +38,23 @@ class DbContentServiceImpl(
         name: String?,
         mimeType: String?,
         encoding: String?,
-        storage: String?,
+        storage: EcosContentStorageConfig?,
         creatorRefId: Long,
-        writer: (EcosContentWriter) -> Unit
+        content: (EcosContentWriter) -> Unit
     ): DbEcosContentData {
 
         val nnName = (name ?: "").ifBlank { UUID.randomUUID().toString() }
         val nnMimeType = (mimeType ?: "").ifBlank { MimeTypes.APP_BIN_TEXT }
         val nnEncoding = encoding ?: ""
-        val nnStorage = (storage ?: "").ifBlank { EcosContentLocalStorage.TYPE }
 
         var sha256 = ""
         var size = 0L
 
-        val dataUri = contentStorageService.uploadContent(nnStorage) {
-            writer(it)
-            it.getOutputStream().flush()
-            val meta = it.finish()
+        val dataUrl = contentStorageService.uploadContent(storage) { output ->
+            val writer = EcosContentWriterImpl(output)
+            content.invoke(writer)
+            writer.getOutputStream().flush()
+            val meta = writer.finish()
             sha256 = meta.getSha256()
             size = meta.getSize()
         }
@@ -71,7 +72,7 @@ class DbContentServiceImpl(
         entity.creator = creatorRefId
         entity.sha256 = sha256
         entity.size = size
-        entity.uri = dataUri
+        entity.uri = dataUrl.toString()
 
         return EcosContentDataImpl(dataService.save(entity))
     }
@@ -99,7 +100,7 @@ class DbContentServiceImpl(
             DbFindPage.FIRST
         )
         if (entitiesWithSameUri.entities.isEmpty()) {
-            contentStorageService.removeContent(entity.uri)
+            contentStorageService.deleteContent(EcosContentDataUrl.valueOf(entity.uri))
         }
     }
 
@@ -135,12 +136,14 @@ class DbContentServiceImpl(
             schemaCtx.recordRefService.getEntityRefById(entity.creator).getLocalId()
         }
 
+        private val dataUrl by lazy { EcosContentDataUrl.valueOf(entity.uri) }
+
         override fun getDbId(): Long {
             return entity.id
         }
 
-        override fun getUri(): URI {
-            return entity.uri
+        override fun getUrl(): EcosContentDataUrl {
+            return dataUrl
         }
 
         override fun getCreated(): Instant {
@@ -172,7 +175,7 @@ class DbContentServiceImpl(
         }
 
         override fun <T> readContent(action: (InputStream) -> T): T {
-            return contentStorageService.readContent(entity.uri, action)
+            return contentStorageService.readContent(dataUrl, action)
         }
     }
 }

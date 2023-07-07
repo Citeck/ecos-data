@@ -1,10 +1,10 @@
 package ru.citeck.ecos.data.sql.records.dao.atts.content
 
 import ru.citeck.ecos.data.sql.content.DbEcosContentData
+import ru.citeck.ecos.data.sql.content.storage.EcosContentDataUrl
 import ru.citeck.ecos.records3.record.atts.value.impl.AttValueDelegate
 import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.io.InputStream
-import java.net.URI
 import java.time.Instant
 
 class DbContentValueWithCustomName(
@@ -63,7 +63,7 @@ class DbContentValueWithCustomName(
         override fun <T> readContent(action: (InputStream) -> T): T {
             return value.readContent(action)
         }
-        override fun getUri(): URI = value.getUri()
+        override fun getUrl(): EcosContentDataUrl = value.getUrl()
         override fun getDbId(): Long = value.getDbId()
     }
 }

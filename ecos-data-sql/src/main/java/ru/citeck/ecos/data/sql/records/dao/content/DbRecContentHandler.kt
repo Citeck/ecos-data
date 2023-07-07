@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.records.dao.content
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.utils.DataUriUtil
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
@@ -103,7 +104,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         name: String?,
         mimeType: String?,
         encoding: String?,
-        storage: String?,
+        storage: EcosContentStorageConfig?,
         creatorRefId: Long,
         writer: (EcosContentWriter) -> Unit
     ): Long? {
@@ -116,7 +117,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         attribute: String,
         contentData: DataValue,
         multiple: Boolean,
-        storage: String,
+        storage: EcosContentStorageConfig?,
         creatorRefId: Long
     ): Any? {
 
@@ -206,7 +207,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         }.getDbId()
     }
 
-    private fun uploadFromEntity(entityRef: EntityRef, storage: String, creatorRefId: Long): Long? {
+    private fun uploadFromEntity(entityRef: EntityRef, storage: EcosContentStorageConfig?, creatorRefId: Long): Long? {
 
         val contentService = ctx.contentService ?: return null
 

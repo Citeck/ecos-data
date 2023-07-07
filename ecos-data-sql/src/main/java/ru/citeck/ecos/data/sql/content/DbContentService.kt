@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.content
 
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 
 interface DbContentService {
@@ -8,9 +9,9 @@ interface DbContentService {
         name: String?,
         mimeType: String?,
         encoding: String?,
-        storage: String?,
+        storage: EcosContentStorageConfig?,
         creatorRefId: Long,
-        writer: (EcosContentWriter) -> Unit
+        content: (EcosContentWriter) -> Unit
     ): DbEcosContentData
 
     fun removeContent(id: Long)

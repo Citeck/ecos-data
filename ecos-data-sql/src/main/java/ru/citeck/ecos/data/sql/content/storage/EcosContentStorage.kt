@@ -1,12 +1,9 @@
 package ru.citeck.ecos.data.sql.content.storage
 
-import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
-import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import java.io.InputStream
+import java.io.OutputStream
 
 interface EcosContentStorage {
-
-    fun init(writerFactory: EcosContentWriterFactory)
 
     /**
      * Upload content to storage and get path to it.
@@ -21,11 +18,9 @@ interface EcosContentStorage {
      * @return path to content delimited by "/". This path should define full path to content to allow
      *         read method works without any additional arguments.
      */
-    fun uploadContent(type: String, writer: (EcosContentWriter) -> Unit): String
+    fun uploadContent(storage: EcosContentStorageConfig, content: (OutputStream) -> Unit): EcosContentDataUrl
 
-    fun <T> readContent(path: String, action: (InputStream) -> T): T
+    fun <T> readContent(url: EcosContentDataUrl, action: (InputStream) -> T): T
 
-    fun removeContent(path: String)
-
-    fun getType(): String
+    fun deleteContent(url: EcosContentDataUrl)
 }

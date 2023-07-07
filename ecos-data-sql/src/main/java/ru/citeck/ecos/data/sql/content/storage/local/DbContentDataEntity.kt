@@ -2,12 +2,7 @@ package ru.citeck.ecos.data.sql.content.storage.local
 
 import ru.citeck.ecos.data.sql.dto.DbColumnConstraint.*
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
-import ru.citeck.ecos.data.sql.repo.entity.annotation.Index
-import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 
-@Indexes(
-    Index(columns = [DbContentDataEntity.SHA_256, DbContentDataEntity.SIZE], unique = true)
-)
 class DbContentDataEntity {
 
     companion object {
@@ -17,9 +12,7 @@ class DbContentDataEntity {
         const val NEW_REC_ID = -1L
 
         const val ID = "id"
-        const val SHA_256 = "__sha256"
         const val DATA = "__data"
-        const val SIZE = "__size"
 
         private val EMPTY_DATA = ByteArray(0)
     }
@@ -30,9 +23,11 @@ class DbContentDataEntity {
     @Constraints(NOT_NULL)
     var data: ByteArray = EMPTY_DATA
 
+    @Deprecated("size will be saved and used in common content-data table")
     @Constraints(NOT_NULL)
     var size: Long = 0
 
+    @Deprecated("sha256 will be saved and used in common content-data table")
     @Constraints(NOT_NULL)
     var sha256: String = ""
 }

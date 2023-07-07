@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.records.dao.mutate
 import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
@@ -33,7 +34,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         recAttributes: ObjectData,
         recToMutate: DbEntity,
         columns: List<EcosAttColumnDef>,
-        contentStorageType: String,
+        contentStorage: EcosContentStorageConfig?,
         creatorRefId: Long
     ) {
 
@@ -50,7 +51,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                     column.attribute.id,
                     contentData,
                     column.column.multiple,
-                    contentStorageType,
+                    contentStorage,
                     creatorRefId
                 )
             } else if (DbRecordsUtils.isAssocLikeAttribute(column.attribute)) {

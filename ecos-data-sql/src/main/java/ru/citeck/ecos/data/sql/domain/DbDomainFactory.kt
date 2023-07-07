@@ -1,7 +1,8 @@
 package ru.citeck.ecos.data.sql.domain
 
 import ru.citeck.ecos.data.sql.content.DbContentService
-import ru.citeck.ecos.data.sql.content.storage.EcosContentStorage
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
@@ -18,6 +19,8 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
+import java.util.*
+import kotlin.collections.ArrayList
 
 class DbDomainFactory(
     val dataSource: DbDataSource,
@@ -26,9 +29,10 @@ class DbDomainFactory(
     val computedAttsComponent: DbComputedAttsComponent,
     val defaultListeners: List<DbRecordsListener>,
     dataServiceFactory: DbDataServiceFactory,
-    val webAppApi: EcosWebAppApi,
-    contentStorages: List<EcosContentStorage>
+    val webAppApi: EcosWebAppApi
 ) {
+
+    private val recordsDaoWithoutDefaultContentStorage = Collections.synchronizedList(ArrayList<DbRecordsDao>())
 
     private val migrationService = DbMigrationService()
 
@@ -36,9 +40,19 @@ class DbDomainFactory(
         dataSource,
         dataServiceFactory,
         migrationService,
-        webAppApi,
-        contentStorages
+        webAppApi
     )
+
+    private var defaultContentStorage: EcosContentStorageConfig? = null
+
+    fun setDefaultContentStorage(storage: EcosContentStorageConfig?) {
+        synchronized(recordsDaoWithoutDefaultContentStorage) {
+            this.defaultContentStorage = storage
+            recordsDaoWithoutDefaultContentStorage.forEach {
+                it.setDefaultContentStorage(storage)
+            }
+        }
+    }
 
     fun create(domainConfig: DbDomainConfig): Builder {
         return Builder(domainConfig)
@@ -136,6 +150,14 @@ class DbDomainFactory(
             recordsDao.addListener(DbIntegrityCheckListener())
             migrationContext = DbDomainMigrationContext(dataService, schemaContext, recordsDao, domainConfig)
 
+            synchronized(recordsDaoWithoutDefaultContentStorage) {
+                var storage = domainConfig.content.defaultContentStorage
+                if (storage == null || storage.ref == EcosContentStorageConstants.DEFAULT_CONTENT_STORAGE_REF) {
+                    recordsDaoWithoutDefaultContentStorage.add(recordsDao)
+                    storage = this@DbDomainFactory.defaultContentStorage
+                }
+                recordsDao.setDefaultContentStorage(storage)
+            }
             return recordsDao
         }
     }

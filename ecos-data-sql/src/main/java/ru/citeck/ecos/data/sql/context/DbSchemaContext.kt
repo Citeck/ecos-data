@@ -2,13 +2,8 @@ package ru.citeck.ecos.data.sql.context
 
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.DbContentServiceImpl
-import ru.citeck.ecos.data.sql.content.storage.EcosContentStorage
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl
-import ru.citeck.ecos.data.sql.content.storage.local.DbContentDataEntity
-import ru.citeck.ecos.data.sql.content.storage.local.EcosContentLocalStorage
-import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterFactory
-import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaService
@@ -24,13 +19,12 @@ import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.txn.lib.TxnContext
-import ru.citeck.ecos.webapp.api.content.EcosContentWriter
-import java.io.OutputStream
+import ru.citeck.ecos.webapp.api.EcosWebAppApi
 
 class DbSchemaContext(
     val schema: String,
     val dataSourceCtx: DbDataSourceContext,
-    contentStorages: List<EcosContentStorage>
+    val webAppApi: EcosWebAppApi
 ) {
     companion object {
         const val NEW_SCHEMA_VERSION = 3
@@ -58,29 +52,10 @@ class DbSchemaContext(
 
     private val metaSchemaVersionKey = listOf("schema-version")
 
-    private val contentWriterFactory: EcosContentWriterFactory = object : EcosContentWriterFactory {
-        override fun createWriter(output: OutputStream): EcosContentWriter {
-            return EcosContentWriterImpl(output)
-        }
-    }
-
-    val contentStorageService: EcosContentStorageService = EcosContentStorageServiceImpl(contentWriterFactory)
+    val contentStorageService: EcosContentStorageService = EcosContentStorageServiceImpl(webAppApi, this)
     val contentService: DbContentService = DbContentServiceImpl(contentStorageService, this)
 
     init {
-        contentStorages.forEach { contentStorageService.register(it) }
-        contentStorageService.register(
-            EcosContentLocalStorage(
-                DbDataServiceImpl(
-                    DbContentDataEntity::class.java,
-                    DbDataServiceConfig.create {
-                        withTable(DbContentDataEntity.TABLE)
-                        withStoreTableMeta(true)
-                    },
-                    this
-                )
-            )
-        )
         dataSourceCtx.schemaDao.addSchemaListener(
             schema,
             object : DbSchemaListener {

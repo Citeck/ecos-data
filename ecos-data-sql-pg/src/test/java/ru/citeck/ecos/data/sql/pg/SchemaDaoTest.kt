@@ -25,8 +25,7 @@ class SchemaDaoTest {
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test"),
-            emptyList()
+            EcosWebAppApiMock("test")
         )
         val tableRef = DbTableRef("some-schema", "test-table")
 
@@ -99,8 +98,7 @@ class SchemaDaoTest {
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test"),
-            emptyList()
+            EcosWebAppApiMock("test")
         )
         val tableRef = DbTableRef("some-schema", "test-table")
 

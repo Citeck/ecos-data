@@ -4,7 +4,6 @@ import ru.citeck.ecos.data.sql.dto.DbColumnConstraint.*
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Constraints
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Index
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
-import java.net.URI
 import java.time.Instant
 
 @Indexes(
@@ -27,8 +26,6 @@ class DbContentEntity {
         const val URI = "__uri"
         const val CREATED = "__created"
         const val CREATOR = "__creator"
-
-        val EMPTY_URI = URI("")
     }
 
     @Constraints(PRIMARY_KEY)
@@ -50,7 +47,7 @@ class DbContentEntity {
     var sha256: String = ""
 
     @Constraints(NOT_NULL)
-    var uri: URI = EMPTY_URI
+    var uri: String = ""
 
     var created: Instant = Instant.EPOCH
 

@@ -1,13 +1,15 @@
 package ru.citeck.ecos.data.sql.domain
 
 import ecos.com.fasterxml.jackson210.databind.annotation.JsonDeserialize
+import ru.citeck.ecos.data.sql.content.DbContentConfig
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 
 @JsonDeserialize(builder = DbDomainConfig.Builder::class)
 class DbDomainConfig(
     val dataService: DbDataServiceConfig,
-    val recordsDao: DbRecordsDaoConfig
+    val recordsDao: DbRecordsDaoConfig,
+    val content: DbContentConfig
 ) {
 
     companion object {
@@ -29,6 +31,7 @@ class DbDomainConfig(
 
         var dataService: DbDataServiceConfig? = null
         var recordsDao: DbRecordsDaoConfig? = null
+        var content: DbContentConfig = DbContentConfig.DEFAULT
 
         fun withDataService(dataService: DbDataServiceConfig): Builder {
             this.dataService = dataService
@@ -40,11 +43,17 @@ class DbDomainConfig(
             return this
         }
 
+        fun withContent(content: DbContentConfig): Builder {
+            this.content = content
+            return this
+        }
+
         fun build(): DbDomainConfig {
 
             return DbDomainConfig(
                 dataService ?: error("DataService config is a mandatory"),
-                recordsDao ?: error("RecordsDao config is a mandatory")
+                recordsDao ?: error("RecordsDao config is a mandatory"),
+                content
             )
         }
     }

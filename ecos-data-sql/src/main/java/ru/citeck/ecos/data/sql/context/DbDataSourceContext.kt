@@ -1,6 +1,5 @@
 package ru.citeck.ecos.data.sql.context
 
-import ru.citeck.ecos.data.sql.content.storage.EcosContentStorage
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
@@ -16,8 +15,7 @@ class DbDataSourceContext(
     val dataSource: DbDataSource,
     dataServiceFactory: DbDataServiceFactory,
     private val migrationService: DbMigrationService,
-    private val webAppApi: EcosWebAppApi,
-    private val contentStorages: List<EcosContentStorage>
+    private val webAppApi: EcosWebAppApi
 ) {
     val appName: String = webAppApi.getProperties().appName
     val converter: DbTypesConverter = DbTypesConverter()
@@ -50,7 +48,7 @@ class DbDataSourceContext(
         val newContextWasCreated = AtomicBoolean()
         val result = schemasByName.computeIfAbsent(schema) { k ->
             newContextWasCreated.set(true)
-            DbSchemaContext(k, this, contentStorages)
+            DbSchemaContext(k, this, webAppApi)
         }
         if (newContextWasCreated.get()) {
             if (webAppApi.isReady()) {

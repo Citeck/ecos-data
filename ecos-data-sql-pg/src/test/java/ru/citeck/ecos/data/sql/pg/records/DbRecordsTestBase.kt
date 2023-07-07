@@ -218,8 +218,7 @@ abstract class DbRecordsTestBase {
                 dbDataSource,
                 PgDataServiceFactory(),
                 DbMigrationService(),
-                webAppApi,
-                emptyList()
+                webAppApi
             )
 
             val txnManager = TransactionManagerImpl()

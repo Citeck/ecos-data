@@ -116,7 +116,7 @@ class DbContentValue(
             ATT_CONVERTED_TO -> ConvertedToValue()
             "uri" -> {
                 return if (AuthContext.isRunAsSystem() || AuthContext.isRunAsAdmin()) {
-                    contentData.getUri()
+                    contentData.getUrl()
                 } else {
                     null
                 }

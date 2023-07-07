@@ -1,18 +1,13 @@
 package ru.citeck.ecos.data.sql.content.storage
 
-import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import java.io.InputStream
-import java.net.URI
+import java.io.OutputStream
 
 interface EcosContentStorageService {
 
-    fun uploadContent(storage: String, action: (EcosContentWriter) -> Unit): URI
+    fun uploadContent(storageConfig: EcosContentStorageConfig?, action: (OutputStream) -> Unit): EcosContentDataUrl
 
-    fun <T> readContent(uri: URI, action: (InputStream) -> T): T
+    fun <T> readContent(url: EcosContentDataUrl, action: (InputStream) -> T): T
 
-    fun removeContent(uri: URI)
-
-    fun register(storage: EcosContentStorage)
-
-    fun register(type: String, storage: EcosContentStorage)
+    fun deleteContent(url: EcosContentDataUrl)
 }

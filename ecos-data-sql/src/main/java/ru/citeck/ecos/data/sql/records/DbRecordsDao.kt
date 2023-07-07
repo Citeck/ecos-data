@@ -6,6 +6,8 @@ import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.data.Version
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbContentService
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
@@ -113,6 +115,8 @@ class DbRecordsDao(
 
     private val recsPrepareToCommitTxnKey = IdentityKey()
 
+    private var defaultContentStorage: EcosContentStorageConfig? = null
+
     fun uploadFile(
         ecosType: String? = null,
         name: String? = null,
@@ -146,24 +150,24 @@ class DbRecordsDao(
         if (typeId.isBlank()) {
             error("Type is blank. Uploading is impossible")
         }
-        val typeDef = daoCtx.ecosTypeService.getTypeInfoNotNull(typeId)
+        val typeInfo = daoCtx.ecosTypeService.getTypeInfoNotNull(typeId)
 
-        val contentAttribute = typeDef.contentConfig.path.ifBlank { "content" }
+        val contentAttribute = typeInfo.contentConfig.path.ifBlank { "content" }
         if (contentAttribute.contains(".")) {
             error("You can't upload file with content as complex path: '$contentAttribute'")
         }
-        if (typeDef.model.attributes.all { it.id != contentAttribute } &&
-            typeDef.model.systemAttributes.all { it.id != contentAttribute }
+        if (typeInfo.model.attributes.all { it.id != contentAttribute } &&
+            typeInfo.model.systemAttributes.all { it.id != contentAttribute }
         ) {
             error("Content attribute is not found: $contentAttribute")
         }
         val currentUserRefId = daoCtx.getOrCreateUserRefId(AuthContext.getCurrentUser())
-        val storageType = typeDef.contentConfig.storageType
+
         val contentId = daoCtx.recContentHandler.uploadContent(
             name,
             mimeType,
             encoding,
-            storageType,
+            getContentStorage(typeInfo),
             currentUserRefId,
             writer
         ) ?: error("File uploading failed")
@@ -703,7 +707,7 @@ class DbRecordsDao(
             recAttributes,
             entityToMutate,
             typeAttColumns,
-            typeInfo.contentConfig.storageType,
+            getContentStorage(typeInfo),
             currentUserRefId
         )
 
@@ -757,8 +761,8 @@ class DbRecordsDao(
                 val contentWasChanged = if (contentBefore == -1L || contentAfter == -1L) {
                     true
                 } else {
-                    val uriBefore = daoCtx.contentService?.getContent(contentBefore)?.getUri()
-                    val uriAfter = daoCtx.contentService?.getContent(contentAfter)?.getUri()
+                    val uriBefore = daoCtx.contentService?.getContent(contentBefore)?.getUrl()
+                    val uriAfter = daoCtx.contentService?.getContent(contentAfter)?.getUrl()
                     uriBefore != uriAfter
                 }
                 if (contentWasChanged) {
@@ -1084,6 +1088,10 @@ class DbRecordsDao(
 
     override fun getId() = config.id
 
+    fun setDefaultContentStorage(storage: EcosContentStorageConfig?) {
+        this.defaultContentStorage = storage
+    }
+
     @Synchronized
     fun addListener(listener: DbRecordsListener) {
         this.listeners.add(listener)
@@ -1128,6 +1136,15 @@ class DbRecordsDao(
             }
         }
         onInitialized()
+    }
+
+    private fun getContentStorage(typeInfo: TypeInfo): EcosContentStorageConfig? {
+        val storageRef = typeInfo.contentConfig.storageRef
+        return if (storageRef.isEmpty() || storageRef == EcosContentStorageConstants.DEFAULT_CONTENT_STORAGE_REF) {
+            defaultContentStorage
+        } else {
+            EcosContentStorageConfig(storageRef, typeInfo.contentConfig.storageConfig)
+        }
     }
 
     private fun getUpdatedInTxnIds(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<String> {
