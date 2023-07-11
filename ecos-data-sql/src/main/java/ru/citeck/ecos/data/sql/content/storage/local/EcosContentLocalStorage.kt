@@ -22,6 +22,7 @@ class EcosContentLocalStorage(
 
         val entity = DbContentDataEntity()
         entity.data = output.toByteArray()
+        // temp solution until unique constraint will be removed
         entity.sha256 = UUID.randomUUID().toString()
 
         return EcosContentDataUrl(

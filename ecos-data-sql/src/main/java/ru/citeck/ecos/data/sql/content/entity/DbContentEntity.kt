@@ -26,6 +26,7 @@ class DbContentEntity {
         const val URI = "__uri"
         const val CREATED = "__created"
         const val CREATOR = "__creator"
+        const val STORAGE_REF = "__storage_ref"
     }
 
     @Constraints(PRIMARY_KEY)
@@ -48,6 +49,8 @@ class DbContentEntity {
 
     @Constraints(NOT_NULL)
     var uri: String = ""
+
+    var storageRef: String = ""
 
     var created: Instant = Instant.EPOCH
 

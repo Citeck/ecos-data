@@ -4,6 +4,7 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.utils.DataUriUtil
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
@@ -215,8 +216,8 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
             val atts = withContentDbDataAware {
                 ctx.recordsService.getAtts(entityRef, ContentLocationAtts::class.java)
             }
-            if (atts.dbSchema == ctx.tableRef.schema && atts.contentId != null && atts.contentId >= 0) {
-                return contentService.cloneContent(atts.contentId, creatorRefId).getDbId()
+            if (isContentMayBeCloned(atts, storage)) {
+                return contentService.cloneContent(atts.contentId!!, creatorRefId).getDbId()
             }
         }
         ctx.contentApi ?: error("Content API is null")
@@ -236,6 +237,22 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         }
     }
 
+    private fun isContentMayBeCloned(
+        contentAtts: ContentLocationAtts,
+        newContentStorage: EcosContentStorageConfig?
+    ): Boolean {
+        if (contentAtts.dbSchema != ctx.tableRef.schema ||
+            contentAtts.contentId == null || contentAtts.contentId < 0
+        ) {
+            return false
+        }
+        var storageRef = newContentStorage?.ref ?: EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF
+        if (storageRef == EcosContentStorageConstants.DEFAULT_CONTENT_STORAGE_REF) {
+            storageRef = EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF
+        }
+        return contentAtts.storageRef == storageRef
+    }
+
     private class AlfContentAtts(
         @AttName("?disp")
         val name: String?,
@@ -249,7 +266,9 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         @AttName("_content.tableRef.schema!''")
         val dbSchema: String,
         @AttName("_content.contentDbId?num")
-        val contentId: Long?
+        val contentId: Long?,
+        @AttName("_content.storageRef?id")
+        val storageRef: EntityRef?
     )
 
     private class ContentMetaAtts(

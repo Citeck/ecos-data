@@ -4,6 +4,7 @@ import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentDataUrl
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
@@ -15,6 +16,7 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.io.InputStream
 import java.time.Instant
@@ -63,6 +65,11 @@ class DbContentServiceImpl(
             error("Invalid content metadata. Sha256: $sha256 Size: $size")
         }
 
+        var storageRef = storage?.ref ?: EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF
+        if (storageRef == EcosContentStorageConstants.DEFAULT_CONTENT_STORAGE_REF) {
+            storageRef = EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF
+        }
+
         val entity = DbContentEntity()
 
         entity.name = nnName
@@ -73,6 +80,7 @@ class DbContentServiceImpl(
         entity.sha256 = sha256
         entity.size = size
         entity.uri = dataUrl.toString()
+        entity.storageRef = storageRef.toString()
 
         return EcosContentDataImpl(dataService.save(entity))
     }
@@ -172,6 +180,10 @@ class DbContentServiceImpl(
 
         override fun getSize(): Long {
             return entity.size
+        }
+
+        override fun getStorageRef(): EntityRef {
+            return EntityRef.valueOf(entity.storageRef)
         }
 
         override fun <T> readContent(action: (InputStream) -> T): T {

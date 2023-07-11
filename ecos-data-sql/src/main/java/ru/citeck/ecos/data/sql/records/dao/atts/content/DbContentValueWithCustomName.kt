@@ -63,6 +63,7 @@ class DbContentValueWithCustomName(
         override fun <T> readContent(action: (InputStream) -> T): T {
             return value.readContent(action)
         }
+        override fun getStorageRef() = value.getStorageRef()
         override fun getUrl(): EcosContentDataUrl = value.getUrl()
         override fun getDbId(): Long = value.getDbId()
     }

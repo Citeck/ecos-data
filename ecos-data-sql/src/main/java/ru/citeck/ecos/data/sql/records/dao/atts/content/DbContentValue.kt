@@ -38,6 +38,12 @@ class DbContentValue(
         const val ATT_CREATOR = "creator"
         const val ATT_BYTES = "bytes"
 
+        // internal
+        const val ATT_STORAGE_REF = "storageRef"
+        const val ATT_CONTENT_DBID = "contentDbId"
+        const val ATT_TABLE_REF = "tableRef"
+        // --------
+
         const val ATT_PREVIEW_INFO = "previewInfo"
         const val ATT_CONVERTED_TO = "convertedTo"
 
@@ -121,13 +127,14 @@ class DbContentValue(
                     null
                 }
             }
-            "tableRef", "contentDbId" -> {
+            ATT_TABLE_REF, ATT_CONTENT_DBID, ATT_STORAGE_REF -> {
                 if (!AuthContext.isRunAsSystem() && !ctx.recContentHandler.isContentDbDataAware()) {
                     return null
                 }
                 when (name) {
-                    "tableRef" -> ctx.tableRef
-                    "contentDbId" -> contentDbId
+                    ATT_TABLE_REF -> ctx.tableRef
+                    ATT_CONTENT_DBID -> contentDbId
+                    ATT_STORAGE_REF -> contentData.getStorageRef()
                     else -> null
                 }
             }
