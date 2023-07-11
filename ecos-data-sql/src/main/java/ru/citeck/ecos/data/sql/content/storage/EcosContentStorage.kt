@@ -1,5 +1,7 @@
 package ru.citeck.ecos.data.sql.content.storage
 
+import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -18,9 +20,9 @@ interface EcosContentStorage {
      * @return path to content delimited by "/". This path should define full path to content to allow
      *         read method works without any additional arguments.
      */
-    fun uploadContent(storage: EcosContentStorageConfig, content: (OutputStream) -> Unit): EcosContentDataUrl
+    fun uploadContent(storageRef: EntityRef, storageConfig: ObjectData, content: (OutputStream) -> Unit): String
 
-    fun <T> readContent(url: EcosContentDataUrl, action: (InputStream) -> T): T
+    fun <T> readContent(storageRef: EntityRef, path: String, action: (InputStream) -> T): T
 
-    fun deleteContent(url: EcosContentDataUrl)
+    fun deleteContent(storageRef: EntityRef, path: String)
 }

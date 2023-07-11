@@ -120,9 +120,9 @@ class DbContentValue(
             ATT_URL -> ctx.recContentHandler.createContentUrl(currentEntityRef, attribute)
             ATT_BYTES -> contentData.readContent { it.readBytes() }
             ATT_CONVERTED_TO -> ConvertedToValue()
-            "uri" -> {
+            "path" -> {
                 return if (AuthContext.isRunAsSystem() || AuthContext.isRunAsAdmin()) {
-                    contentData.getUrl()
+                    contentData.getPath()
                 } else {
                     null
                 }

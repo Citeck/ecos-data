@@ -1,9 +1,8 @@
 package ru.citeck.ecos.data.sql.content.storage.remote
 
 import ru.citeck.ecos.commons.data.ObjectData
-import ru.citeck.ecos.data.sql.content.storage.EcosContentDataUrl
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorage
-import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.web.client.EcosWebClientApi
 import java.io.InputStream
 import java.io.OutputStream
@@ -18,18 +17,22 @@ class EcosContentRemoteStorage(
         const val CONTENT_STORAGE_DELETE = "/content/storage/delete"
     }
 
-    override fun uploadContent(storage: EcosContentStorageConfig, content: (OutputStream) -> Unit): EcosContentDataUrl {
+    override fun uploadContent(
+        storageRef: EntityRef,
+        storageConfig: ObjectData,
+        content: (OutputStream) -> Unit
+    ): String {
 
-        if (storage.ref.getAppName().isBlank()) {
+        if (storageRef.getAppName().isBlank()) {
             error("Content storage config is mandatory")
         }
-        val appName = storage.ref.getAppName()
+        val appName = storageRef.getAppName()
         validateApiPath(appName, CONTENT_STORAGE_UPLOAD)
 
         val apiHeaders = UploadReqHeaders(
-            storage.ref.getLocalId(),
-            storage.ref.getSourceId(),
-            storage.config
+            storageRef.getLocalId(),
+            storageRef.getSourceId(),
+            storageConfig
         )
 
         val response = webClient.newRequest()
@@ -39,28 +42,28 @@ class EcosContentRemoteStorage(
             .body { content.invoke(it.getOutputStream()) }
             .executeSync { it.getBodyReader().readDto(UploadRespBody::class.java) }
 
-        return EcosContentDataUrl(appName, response.path)
+        return response.path
     }
 
-    override fun <T> readContent(url: EcosContentDataUrl, action: (InputStream) -> T): T {
+    override fun <T> readContent(storageRef: EntityRef, path: String, action: (InputStream) -> T): T {
 
-        validateApiPath(url.appName, CONTENT_STORAGE_DOWNLOAD)
+        validateApiPath(storageRef.getAppName(), CONTENT_STORAGE_DOWNLOAD)
 
         return webClient.newRequest()
-            .targetApp(url.appName)
+            .targetApp(storageRef.getAppName())
             .path(CONTENT_STORAGE_DOWNLOAD)
-            .body { it.writeDto(DownloadReqBody(url.contentPath)) }
+            .body { it.writeDto(DownloadReqBody(path)) }
             .executeSync { action.invoke(it.getBodyReader().getInputStream()) }
     }
 
-    override fun deleteContent(url: EcosContentDataUrl) {
+    override fun deleteContent(storageRef: EntityRef, path: String) {
 
-        validateApiPath(url.appName, CONTENT_STORAGE_DELETE)
+        validateApiPath(storageRef.getAppName(), CONTENT_STORAGE_DELETE)
 
         webClient.newRequest()
-            .targetApp(url.appName)
+            .targetApp(storageRef.getAppName())
             .path(CONTENT_STORAGE_DELETE)
-            .body { it.writeDto(DeleteReqBody(url.contentPath)) }
+            .body { it.writeDto(DeleteReqBody(path)) }
             .executeSync { it.getBodyReader().readDto(DeleteRespBody::class.java) }
     }
 

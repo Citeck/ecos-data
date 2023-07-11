@@ -10,6 +10,7 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -33,45 +34,40 @@ class EcosContentStorageServiceImpl(
         )
     )
 
-    override fun uploadContent(storageConfig: EcosContentStorageConfig?, action: (OutputStream) -> Unit): EcosContentDataUrl {
-
-        val storageRef = storageConfig?.ref ?: EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF
-
-        val storage = if (storageRef.getAppName().isBlank() ||
-            storageRef == EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF ||
-            storageRef == EcosContentStorageConstants.DEFAULT_CONTENT_STORAGE_REF
-        ) {
+    override fun uploadContent(
+        storageRef: EntityRef,
+        storageConfig: ObjectData,
+        action: (OutputStream) -> Unit
+    ): String {
+        val storage = if (storageRef == EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF) {
             localStorage
         } else {
             remoteStorage
         }
-        val config = storageConfig?.config ?: ObjectData.create()
-        val nnStorageConfig = EcosContentStorageConfig(storageRef, config)
-
         return AuthContext.runAsSystem {
-            storage.uploadContent(nnStorageConfig, action)
+            storage.uploadContent(storageRef, storageConfig, action)
         }
     }
 
-    override fun <T> readContent(url: EcosContentDataUrl, action: (InputStream) -> T): T {
-        val storage = if (url.isLocalStorageUrl()) {
+    override fun <T> readContent(storageRef: EntityRef, path: String, action: (InputStream) -> T): T {
+        val storage = if (storageRef == EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF) {
             localStorage
         } else {
             remoteStorage
         }
         return AuthContext.runAsSystem {
-            storage.readContent(url, action)
+            storage.readContent(storageRef, path, action)
         }
     }
 
-    override fun deleteContent(url: EcosContentDataUrl) {
-        val storage = if (url.isLocalStorageUrl()) {
+    override fun deleteContent(storageRef: EntityRef, path: String) {
+        val storage = if (storageRef == EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF) {
             localStorage
         } else {
             remoteStorage
         }
         return AuthContext.runAsSystem {
-            storage.deleteContent(url)
+            storage.deleteContent(storageRef, path)
         }
     }
 

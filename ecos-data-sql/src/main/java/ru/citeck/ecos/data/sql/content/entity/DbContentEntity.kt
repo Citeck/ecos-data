@@ -47,10 +47,11 @@ class DbContentEntity {
     @Constraints(NOT_NULL)
     var sha256: String = ""
 
+    // Field with content path. Named as uri for backward compatibility
     @Constraints(NOT_NULL)
     var uri: String = ""
 
-    var storageRef: Long = -1
+    var storageRef: Long? = -1
 
     var created: Instant = Instant.EPOCH
 

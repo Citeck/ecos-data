@@ -1,10 +1,10 @@
 package ru.citeck.ecos.data.sql.content.storage.local
 
-import ru.citeck.ecos.data.sql.content.storage.EcosContentDataUrl
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorage
-import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -15,7 +15,16 @@ class EcosContentLocalStorage(
     private val dataService: DbDataService<DbContentDataEntity>
 ) : EcosContentStorage, DbMigrationsExecutor {
 
-    override fun uploadContent(storage: EcosContentStorageConfig, content: (OutputStream) -> Unit): EcosContentDataUrl {
+    companion object {
+        // legacy prefix. Will be removed in future
+        private const val PATH_PREFIX = "ecd://local/"
+    }
+
+    override fun uploadContent(
+        storageRef: EntityRef,
+        storageConfig: ObjectData,
+        content: (OutputStream) -> Unit
+    ): String {
 
         val output = ByteArrayOutputStream(10_000)
         content.invoke(output)
@@ -25,26 +34,27 @@ class EcosContentLocalStorage(
         // temp solution until unique constraint will be removed
         entity.sha256 = UUID.randomUUID().toString()
 
-        return EcosContentDataUrl(
-            EcosContentDataUrl.LOCAL_STORAGE_APP_NAME,
-            entityToPath(dataService.save(entity))
-        )
+        return entityToPath(dataService.save(entity))
     }
 
     private fun entityToPath(entity: DbContentDataEntity): String {
-        return entity.id.toString()
+        return PATH_PREFIX + entity.id.toString()
     }
 
-    override fun <T> readContent(url: EcosContentDataUrl, action: (InputStream) -> T): T {
+    private fun pathToEntityId(path: String): Long {
+        return path.replaceFirst(PATH_PREFIX, "").toLong()
+    }
 
-        val id = url.contentPath.toLong()
-        val entity = dataService.findById(id) ?: error("Content doesn't exists for id: ${url.contentPath}")
+    override fun <T> readContent(storageRef: EntityRef, path: String, action: (InputStream) -> T): T {
+
+        val id = pathToEntityId(path)
+        val entity = dataService.findById(id) ?: error("Content doesn't exists for id: $id")
 
         return action(ByteArrayInputStream(entity.data))
     }
 
-    override fun deleteContent(url: EcosContentDataUrl) {
-        dataService.forceDelete(url.contentPath.toLong())
+    override fun deleteContent(storageRef: EntityRef, path: String) {
+        dataService.forceDelete(pathToEntityId(path))
     }
 
     override fun runMigrations(mock: Boolean, diff: Boolean): List<String> {

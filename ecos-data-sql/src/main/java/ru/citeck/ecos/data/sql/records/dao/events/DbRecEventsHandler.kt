@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao.events
 
+import ru.citeck.ecos.data.sql.content.DbEcosContentData
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocRefsDiff
 import ru.citeck.ecos.data.sql.records.dao.DbEntityMeta
@@ -93,10 +94,14 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         val contentBefore = recBefore.getDefaultContent()
         val contentAfter = recAfter.getDefaultContent()
 
+        fun isEqualContentData(before: DbEcosContentData?, after: DbEcosContentData?): Boolean {
+            return before?.getPath() == after?.getPath() && before?.getStorageRef() == after?.getStorageRef()
+        }
+
         if (contentBefore != null || contentAfter != null) {
 
             if (attsBefore[DbRecord.ATT_CONTENT_VERSION] != attsAfter[DbRecord.ATT_CONTENT_VERSION] ||
-                contentBefore?.getContentDbData()?.getUrl() != contentAfter?.getContentDbData()?.getUrl()
+                !isEqualContentData(contentBefore?.getContentDbData(), contentAfter?.getContentDbData())
             ) {
 
                 val contentChangedEvent = DbRecordContentChangedEvent(

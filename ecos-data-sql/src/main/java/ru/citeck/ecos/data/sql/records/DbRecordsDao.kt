@@ -761,9 +761,9 @@ class DbRecordsDao(
                 val contentWasChanged = if (contentBefore == -1L || contentAfter == -1L) {
                     true
                 } else {
-                    val uriBefore = daoCtx.contentService?.getContent(contentBefore)?.getUrl()
-                    val uriAfter = daoCtx.contentService?.getContent(contentAfter)?.getUrl()
-                    uriBefore != uriAfter
+                    val before = daoCtx.contentService?.getContent(contentBefore)
+                    val after = daoCtx.contentService?.getContent(contentAfter)
+                    before?.getPath() != after?.getPath() || before?.getStorageRef() != after?.getStorageRef()
                 }
                 if (contentWasChanged) {
                     if (recAttributes[DbRecord.ATT_CONTENT_VERSION].asText().isBlank()) {

@@ -1,8 +1,8 @@
 package ru.citeck.ecos.data.sql.content
 
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
-import ru.citeck.ecos.data.sql.content.storage.EcosContentDataUrl
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
@@ -52,7 +52,13 @@ class DbContentServiceImpl(
         var sha256 = ""
         var size = 0L
 
-        val dataUrl = contentStorageService.uploadContent(storage) { output ->
+        var storageRef = storage?.ref ?: EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF
+        if (storageRef == EcosContentStorageConstants.DEFAULT_CONTENT_STORAGE_REF) {
+            storageRef = EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF
+        }
+        val storageConfig = storage?.config ?: ObjectData.create()
+
+        val path = contentStorageService.uploadContent(storageRef, storageConfig) { output ->
             val writer = EcosContentWriterImpl(output)
             content.invoke(writer)
             writer.getOutputStream().flush()
@@ -65,11 +71,6 @@ class DbContentServiceImpl(
             error("Invalid content metadata. Sha256: $sha256 Size: $size")
         }
 
-        var storageRef = storage?.ref ?: EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF
-        if (storageRef == EcosContentStorageConstants.DEFAULT_CONTENT_STORAGE_REF) {
-            storageRef = EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF
-        }
-
         val entity = DbContentEntity()
 
         entity.name = nnName
@@ -79,7 +80,7 @@ class DbContentServiceImpl(
         entity.creator = creatorRefId
         entity.sha256 = sha256
         entity.size = size
-        entity.uri = dataUrl.toString()
+        entity.uri = path
         entity.storageRef = schemaCtx.recordRefService.getOrCreateIdByEntityRef(storageRef)
 
         return EcosContentDataImpl(dataService.save(entity))
@@ -108,7 +109,7 @@ class DbContentServiceImpl(
             DbFindPage.FIRST
         )
         if (entitiesWithSameUri.entities.isEmpty()) {
-            contentStorageService.deleteContent(EcosContentDataUrl.valueOf(entity.uri))
+            contentStorageService.deleteContent(getStorageRefById(entity.storageRef), entity.uri)
         }
     }
 
@@ -138,27 +139,28 @@ class DbContentServiceImpl(
         return dataService
     }
 
+    private fun getStorageRefById(id: Long?): EntityRef {
+        return if (id == null || id < 0) {
+            EcosContentStorageConstants.LOCAL_CONTENT_STORAGE_REF
+        } else {
+            schemaCtx.recordRefService.getEntityRefById(id)
+        }
+    }
+
     private inner class EcosContentDataImpl(val entity: DbContentEntity) : DbEcosContentData {
 
         private val creatorName: String by lazy {
             schemaCtx.recordRefService.getEntityRefById(entity.creator).getLocalId()
         }
 
-        private val dataUrl by lazy { EcosContentDataUrl.valueOf(entity.uri) }
-        private val storageRefValue by lazy {
-            if (entity.storageRef >= 0) {
-                schemaCtx.recordRefService.getEntityRefById(entity.storageRef)
-            } else {
-                EntityRef.EMPTY
-            }
-        }
+        private val storageRefValue by lazy { getStorageRefById(entity.storageRef) }
 
         override fun getDbId(): Long {
             return entity.id
         }
 
-        override fun getUrl(): EcosContentDataUrl {
-            return dataUrl
+        override fun getPath(): String {
+            return entity.uri
         }
 
         override fun getCreated(): Instant {
@@ -190,11 +192,11 @@ class DbContentServiceImpl(
         }
 
         override fun getStorageRef(): EntityRef {
-            return EntityRef.valueOf(storageRefValue)
+            return storageRefValue
         }
 
         override fun <T> readContent(action: (InputStream) -> T): T {
-            return contentStorageService.readContent(dataUrl, action)
+            return contentStorageService.readContent(getStorageRef(), entity.uri, action)
         }
     }
 }
