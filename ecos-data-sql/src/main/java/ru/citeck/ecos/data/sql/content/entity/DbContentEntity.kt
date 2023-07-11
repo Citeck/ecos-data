@@ -50,7 +50,7 @@ class DbContentEntity {
     @Constraints(NOT_NULL)
     var uri: String = ""
 
-    var storageRef: String = ""
+    var storageRef: Long = -1
 
     var created: Instant = Instant.EPOCH
 

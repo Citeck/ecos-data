@@ -80,7 +80,7 @@ class DbContentServiceImpl(
         entity.sha256 = sha256
         entity.size = size
         entity.uri = dataUrl.toString()
-        entity.storageRef = storageRef.toString()
+        entity.storageRef = schemaCtx.recordRefService.getOrCreateIdByEntityRef(storageRef)
 
         return EcosContentDataImpl(dataService.save(entity))
     }
@@ -145,6 +145,13 @@ class DbContentServiceImpl(
         }
 
         private val dataUrl by lazy { EcosContentDataUrl.valueOf(entity.uri) }
+        private val storageRefValue by lazy {
+            if (entity.storageRef >= 0) {
+                schemaCtx.recordRefService.getEntityRefById(entity.storageRef)
+            } else {
+                EntityRef.EMPTY
+            }
+        }
 
         override fun getDbId(): Long {
             return entity.id
@@ -183,7 +190,7 @@ class DbContentServiceImpl(
         }
 
         override fun getStorageRef(): EntityRef {
-            return EntityRef.valueOf(entity.storageRef)
+            return EntityRef.valueOf(storageRefValue)
         }
 
         override fun <T> readContent(action: (InputStream) -> T): T {
