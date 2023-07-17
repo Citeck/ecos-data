@@ -17,6 +17,36 @@ import ru.citeck.ecos.webapp.api.entity.toEntityRef
 class DbRecordsAssocQueryTest : DbRecordsTestBase() {
 
     @Test
+    fun testEqualToNull() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("assoc0")
+                    withType(AttributeType.ASSOC)
+                }
+            )
+        )
+
+        val rec0 = createRecord("assoc0" to "emodel/type@abc")
+        val rec1 = createRecord("assoc0" to null)
+
+        val res0 = records.query(
+            baseQuery.copy {
+                withQuery(Predicates.eq("assoc0", "emodel/type@abc"))
+            }
+        ).getRecords()
+        assertThat(res0).containsExactly(rec0)
+
+        val res1 = records.query(
+            baseQuery.copy {
+                withQuery(Predicates.eq("assoc0", null))
+            }
+        ).getRecords()
+        assertThat(res1).containsExactly(rec1)
+    }
+
+    @Test
     fun test() {
 
         registerAtts(

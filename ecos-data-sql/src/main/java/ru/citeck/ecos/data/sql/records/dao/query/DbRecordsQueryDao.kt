@@ -263,25 +263,29 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                         }
                         if (newPred is ValuePredicate && DbRecordsUtils.isAssocLikeAttribute(attDef)) {
                             val assocAtt = newPred.getAttribute()
-                            val newAttribute = if (assocAtt != RecordConstants.ATT_PARENT && assocsTableExists) {
-                                val joinAtt = "$assocAtt-${assocJoinsCounter++}"
-                                assocJoins.add(
-                                    AssocJoin(
-                                        assocsService.getIdForAtt(assocAtt),
-                                        joinAtt,
-                                        assocAtt,
-                                        true
-                                    )
-                                )
-                                joinAtt
+                            newPred = if (newPred.getValue().isNull()) {
+                                EmptyPredicate(assocAtt)
                             } else {
-                                newPred.getAttribute()
+                                val newAttribute = if (assocAtt != RecordConstants.ATT_PARENT && assocsTableExists) {
+                                    val joinAtt = "$assocAtt-${assocJoinsCounter++}"
+                                    assocJoins.add(
+                                        AssocJoin(
+                                            assocsService.getIdForAtt(assocAtt),
+                                            joinAtt,
+                                            assocAtt,
+                                            true
+                                        )
+                                    )
+                                    joinAtt
+                                } else {
+                                    newPred.getAttribute()
+                                }
+                                ValuePredicate(
+                                    newAttribute,
+                                    newPred.getType(),
+                                    newPred.getValue()
+                                )
                             }
-                            newPred = ValuePredicate(
-                                newAttribute,
-                                newPred.getType(),
-                                newPred.getValue()
-                            )
                         } else if (newPred is ValuePredicate &&
                             (attDef?.type == AttributeType.DATE || attDef?.type == AttributeType.DATETIME)
                         ) {
