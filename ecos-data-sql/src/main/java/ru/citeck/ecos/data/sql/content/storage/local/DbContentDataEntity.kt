@@ -22,12 +22,4 @@ class DbContentDataEntity {
 
     @Constraints(NOT_NULL)
     var data: ByteArray = EMPTY_DATA
-
-    @Deprecated("size will be saved and used in common content-data table")
-    @Constraints(NOT_NULL)
-    var size: Long = 0
-
-    @Deprecated("sha256 will be saved and used in common content-data table")
-    @Constraints(NOT_NULL)
-    var sha256: String = ""
 }

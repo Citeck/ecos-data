@@ -95,7 +95,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         val contentAfter = recAfter.getDefaultContent()
 
         fun isEqualContentData(before: DbEcosContentData?, after: DbEcosContentData?): Boolean {
-            return before?.getPath() == after?.getPath() && before?.getStorageRef() == after?.getStorageRef()
+            return before?.getDataKey() == after?.getDataKey() && before?.getStorageRef() == after?.getStorageRef()
         }
 
         if (contentBefore != null || contentAfter != null) {

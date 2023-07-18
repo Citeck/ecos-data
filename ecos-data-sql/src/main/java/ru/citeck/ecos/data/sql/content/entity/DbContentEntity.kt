@@ -7,7 +7,8 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 import java.time.Instant
 
 @Indexes(
-    Index(columns = [DbContentEntity.URI])
+    Index(columns = [DbContentEntity.SHA_256, DbContentEntity.SIZE]),
+    Index(columns = [DbContentEntity.STORAGE_REF, DbContentEntity.DATA_KEY])
 )
 class DbContentEntity {
 
@@ -23,7 +24,7 @@ class DbContentEntity {
         const val SIZE = "__size"
         const val MIMETYPE = "__mime_type"
         const val ENCODING = "__encoding"
-        const val URI = "__uri"
+        const val DATA_KEY = "__data_key"
         const val CREATED = "__created"
         const val CREATOR = "__creator"
         const val STORAGE_REF = "__storage_ref"
@@ -47,9 +48,8 @@ class DbContentEntity {
     @Constraints(NOT_NULL)
     var sha256: String = ""
 
-    // Field with content path. Named as uri for backward compatibility
     @Constraints(NOT_NULL)
-    var uri: String = ""
+    var dataKey: String = ""
 
     var storageRef: Long? = -1
 

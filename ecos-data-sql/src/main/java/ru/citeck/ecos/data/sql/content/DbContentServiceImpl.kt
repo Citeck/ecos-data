@@ -58,7 +58,7 @@ class DbContentServiceImpl(
         }
         val storageConfig = storage?.config ?: ObjectData.create()
 
-        val path = contentStorageService.uploadContent(storageRef, storageConfig) { output ->
+        val dataKey = contentStorageService.uploadContent(storageRef, storageConfig) { output ->
             val writer = EcosContentWriterImpl(output)
             content.invoke(writer)
             writer.getOutputStream().flush()
@@ -80,7 +80,7 @@ class DbContentServiceImpl(
         entity.creator = creatorRefId
         entity.sha256 = sha256
         entity.size = size
-        entity.uri = path
+        entity.dataKey = dataKey
         entity.storageRef = schemaCtx.recordRefService.getOrCreateIdByEntityRef(storageRef)
 
         return EcosContentDataImpl(dataService.save(entity))
@@ -97,19 +97,19 @@ class DbContentServiceImpl(
     override fun removeContent(id: Long) {
         val entity = dataService.findById(id) ?: return
         dataService.forceDelete(entity)
-        val entitiesWithSameUri = dataService.find(
+        val entitiesWithSameStorageAndKey = dataService.find(
             DbFindQuery.create {
                 withPredicate(
-                    Predicates.eq(
-                        DbContentEntity.URI,
-                        entity.uri
+                    Predicates.and(
+                        Predicates.eq(DbContentEntity.STORAGE_REF, entity.storageRef),
+                        Predicates.eq(DbContentEntity.DATA_KEY, entity.dataKey)
                     )
                 )
             },
             DbFindPage.FIRST
         )
-        if (entitiesWithSameUri.entities.isEmpty()) {
-            contentStorageService.deleteContent(getStorageRefById(entity.storageRef), entity.uri)
+        if (entitiesWithSameStorageAndKey.entities.isEmpty()) {
+            contentStorageService.deleteContent(getStorageRefById(entity.storageRef), entity.dataKey)
         }
     }
 
@@ -159,8 +159,8 @@ class DbContentServiceImpl(
             return entity.id
         }
 
-        override fun getPath(): String {
-            return entity.uri
+        override fun getDataKey(): String {
+            return entity.dataKey
         }
 
         override fun getCreated(): Instant {
@@ -196,7 +196,7 @@ class DbContentServiceImpl(
         }
 
         override fun <T> readContent(action: (InputStream) -> T): T {
-            return contentStorageService.readContent(getStorageRef(), entity.uri, action)
+            return contentStorageService.readContent(getStorageRef(), entity.dataKey, action)
         }
     }
 }

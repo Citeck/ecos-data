@@ -28,7 +28,7 @@ class DbDomainFactory(
     val permsComponent: DbPermsComponent,
     val computedAttsComponent: DbComputedAttsComponent,
     val defaultListeners: List<DbRecordsListener>,
-    dataServiceFactory: DbDataServiceFactory,
+    val dataServiceFactory: DbDataServiceFactory,
     val webAppApi: EcosWebAppApi
 ) {
 
@@ -44,6 +44,18 @@ class DbDomainFactory(
     )
 
     private var defaultContentStorage: EcosContentStorageConfig? = null
+
+    fun withDataSource(dataSource: DbDataSource): DbDomainFactory {
+        return DbDomainFactory(
+            dataSource,
+            modelServices,
+            permsComponent,
+            computedAttsComponent,
+            defaultListeners,
+            dataServiceFactory,
+            webAppApi
+        )
+    }
 
     fun setDefaultContentStorage(storage: EcosContentStorageConfig?) {
         synchronized(recordsDaoWithoutDefaultContentStorage) {

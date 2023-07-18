@@ -80,4 +80,8 @@ class EcosContentStorageServiceImpl(
         }
         return result
     }
+
+    fun getLocalStorageService(): EcosContentLocalStorage {
+        return localStorage
+    }
 }

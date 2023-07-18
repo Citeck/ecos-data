@@ -9,7 +9,6 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
-import java.util.*
 
 class EcosContentLocalStorage(
     private val dataService: DbDataService<DbContentDataEntity>
@@ -31,33 +30,41 @@ class EcosContentLocalStorage(
 
         val entity = DbContentDataEntity()
         entity.data = output.toByteArray()
-        // temp solution until unique constraint will be removed
-        entity.sha256 = UUID.randomUUID().toString()
 
-        return entityToPath(dataService.save(entity))
+        return entityToDataKey(dataService.save(entity))
     }
 
-    private fun entityToPath(entity: DbContentDataEntity): String {
+    private fun entityToDataKey(entity: DbContentDataEntity): String {
         return PATH_PREFIX + entity.id.toString()
     }
 
-    private fun pathToEntityId(path: String): Long {
-        return path.replaceFirst(PATH_PREFIX, "").toLong()
+    private fun dataKeyToEntityIds(path: String): List<Long> {
+        return path.replaceFirst(PATH_PREFIX, "")
+            .split(",")
+            .filter { it.isNotBlank() }
+            .map { it.toLong() }
     }
 
-    override fun <T> readContent(storageRef: EntityRef, path: String, action: (InputStream) -> T): T {
+    override fun <T> readContent(storageRef: EntityRef, dataKey: String, action: (InputStream) -> T): T {
 
-        val id = pathToEntityId(path)
+        // multiple parts doesn't support yet
+        val id = dataKeyToEntityIds(dataKey).first()
         val entity = dataService.findById(id) ?: error("Content doesn't exists for id: $id")
 
         return action(ByteArrayInputStream(entity.data))
     }
 
-    override fun deleteContent(storageRef: EntityRef, path: String) {
-        dataService.forceDelete(pathToEntityId(path))
+    override fun deleteContent(storageRef: EntityRef, dataKey: String) {
+        dataKeyToEntityIds(dataKey).forEach {
+            dataService.forceDelete(it)
+        }
     }
 
     override fun runMigrations(mock: Boolean, diff: Boolean): List<String> {
         return dataService.runMigrations(mock, diff)
+    }
+
+    fun getDataService(): DbDataService<DbContentDataEntity> {
+        return dataService
     }
 }

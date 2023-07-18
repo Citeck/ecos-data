@@ -7,7 +7,7 @@ interface DbEcosContentData : EcosContentData {
 
     fun getDbId(): Long
 
-    fun getPath(): String
+    fun getDataKey(): String
 
     fun getStorageRef(): EntityRef
 }

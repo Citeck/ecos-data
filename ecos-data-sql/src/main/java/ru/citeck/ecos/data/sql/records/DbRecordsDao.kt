@@ -763,7 +763,7 @@ class DbRecordsDao(
                 } else {
                     val before = daoCtx.contentService?.getContent(contentBefore)
                     val after = daoCtx.contentService?.getContent(contentAfter)
-                    before?.getPath() != after?.getPath() || before?.getStorageRef() != after?.getStorageRef()
+                    before?.getDataKey() != after?.getDataKey() || before?.getStorageRef() != after?.getStorageRef()
                 }
                 if (contentWasChanged) {
                     if (recAttributes[DbRecord.ATT_CONTENT_VERSION].asText().isBlank()) {

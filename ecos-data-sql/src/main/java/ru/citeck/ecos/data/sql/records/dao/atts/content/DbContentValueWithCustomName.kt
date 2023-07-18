@@ -63,7 +63,7 @@ class DbContentValueWithCustomName(
             return value.readContent(action)
         }
         override fun getStorageRef() = value.getStorageRef()
-        override fun getPath(): String = value.getPath()
+        override fun getDataKey(): String = value.getDataKey()
         override fun getDbId(): Long = value.getDbId()
     }
 }

@@ -42,28 +42,44 @@ class EcosContentRemoteStorage(
             .body { content.invoke(it.getOutputStream()) }
             .executeSync { it.getBodyReader().readDto(UploadRespBody::class.java) }
 
-        return response.path
+        return response.dataKey
     }
 
-    override fun <T> readContent(storageRef: EntityRef, path: String, action: (InputStream) -> T): T {
+    override fun <T> readContent(storageRef: EntityRef, dataKey: String, action: (InputStream) -> T): T {
 
         validateApiPath(storageRef.getAppName(), CONTENT_STORAGE_DOWNLOAD)
 
         return webClient.newRequest()
             .targetApp(storageRef.getAppName())
             .path(CONTENT_STORAGE_DOWNLOAD)
-            .body { it.writeDto(DownloadReqBody(path)) }
+            .body {
+                it.writeDto(
+                    DownloadReqBody(
+                        storageRef.getLocalId(),
+                        storageRef.getSourceId(),
+                        dataKey
+                    )
+                )
+            }
             .executeSync { action.invoke(it.getBodyReader().getInputStream()) }
     }
 
-    override fun deleteContent(storageRef: EntityRef, path: String) {
+    override fun deleteContent(storageRef: EntityRef, dataKey: String) {
 
         validateApiPath(storageRef.getAppName(), CONTENT_STORAGE_DELETE)
 
         webClient.newRequest()
             .targetApp(storageRef.getAppName())
             .path(CONTENT_STORAGE_DELETE)
-            .body { it.writeDto(DeleteReqBody(path)) }
+            .body {
+                it.writeDto(
+                    DeleteReqBody(
+                        storageRef.getLocalId(),
+                        storageRef.getSourceId(),
+                        dataKey
+                    )
+                )
+            }
             .executeSync { it.getBodyReader().readDto(DeleteRespBody::class.java) }
     }
 
@@ -85,7 +101,9 @@ class EcosContentRemoteStorage(
     }
 
     private data class DeleteReqBody(
-        val path: String
+        val storageId: String,
+        val storageSourceId: String,
+        val dataKey: String
     )
 
     private data class DeleteRespBody(
@@ -93,7 +111,9 @@ class EcosContentRemoteStorage(
     )
 
     private data class DownloadReqBody(
-        val path: String
+        val storageId: String,
+        val storageSourceId: String,
+        val dataKey: String
     )
 
     private data class UploadReqHeaders(
@@ -103,6 +123,6 @@ class EcosContentRemoteStorage(
     )
 
     private data class UploadRespBody(
-        val path: String
+        val dataKey: String
     )
 }
