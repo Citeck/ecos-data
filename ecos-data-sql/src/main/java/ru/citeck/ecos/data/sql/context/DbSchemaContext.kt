@@ -88,6 +88,7 @@ class DbSchemaContext(
         entityPermsService.resetColumnsCache()
         recordRefService.resetColumnsCache()
         assocsService.resetColumnsCache()
+        contentStorageService.resetColumnsCache()
     }
 
     fun getVersion(): Int {

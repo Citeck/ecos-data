@@ -7,6 +7,8 @@ import java.io.OutputStream
 
 interface EcosContentStorageService {
 
+    fun resetColumnsCache()
+
     fun uploadContent(storageRef: EntityRef, storageConfig: ObjectData, action: (OutputStream) -> Unit): String
 
     fun <T> readContent(storageRef: EntityRef, path: String, action: (InputStream) -> T): T

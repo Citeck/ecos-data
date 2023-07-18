@@ -84,4 +84,8 @@ class EcosContentStorageServiceImpl(
     fun getLocalStorageService(): EcosContentLocalStorage {
         return localStorage
     }
+
+    override fun resetColumnsCache() {
+        localStorage.getDataService().resetColumnsCache()
+    }
 }
