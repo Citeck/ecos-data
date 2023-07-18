@@ -17,7 +17,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 interface DbDataService<T : Any> {
 
     companion object {
-        const val NEW_TABLE_SCHEMA_VERSION = 5
+        const val NEW_TABLE_SCHEMA_VERSION = 4
     }
 
     fun <T> doWithPermsPolicy(permsPolicy: QueryPermsPolicy?, action: () -> T): T
