@@ -7,14 +7,59 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
+import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
 
 class DbRecordsGroupingTest : DbRecordsTestBase() {
 
     companion object {
         private const val taskIdField = "taskId"
         private const val amountField = "amount"
+    }
+
+    @Test
+    fun testGroupingByCreatedWithSorting() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("text")
+                }
+            )
+        )
+
+        val createdAtt = RecordConstants.ATT_CREATED
+        val recordsCount = 10
+
+        repeat(recordsCount) {
+            Thread.sleep(50)
+            createRecord().let { it to records.getAtt(it, createdAtt).getAsInstantOrEpoch() }
+        }
+
+        fun testQuery(ascendingSort: Boolean) {
+
+            val queryRes = records.query(
+                baseQuery.copy {
+                    withSortBy(listOf(SortBy(createdAtt, ascendingSort)))
+                    withGroupBy(listOf(createdAtt))
+                },
+                listOf(createdAtt)
+            ).getRecords().map { it.getAtt(createdAtt).getAsInstantOrEpoch() }
+
+            assertThat(queryRes).hasSize(recordsCount)
+
+            for (i in 0 until queryRes.lastIndex) {
+                if (ascendingSort) {
+                    assertThat(queryRes[i]).isBefore(queryRes[i + 1])
+                } else {
+                    assertThat(queryRes[i]).isAfter(queryRes[i + 1])
+                }
+            }
+        }
+        testQuery(false)
+        testQuery(true)
     }
 
     @Test

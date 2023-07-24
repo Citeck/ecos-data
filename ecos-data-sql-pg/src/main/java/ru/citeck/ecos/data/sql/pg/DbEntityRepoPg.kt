@@ -629,7 +629,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
 
         addGrouping(query, table, expressions, groupBy)
-        addSortAndPage(query, table, expressions, sort, page)
+        addSortAndPage(query, table, expressions, sort, page, groupBy)
 
         return query.toString()
     }
@@ -720,7 +720,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         table: String,
         expressions: Map<String, ExpressionToken>,
         sorting: List<DbFindSort>,
-        page: DbFindPage
+        page: DbFindPage,
+        groupBy: List<String>
     ) {
 
         if (sorting.isNotEmpty()) {
@@ -729,7 +730,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 if (expressions.containsKey(sort.column)) {
                     query.append(sort.column)
                 } else {
-                    val columnName = if (sort.column == DbEntity.CREATED) {
+                    val columnName = if (sort.column == DbEntity.CREATED && groupBy.isEmpty()) {
                         // this replacement improve query performance
                         // works only if ID counter in postgres without cache
                         DbEntity.ID
