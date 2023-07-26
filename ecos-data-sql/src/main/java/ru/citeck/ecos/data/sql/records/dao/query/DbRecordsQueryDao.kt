@@ -15,11 +15,12 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
-import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
+import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.PredicateService
@@ -30,6 +31,11 @@ import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
+import java.util.*
+import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
+import kotlin.collections.HashSet
+import kotlin.collections.LinkedHashMap
 import kotlin.math.min
 
 class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
@@ -68,6 +74,9 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                 config.typeRef
             }
         }
+        val typeInfoData = getTypeInfoData(ecosTypeRef.getLocalId())
+
+        val assocsType = extractAssocsType(typeInfoData, originalPredicate)
 
         val expressionsCtx = DbExpressionAttsContext(recsQuery.groupBy.isNotEmpty())
 
@@ -78,8 +87,9 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         }
 
         val predicateData = processPredicate(
-            ecosTypeRef.getLocalId(),
-            recsQuery.getQuery(Predicate::class.java)
+            typeInfoData,
+            recsQuery.getQuery(Predicate::class.java),
+            assocsType
         ) { expressionsCtx.register(it) }
 
         var predicate = predicateData.predicate
@@ -99,31 +109,92 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
 
         val page = recsQuery.page
 
+        val assocTargetTableContextsByAttribute = HashMap<String, Optional<DbTableContext>>()
+        val assocSelectJoins = HashMap<String, DbTableContext>()
+
+        fun prepareAssocSelectJoin(att: String, strict: Boolean): String? {
+            val dotIdx = att.indexOf('.')
+            if (dotIdx == -1) {
+                return DbRecord.ATTS_MAPPING.getOrDefault(att, att)
+            }
+            fun printError(msg: () -> String) {
+                if (strict) {
+                    error(msg())
+                } else {
+                    log.debug(msg)
+                }
+            }
+
+            val srcAttName = att.substring(0, dotIdx)
+            val targetAttName = att.substring(dotIdx + 1)
+            if (targetAttName.contains('.')) {
+                printError { "Assoc select can't be executed for multiple joins. Attribute: '$att'" }
+                return null
+            }
+            var tableCtxOpt: Optional<DbTableContext>? = assocTargetTableContextsByAttribute[srcAttName]
+            if (tableCtxOpt == null) {
+                val attDef = typeInfoData.attributesById[srcAttName]
+                    ?: DbRecord.GLOBAL_ATTS[srcAttName]
+                    ?: error("Unknown attribute: '$srcAttName'")
+                if (!DbRecordsUtils.isAssocLikeAttribute(attDef)) {
+                    printError {
+                        "Assoc select can't be executed for non-assoc like attributes. " +
+                            "Attribute: '$srcAttName' Type: ${attDef.type}"
+                    }
+                    return null
+                }
+                tableCtxOpt = Optional.ofNullable(getAssocTableCtxToJoin(attDef.id, assocsType))
+                assocTargetTableContextsByAttribute[srcAttName] = tableCtxOpt
+            }
+            if (!tableCtxOpt.isPresent) {
+                printError { "Assoc select can't be executed for attribute: '$srcAttName'" }
+                return null
+            }
+            val tableCtx: DbTableContext = tableCtxOpt.get()
+
+            val mappedTargetColumnName = DbRecord.ATTS_MAPPING.getOrDefault(targetAttName, targetAttName)
+            if (!tableCtx.hasColumn(mappedTargetColumnName)) {
+                printError {
+                    "Assoc select can't be executed for nonexistent inner " +
+                        "attribute '$targetAttName'. Full attribute: '$att'"
+                }
+                return null
+            }
+            val mappedSrcAtt = DbRecord.ATTS_MAPPING.getOrDefault(srcAttName, srcAttName)
+            assocSelectJoins[mappedSrcAtt] = tableCtx
+            return "$mappedSrcAtt.$mappedTargetColumnName"
+        }
+
         val findRes = dataService.doWithPermsPolicy(predicateData.queryPermsPolicy) {
+
             val dbQuery = DbFindQuery.create {
                 withPredicate(predicate)
                 withSortBy(
-                    recsQuery.sortBy.mapNotNull {
-                        if (it.attribute.contains('(')) {
-                            DbFindSort(expressionsCtx.register(it.attribute), it.ascending)
-                        } else if (!it.attribute.contains(".")) {
-                            DbFindSort(DbRecord.ATTS_MAPPING.getOrDefault(it.attribute, it.attribute), it.ascending)
+                    recsQuery.sortBy.mapNotNull { sortBy ->
+                        val att = sortBy.attribute
+                        if (att.contains('(')) {
+                            DbFindSort(expressionsCtx.register(att), sortBy.ascending)
+                        } else if (!att.contains(".")) {
+                            DbFindSort(DbRecord.ATTS_MAPPING.getOrDefault(att, att), sortBy.ascending)
                         } else {
-                            null
+                            prepareAssocSelectJoin(att, false)?.let { DbFindSort(it, sortBy.ascending) }
                         }
                     }
                 )
                 withGroupBy(
-                    recsQuery.groupBy.map {
-                        if (it.contains('(')) {
-                            expressionsCtx.register(it)
+                    recsQuery.groupBy.mapNotNull { groupBy ->
+                        if (groupBy.contains('(')) {
+                            expressionsCtx.register(groupBy)
+                        } else if (!groupBy.contains('.')) {
+                            DbRecord.ATTS_MAPPING.getOrDefault(groupBy, groupBy)
                         } else {
-                            DbRecord.ATTS_MAPPING.getOrDefault(it, it)
+                            prepareAssocSelectJoin(groupBy, true)
                         }
                     }
                 )
-                withAssocJoins(predicateData.assocJoins)
-                withAssocTableJoins(predicateData.assocTableJoins)
+                withAssocSelectJoins(assocSelectJoins)
+                withAssocJoins(predicateData.assocTableJoins)
+                withAssocTableJoins(predicateData.assocJoinWithPredicates)
                 withExpressions(expressionsCtx.getExpressions())
             }
 
@@ -145,39 +216,113 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
 
         val queryRes = RecsQueryRes<DbRecord>()
         queryRes.setTotalCount(findRes.totalCount)
-        queryRes.setRecords(entities.map { DbRecord(daoCtx, it) })
+        queryRes.setRecords(entities.map { DbRecord(daoCtx, it, assocsType) })
         queryRes.setHasMore(findRes.totalCount > findRes.entities.size + page.skipCount)
 
         return queryRes
     }
 
+    private fun extractAssocsType(typeData: TypeInfoData, predicate: Predicate): Map<String, EntityRef> {
+
+        val typesByAssocId = LinkedHashMap<String, EntityRef>()
+        typeData.attributesById.values.forEach {
+            if (DbRecordsUtils.isAssocLikeAttribute(it)) {
+                val typeRef = it.config["typeRef"].asText()
+                if (typeRef.isNotBlank()) {
+                    typesByAssocId[it.id] = typeRef.toEntityRef()
+                }
+            }
+        }
+
+        val assocIds = typeData.attributesById.values.filter {
+            DbRecordsUtils.isAssocLikeAttribute(it)
+        }.mapTo(HashSet()) { it.id }
+        assocIds.add(RecordConstants.ATT_PARENT)
+
+        fun tryToRegisterAssocTypeHint(att: String, value: DataValue) {
+            if (!value.isTextual()) {
+                return
+            }
+            val dotIdx = att.indexOf('.')
+            if (dotIdx == -1) {
+                return
+            }
+            val assocAtt = att.substring(0, dotIdx)
+            if (!assocIds.contains(assocAtt)) {
+                return
+            }
+            val innerAtt = att.substring(dotIdx + 1)
+            if (innerAtt.startsWith(RecordConstants.ATT_TYPE) && (
+                innerAtt.length == RecordConstants.ATT_TYPE.length ||
+                    innerAtt[RecordConstants.ATT_TYPE.length] == '?'
+                )
+            ) {
+                val strValue = value.asText()
+                if (strValue.isBlank()) {
+                    return
+                }
+                typesByAssocId[assocAtt] = if (strValue.contains('/')) {
+                    EntityRef.valueOf(strValue)
+                } else {
+                    ModelUtils.getTypeRef(strValue)
+                }
+            }
+        }
+        mapAttributePredicates(predicate, tryToMergeOrPredicates = false, onlyAnd = true) {
+            if (it is ValuePredicate) {
+                val type = it.getType()
+                if (type == ValuePredicate.Type.EQ || type == ValuePredicate.Type.CONTAINS) {
+                    tryToRegisterAssocTypeHint(it.getAttribute(), it.getValue())
+                }
+            }
+            it
+        }
+        return typesByAssocId
+    }
+
+    private fun getTypeInfoData(typeId: String): TypeInfoData {
+
+        val attributesById: MutableMap<String, AttributeDef>
+        val typeAspects: Set<EntityRef>
+        var queryPermsPolicy = QueryPermsPolicy.OWN
+        var typeInfo: TypeInfo? = null
+
+        if (typeId.isNotEmpty()) {
+            typeInfo = ecosTypeService.getTypeInfo(typeId)
+            attributesById = LinkedHashMap(typeInfo?.model?.getAllAttributes()?.associateBy { it.id } ?: emptyMap())
+            typeAspects = typeInfo?.aspects?.map { it.ref }?.toSet() ?: emptySet()
+            queryPermsPolicy = typeInfo?.queryPermsPolicy ?: queryPermsPolicy
+        } else {
+            attributesById = LinkedHashMap()
+            typeAspects = emptySet()
+        }
+        DbRecord.GLOBAL_ATTS.values.forEach {
+            if (!attributesById.containsKey(it.id)) {
+                attributesById[it.id] = it
+            }
+        }
+        return TypeInfoData(typeInfo, typeAspects, attributesById, queryPermsPolicy)
+    }
+
     private fun processPredicate(
-        typeId: String,
+        typeData: TypeInfoData,
         predicate: Predicate,
+        assocsType: Map<String, EntityRef>,
         registerExpression: (String) -> String
     ): ProcessedPredicateData {
 
         var typePredicateExists = false
-        val assocJoins = ArrayList<AssocJoin>()
         val assocTableJoins = ArrayList<AssocTableJoin>()
+        val assocJoinWithPredicates = ArrayList<AssocJoinWithPredicate>()
         var assocJoinsCounter = 0
         val assocsTableExists = assocsService.isAssocsTableExists()
 
-        val attributesById: Map<String, AttributeDef>
-        val typeAspects: Set<EntityRef>
-        var queryPermsPolicy = QueryPermsPolicy.OWN
-
-        if (typeId.isNotEmpty()) {
-            val typeInfo = ecosTypeService.getTypeInfo(typeId)
-            attributesById = typeInfo?.model?.getAllAttributes()?.associateBy { it.id } ?: emptyMap()
-            typeAspects = typeInfo?.aspects?.map { it.ref }?.toSet() ?: emptySet()
-            queryPermsPolicy = typeInfo?.queryPermsPolicy ?: queryPermsPolicy
+        val attributesById = typeData.attributesById
+        val typeAspects = typeData.typeAspects
+        val queryPermsPolicy = if (AuthContext.isRunAsSystem()) {
+            QueryPermsPolicy.PUBLIC
         } else {
-            attributesById = emptyMap()
-            typeAspects = emptySet()
-        }
-        if (AuthContext.isRunAsSystem()) {
-            queryPermsPolicy = QueryPermsPolicy.PUBLIC
+            typeData.queryPermsPolicy
         }
 
         val predicateWithConvertedAssocs = replaceAssocRefsToIds(predicate, attributesById)
@@ -206,25 +351,29 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                             if (attribute.contains('.')) {
                                 val srcAttName = attribute.substringBefore('.')
                                 val srcAttDef = attributesById[srcAttName]
-                                val targetTableCtx = getAssocTableCtxToJoin(srcAttDef)
+                                val targetTableCtx = getAssocTableCtxToJoin(srcAttDef?.id, assocsType)
                                 if (srcAttDef != null && targetTableCtx != null) {
+                                    val assocTypeId = assocsType[srcAttDef.id]?.getLocalId() ?: ""
+                                    val innerPredicate = ValuePredicate(
+                                        attribute.substringAfter('.'),
+                                        currentPred.getType(),
+                                        currentPred.getValue()
+                                    )
+                                    val innerTypeInfoData = getTypeInfoData(assocTypeId)
                                     val innerPredData = processPredicate(
-                                        srcAttDef.id,
-                                        ValuePredicate(
-                                            attribute.substringAfter('.'),
-                                            currentPred.getType(),
-                                            currentPred.getValue()
-                                        )
+                                        innerTypeInfoData,
+                                        innerPredicate,
+                                        extractAssocsType(innerTypeInfoData, innerPredicate)
                                     ) { it }
                                     val assocJoinAttName = "$attribute-${assocJoinsCounter++}"
-                                    assocTableJoins.add(
-                                        AssocTableJoin(
+                                    assocJoinWithPredicates.add(
+                                        AssocJoinWithPredicate(
                                             assocJoinAttName,
                                             srcAttName,
                                             targetTableCtx,
                                             innerPredData.predicate,
-                                            innerPredData.assocJoins,
-                                            innerPredData.assocTableJoins
+                                            innerPredData.assocTableJoins,
+                                            innerPredData.assocJoinWithPredicates
                                         )
                                     )
                                     return@mapAttributePredicates ValuePredicate(
@@ -268,8 +417,8 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                             } else {
                                 val newAttribute = if (assocAtt != RecordConstants.ATT_PARENT && assocsTableExists) {
                                     val joinAtt = "$assocAtt-${assocJoinsCounter++}"
-                                    assocJoins.add(
-                                        AssocJoin(
+                                    assocTableJoins.add(
+                                        AssocTableJoin(
                                             assocsService.getIdForAtt(assocAtt),
                                             joinAtt,
                                             assocAtt,
@@ -340,8 +489,8 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
 
         return ProcessedPredicateData(
             processedPredicate,
-            assocJoins,
             assocTableJoins,
+            assocJoinWithPredicates,
             typePredicateExists,
             queryPermsPolicy
         )
@@ -371,13 +520,25 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         tryToMergeOrPredicates: Boolean,
         mapFunc: (AttributePredicate) -> Predicate
     ): Predicate {
+        return mapAttributePredicates(predicate, tryToMergeOrPredicates, false, mapFunc)
+    }
+
+    private fun mapAttributePredicates(
+        predicate: Predicate,
+        tryToMergeOrPredicates: Boolean,
+        onlyAnd: Boolean,
+        mapFunc: (AttributePredicate) -> Predicate
+    ): Predicate {
         return if (predicate is AttributePredicate) {
             mapFunc(predicate)
         } else if (predicate is ComposedPredicate) {
             val isAnd = predicate is AndPredicate
+            if (onlyAnd && !isAnd) {
+                return Predicates.alwaysFalse()
+            }
             val mappedPredicates: MutableList<Predicate> = java.util.ArrayList()
             for (pred in predicate.getPredicates()) {
-                val mappedPred = mapAttributePredicates(pred, tryToMergeOrPredicates, mapFunc)
+                val mappedPred = mapAttributePredicates(pred, tryToMergeOrPredicates, onlyAnd, mapFunc)
                 if (PredicateUtils.isAlwaysTrue(mappedPred)) {
                     if (isAnd) {
                         continue
@@ -413,7 +574,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                 }
             }
         } else if (predicate is NotPredicate) {
-            val mapped = mapAttributePredicates(predicate.getPredicate(), tryToMergeOrPredicates, mapFunc)
+            val mapped = mapAttributePredicates(predicate.getPredicate(), tryToMergeOrPredicates, false, mapFunc)
             if (mapped is NotPredicate) {
                 mapped.getPredicate()
             } else {
@@ -495,13 +656,9 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         return ValuePredicate(attribute, ValuePredicate.Type.IN, resultList)
     }
 
-    private fun getAssocTableCtxToJoin(attDef: AttributeDef?): DbTableContext? {
+    private fun getAssocTableCtxToJoin(assocAttId: String?, assocsType: Map<String, EntityRef>): DbTableContext? {
 
-        if (attDef == null || !DbRecordsUtils.isAssocLikeAttribute(attDef) || attDef.multiple) {
-            return null
-        }
-
-        val targetTypeId = EntityRef.valueOf(attDef.config.get("typeRef", "")).getLocalId()
+        val targetTypeId = assocsType[assocAttId ?: ""]?.getLocalId() ?: ""
         if (targetTypeId.isBlank()) {
             return null
         }
@@ -634,9 +791,16 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
 
     private class ProcessedPredicateData(
         val predicate: Predicate,
-        val assocJoins: List<AssocJoin>,
         val assocTableJoins: List<AssocTableJoin>,
+        val assocJoinWithPredicates: List<AssocJoinWithPredicate>,
         val typePredicateExists: Boolean,
         val queryPermsPolicy: QueryPermsPolicy,
+    )
+
+    private class TypeInfoData(
+        val typeInfo: TypeInfo?,
+        val typeAspects: Set<EntityRef>,
+        val attributesById: Map<String, AttributeDef>,
+        val queryPermsPolicy: QueryPermsPolicy
     )
 }

@@ -14,7 +14,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
-import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
+import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
@@ -27,7 +27,9 @@ import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.*
 import java.util.*
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
 import kotlin.collections.LinkedHashMap
 import kotlin.collections.LinkedHashSet
 import kotlin.reflect.KClass
@@ -51,6 +53,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         private const val COUNT_COLUMN = "COUNT(*)"
 
         private const val SEARCH_DISABLED_COLUMN = "__search__disabled__"
+
+        private const val VIRTUAL_COLUMN_PREFIX = "v__"
     }
 
     private val disableQueryPermsCheck = ThreadLocal.withInitial { false }
@@ -90,7 +94,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         row: ResultSet,
         columns: List<DbColumnDef>,
         groupBy: List<String> = emptyList(),
-        expressions: Map<String, ExpressionToken> = emptyMap()
+        expressions: Map<String, ExpressionToken> = emptyMap(),
+        asjAliases: Map<String, String>
     ): Map<String, Any?> {
         val result = LinkedHashMap<String, Any?>()
         if (groupBy.isEmpty()) {
@@ -113,12 +118,17 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             val columnByName = columns.associateBy { it.name }
             groupBy.forEach {
                 if (!expressions.containsKey(it)) {
-                    val value = row.getObject(it)
-                    result[it] = if (value != null) {
-                        val column = columnByName[it]!!
-                        typesConverter.convert(value, column.type.type)
+                    val alias = asjAliases[it]
+                    if (alias != null) {
+                        result[it] = row.getObject(alias)
                     } else {
-                        null
+                        val value = row.getObject(it)
+                        result[it] = if (value != null) {
+                            val column = columnByName[it]!!
+                            typesConverter.convert(value, column.type.type)
+                        } else {
+                            null
+                        }
                     }
                 }
             }
@@ -379,8 +389,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             return 0
         }
 
-        val repoAssocJoins = query.assocJoins.associateBy { it.attribute }
-        val repoAssocTableJoins = query.assocTableJoins.associateBy { it.attribute }
+        val repoAssocJoins = query.assocTableJoins.associateBy { it.attribute }
+        val repoAssocTableJoins = query.assocJoinsWithPredicate.associateBy { it.attribute }
 
         val params = mutableListOf<Any?>()
         val sqlCondition = toSqlCondition(
@@ -393,7 +403,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             params
         )
 
-        return getCountImpl(context, RECORD_TABLE_ALIAS, sqlCondition, params, permsColumn, query.groupBy)
+        return getCountImpl(context, RECORD_TABLE_ALIAS, sqlCondition, params, permsColumn, query.groupBy, query.assocSelectJoins)
     }
 
     private fun getPermsColumn(context: DbTableContext): String {
@@ -415,7 +425,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         sqlCondition: String,
         params: List<Any?>,
         permsColumn: String,
-        groupBy: List<String>
+        groupBy: List<String>,
+        assocSelectJoins: Map<String, DbTableContext>
     ): Long {
 
         val selectQuery = createSelectQuery(
@@ -428,7 +439,12 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             emptyList(),
             DbFindPage.ALL,
             emptyMap(),
-            groupBy
+            groupBy,
+            if (groupBy.any { it.contains('.') }) {
+                assocSelectJoins
+            } else {
+                emptyMap()
+            }
         )
         if (selectQuery.contains(WHERE_ALWAYS_FALSE)) {
             return 0
@@ -489,15 +505,22 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val queryGroupBy = ArrayList(query.groupBy)
         if (queryGroupBy.isNotEmpty()) {
             val invalidColumns = queryGroupBy.filter {
-                !columnsByName.containsKey(it) && !query.expressions.containsKey(it)
+                val isPlainColumnOrExpression = columnsByName.containsKey(it) || query.expressions.containsKey(it)
+                if (isPlainColumnOrExpression) {
+                    false
+                } else if (!it.contains('.')) {
+                    true
+                } else {
+                    !query.assocSelectJoins.containsKey(it.substringBefore('.'))
+                }
             }
             if (invalidColumns.isNotEmpty()) {
                 error("Grouping by columns $invalidColumns is not allowed")
             }
         }
 
-        val repoAssocJoins = query.assocJoins.associateBy { it.attribute }
-        val repoAssocTableJoins = query.assocTableJoins.associateBy { it.attribute }
+        val repoAssocJoins = query.assocTableJoins.associateBy { it.attribute }
+        val repoAssocTableJoins = query.assocJoinsWithPredicate.associateBy { it.attribute }
 
         val params = mutableListOf<Any?>()
         val sqlCondition =
@@ -511,6 +534,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 params
             )
 
+        val asjAliases = HashMap<String, String>()
         val selectQuery = createSelectQuery(
             context,
             RECORD_TABLE_ALIAS,
@@ -521,7 +545,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             query.sortBy,
             page,
             queryGroupBy,
-            query.expressions
+            query.expressions,
+            query.assocSelectJoins,
+            asjAliases
         )
 
         val resultEntities = context.getDataSource().query(selectQuery, params) { resultSet ->
@@ -533,7 +559,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         resultSet,
                         columns,
                         queryGroupBy,
-                        query.expressions
+                        query.expressions,
+                        asjAliases
                     )
                 )
             }
@@ -543,7 +570,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val totalCount = if (!withTotalCount || page.maxItems == -1 || page.maxItems > resultEntities.size) {
             resultEntities.size.toLong() + page.skipCount
         } else {
-            getCountImpl(context, RECORD_TABLE_ALIAS, sqlCondition, params, permsColumn, query.groupBy)
+            getCountImpl(context, RECORD_TABLE_ALIAS, sqlCondition, params, permsColumn, query.groupBy, query.assocSelectJoins)
         }
         return DbFindRes(resultEntities, totalCount)
     }
@@ -558,19 +585,54 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         sort: List<DbFindSort> = emptyList(),
         page: DbFindPage = DbFindPage.ALL,
         groupBy: List<String> = emptyList(),
-        expressions: Map<String, ExpressionToken>
+        expressions: Map<String, ExpressionToken>,
+        assocSelectJoins: Map<String, DbTableContext>,
+        asjAliases: MutableMap<String, String>
     ): String {
 
         val selectColumnsStr = StringBuilder()
-        if (groupBy.isEmpty()) {
+
+        val asjAliasesCounter = AtomicInteger()
+        fun registerAsjColumn(name: String): String {
+            val dotIdx = name.indexOf('.')
+            if (dotIdx == -1) {
+                return name
+            }
+            return asjAliases.computeIfAbsent(name) {
+                val joinSrcAtt = name.substring(0, dotIdx)
+                val joinTgtAtt = name.substring(dotIdx + 1)
+                val alias = "$VIRTUAL_COLUMN_PREFIX${asjAliasesCounter.getAndIncrement()}"
+                selectColumnsStr.append(' ')
+                    .append('"')
+                    .append("asj__")
+                    .append(joinSrcAtt)
+                    .append("\".\"")
+                    .append(joinTgtAtt)
+                    .append('"')
+                    .append(" AS ")
+                    .append(alias)
+                    .append(",")
+                alias
+            }
+        }
+        val convertedGroupBy = groupBy.map { registerAsjColumn(it) }
+        val convertedSortBy = sort.map {
+            if (it.column.contains('.')) {
+                DbFindSort(registerAsjColumn(it.column), it.ascending)
+            } else {
+                it
+            }
+        }
+
+        if (convertedGroupBy.isEmpty()) {
             selectColumns.forEach {
                 appendRecordColumnName(selectColumnsStr, table, it.name)
                 selectColumnsStr.append(",")
             }
         } else {
-            groupBy.forEach {
-                if (!expressions.containsKey(it)) {
-                    appendRecordColumnName(selectColumnsStr, table, it)
+            convertedGroupBy.forEach { groupByIt ->
+                if (!expressions.containsKey(groupByIt) && !groupByIt.startsWith(VIRTUAL_COLUMN_PREFIX)) {
+                    appendRecordColumnName(selectColumnsStr, table, groupByIt)
                     selectColumnsStr.append(",")
                 }
             }
@@ -590,10 +652,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             permsColumn,
             withDeleted,
             condition,
-            sort,
+            convertedSortBy,
             page,
             expressions,
-            groupBy
+            convertedGroupBy,
+            assocSelectJoins
         )
     }
 
@@ -607,7 +670,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         sort: List<DbFindSort> = emptyList(),
         page: DbFindPage = DbFindPage.ALL,
         expressions: Map<String, ExpressionToken>,
-        groupBy: List<String> = emptyList()
+        groupBy: List<String> = emptyList(),
+        assocSelectJoins: Map<String, DbTableContext>
     ): String {
 
         val delCondition = if (context.hasDeleteFlag() && !withDeleted) {
@@ -624,6 +688,12 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             .append(selectColumns)
             .append(" FROM ${context.getTableRef().fullName} \"$table\"")
 
+        for ((srcColumn, targetCtx) in assocSelectJoins) {
+            val alias = "\"asj__$srcColumn\""
+            query.append(" LEFT JOIN ${targetCtx.getTableRef().fullName} $alias ON $alias.${DbEntity.REF_ID} = ")
+            appendRecordColumnName(query, table, srcColumn)
+        }
+
         if (fullCondition.isNotBlank()) {
             query.append(" WHERE ").append(fullCondition)
         }
@@ -637,7 +707,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
     private fun addAssocTableCondition(
         query: StringBuilder,
         table: String,
-        tableJoin: AssocTableJoin,
+        tableJoin: AssocJoinWithPredicate,
         queryParams: MutableList<Any?>
     ) {
         val targetTableName = "$table$RECORD_TABLE_ALIAS"
@@ -645,8 +715,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         query.append("EXISTS(SELECT 1 FROM ${targetTable.fullName} $targetTableName WHERE ")
             .append("\"$table\".\"${tableJoin.srcColumn}\"=\"${targetTableName}\".\"${DbEntity.REF_ID}\" AND ")
 
-        val assocJoins = tableJoin.assocJoins.associateBy { it.attribute }
-        val assocTableJoins = tableJoin.assocTableJoins.associateBy { it.attribute }
+        val assocJoins = tableJoin.assocTableJoins.associateBy { it.attribute }
+        val assocTableJoins = tableJoin.assocJoinsWithPredicate.associateBy { it.attribute }
 
         toSqlCondition(
             tableJoin.tableContext,
@@ -665,7 +735,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         context: DbTableContext,
         query: StringBuilder,
         table: String,
-        assocJoin: AssocJoin,
+        assocTableJoin: AssocTableJoin,
         values: Collection<Long>
     ) {
         if (values.isEmpty()) {
@@ -674,9 +744,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
         val tableRef = context.getTableRef()
         val assocsTableName = tableRef.withTable(DbAssocEntity.MAIN_TABLE).fullName
-        val attId = assocJoin.attId
+        val attId = assocTableJoin.attId
         query.append("EXISTS(SELECT 1 FROM $assocsTableName a WHERE ")
-        if (assocJoin.target) {
+        if (assocTableJoin.target) {
             query.append(
                 "a.${DbAssocEntity.SOURCE_ID}=\"$table\".${DbEntity.REF_ID} " +
                     "AND a.${DbAssocEntity.ATTRIBUTE}=$attId AND a.${DbAssocEntity.TARGET_ID} IN ("
@@ -707,6 +777,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         groupBy.forEach {
             if (expressions.containsKey(it)) {
                 query.append(it)
+            } else if (it.startsWith(VIRTUAL_COLUMN_PREFIX)) {
+                query.append('"').append(it).append('"')
             } else {
                 appendRecordColumnName(query, table, it)
             }
@@ -729,6 +801,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             for (sort in sorting) {
                 if (expressions.containsKey(sort.column)) {
                     query.append(sort.column)
+                } else if (sort.column.startsWith(VIRTUAL_COLUMN_PREFIX)) {
+                    query.append("\"").append(sort.column).append("\"")
                 } else {
                     val columnName = if (sort.column == DbEntity.CREATED && groupBy.isEmpty()) {
                         // this replacement improve query performance
@@ -879,13 +953,13 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         context: DbTableContext,
         predicate: Predicate,
         table: String,
-        assocJoins: Map<String, AssocJoin>,
         assocTableJoins: Map<String, AssocTableJoin>,
+        assocTargetJoinsWithPredicate: Map<String, AssocJoinWithPredicate>,
         expressions: Map<String, ExpressionToken>,
         queryParams: MutableList<Any?>
     ): String {
         val sb = StringBuilder()
-        toSqlCondition(context, sb, table, predicate, assocJoins, assocTableJoins, expressions, queryParams)
+        toSqlCondition(context, sb, table, predicate, assocTableJoins, assocTargetJoinsWithPredicate, expressions, queryParams)
         return sb.toString()
     }
 
@@ -894,8 +968,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         query: StringBuilder,
         table: String,
         predicate: Predicate,
-        assocJoins: Map<String, AssocJoin>,
         assocTableJoins: Map<String, AssocTableJoin>,
+        assocTargetJoinsWithPredicate: Map<String, AssocJoinWithPredicate>,
         expressions: Map<String, ExpressionToken>,
         queryParams: MutableList<Any?>
     ): Boolean {
@@ -917,8 +991,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                             query,
                             table,
                             innerPred,
-                            assocJoins,
                             assocTableJoins,
+                            assocTargetJoinsWithPredicate,
                             expressions,
                             queryParams
                         )
@@ -941,11 +1015,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
                 var columnDef = context.getColumnByName(predicate.getAttribute())
                 if (columnDef == null) {
-                    val assocJoin = assocJoins[predicate.getAttribute()]
+                    val assocJoin = assocTableJoins[predicate.getAttribute()]
                     if (assocJoin != null) {
                         columnDef = context.getColumnByName(assocJoin.srcColumn)
                     } else {
-                        val assocTableJoin = assocTableJoins[predicate.getAttribute()]
+                        val assocTableJoin = assocTargetJoinsWithPredicate[predicate.getAttribute()]
                         if (assocTableJoin != null) {
                             columnDef = context.getColumnByName(assocTableJoin.srcColumn)
                         } else if (expressions.containsKey(predicate.getAttribute())) {
@@ -963,7 +1037,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 val value = predicate.getValue()
 
                 if (columnDef.type == DbColumnType.LONG) {
-                    val assocJoin = assocJoins[attribute]
+                    val assocJoin = assocTableJoins[attribute]
                     if (assocJoin != null) {
                         if (type != ValuePredicate.Type.EQ &&
                             type != ValuePredicate.Type.CONTAINS &&
@@ -975,15 +1049,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         addAssocCondition(context, query, table, assocJoin, longs)
                         return true
                     }
-                    val assocTableJoin = assocTableJoins[attribute]
-                    if (assocTableJoin != null) {
+                    val assocTargetTableJoin = assocTargetJoinsWithPredicate[attribute]
+                    if (assocTargetTableJoin != null) {
                         if (type != ValuePredicate.Type.EQ &&
                             type != ValuePredicate.Type.CONTAINS &&
                             type != ValuePredicate.Type.IN
                         ) {
                             return false
                         }
-                        addAssocTableCondition(query, table, assocTableJoin, queryParams)
+                        addAssocTableCondition(query, table, assocTargetTableJoin, queryParams)
                         return true
                     }
                 }
@@ -1140,8 +1214,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         query,
                         table,
                         predicate.getPredicate(),
-                        assocJoins,
                         assocTableJoins,
+                        assocTargetJoinsWithPredicate,
                         expressions,
                         queryParams
                     )

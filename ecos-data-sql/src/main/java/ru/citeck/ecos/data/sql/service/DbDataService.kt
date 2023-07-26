@@ -8,7 +8,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
-import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
+import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
@@ -54,8 +54,8 @@ interface DbDataService<T : Any> {
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
-        assocJoins: List<AssocJoin>,
         assocTableJoins: List<AssocTableJoin>,
+        assocJoinWithPredicates: List<AssocJoinWithPredicate>,
         withTotalCount: Boolean
     ): DbFindRes<T>
 
@@ -69,8 +69,8 @@ interface DbDataService<T : Any> {
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
-        assocJoins: List<AssocJoin>,
         assocTableJoins: List<AssocTableJoin>,
+        assocJoinWithPredicates: List<AssocJoinWithPredicate>,
         withTotalCount: Boolean
     ): DbFindRes<Map<String, Any?>>
 

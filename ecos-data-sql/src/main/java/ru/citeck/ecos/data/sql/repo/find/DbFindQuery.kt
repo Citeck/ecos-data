@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.repo.find
 
-import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
+import ru.citeck.ecos.data.sql.context.DbTableContext
+import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.records2.predicate.model.Predicate
@@ -8,8 +9,9 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 
 class DbFindQuery(
     val expressions: Map<String, ExpressionToken>,
-    val assocJoins: List<AssocJoin>,
     val assocTableJoins: List<AssocTableJoin>,
+    val assocSelectJoins: Map<String, DbTableContext>,
+    val assocJoinsWithPredicate: List<AssocJoinWithPredicate>,
     val predicate: Predicate,
     val withDeleted: Boolean,
     val sortBy: List<DbFindSort>,
@@ -43,8 +45,9 @@ class DbFindQuery(
         var groupBy: List<String> = emptyList()
 
         var expressions: MutableMap<String, ExpressionToken> = HashMap()
-        var assocJoins: MutableList<AssocJoin> = ArrayList()
         var assocTableJoins: MutableList<AssocTableJoin> = ArrayList()
+        var assocSelectJoins: Map<String, DbTableContext> = HashMap()
+        var assocJoinWithPredicates: MutableList<AssocJoinWithPredicate> = ArrayList()
 
         constructor(base: DbFindQuery) : this() {
             this.predicate = base.predicate.copy()
@@ -52,8 +55,9 @@ class DbFindQuery(
             this.sortBy = base.sortBy
             this.groupBy = base.groupBy
             this.expressions = HashMap(base.expressions)
-            this.assocJoins = ArrayList(base.assocJoins)
             this.assocTableJoins = ArrayList(base.assocTableJoins)
+            this.assocSelectJoins = HashMap(base.assocSelectJoins)
+            this.assocJoinWithPredicates = ArrayList(base.assocJoinsWithPredicate)
         }
 
         fun withPredicate(predicate: Predicate?): Builder {
@@ -86,17 +90,7 @@ class DbFindQuery(
             return this
         }
 
-        fun withAssocJoins(assocJoins: List<AssocJoin>?): Builder {
-            this.assocJoins = ArrayList(assocJoins ?: emptyList())
-            return this
-        }
-
-        fun addAssocJoin(assocJoin: AssocJoin): Builder {
-            this.assocJoins.add(assocJoin)
-            return this
-        }
-
-        fun withAssocTableJoins(assocTableJoins: List<AssocTableJoin>?): Builder {
+        fun withAssocJoins(assocTableJoins: List<AssocTableJoin>?): Builder {
             this.assocTableJoins = ArrayList(assocTableJoins ?: emptyList())
             return this
         }
@@ -106,11 +100,27 @@ class DbFindQuery(
             return this
         }
 
+        fun withAssocSelectJoins(assocSelectJoins: Map<String, DbTableContext>?): Builder {
+            this.assocSelectJoins = HashMap(assocSelectJoins ?: emptyMap())
+            return this
+        }
+
+        fun withAssocTableJoins(assocJoinWithPredicates: List<AssocJoinWithPredicate>?): Builder {
+            this.assocJoinWithPredicates = ArrayList(assocJoinWithPredicates ?: emptyList())
+            return this
+        }
+
+        fun addAssocTableJoin(assocJoinWithPredicate: AssocJoinWithPredicate): Builder {
+            this.assocJoinWithPredicates.add(assocJoinWithPredicate)
+            return this
+        }
+
         fun build(): DbFindQuery {
             return DbFindQuery(
                 expressions = expressions,
-                assocJoins = assocJoins,
                 assocTableJoins = assocTableJoins,
+                assocSelectJoins = assocSelectJoins,
+                assocJoinsWithPredicate = assocJoinWithPredicates,
                 predicate = predicate,
                 withDeleted = withDeleted,
                 sortBy = sortBy,

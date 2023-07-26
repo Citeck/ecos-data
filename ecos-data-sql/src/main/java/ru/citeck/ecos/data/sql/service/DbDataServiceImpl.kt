@@ -29,7 +29,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
-import ru.citeck.ecos.data.sql.service.assocs.AssocJoin
+import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
@@ -334,8 +334,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
-        assocJoins: List<AssocJoin>,
         assocTableJoins: List<AssocTableJoin>,
+        assocJoinWithPredicates: List<AssocJoinWithPredicate>,
         withTotalCount: Boolean
     ): DbFindRes<T> {
         return find(
@@ -344,8 +344,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 withSortBy(sort)
                 withDeleted(withDeleted)
                 withGroupBy(groupBy)
-                withAssocJoins(assocJoins)
-                withAssocTableJoins(assocTableJoins)
+                withAssocJoins(assocTableJoins)
+                withAssocTableJoins(assocJoinWithPredicates)
             },
             page,
             withTotalCount
@@ -371,8 +371,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         page: DbFindPage,
         withDeleted: Boolean,
         groupBy: List<String>,
-        assocJoins: List<AssocJoin>,
         assocTableJoins: List<AssocTableJoin>,
+        assocJoinWithPredicates: List<AssocJoinWithPredicate>,
         withTotalCount: Boolean
     ): DbFindRes<Map<String, Any?>> {
         return findRaw(
@@ -381,8 +381,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 withSortBy(sort)
                 withDeleted(withDeleted)
                 withGroupBy(groupBy)
-                withAssocJoins(assocJoins)
-                withAssocTableJoins(assocTableJoins)
+                withAssocJoins(assocTableJoins)
+                withAssocTableJoins(assocJoinWithPredicates)
             },
             page,
             withTotalCount
@@ -790,14 +790,14 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     private fun prepareQuery(query: DbFindQuery): DbFindQuery {
         return query.copy()
             .withPredicate(
-                preparePredicate(query.predicate, query.assocJoins, query.assocTableJoins)
+                preparePredicate(query.predicate, query.assocTableJoins, query.assocJoinsWithPredicate)
             ).build()
     }
 
     private fun preparePredicate(
         predicate: Predicate,
-        assocJoins: List<AssocJoin>,
-        assocTableJoins: List<AssocTableJoin>
+        assocTableJoins: List<AssocTableJoin>,
+        assocJoinWithPredicates: List<AssocJoinWithPredicate>
     ): Predicate {
 
         if (PredicateUtils.isAlwaysTrue(predicate) || PredicateUtils.isAlwaysFalse(predicate)) {
@@ -805,8 +805,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
 
         val assocAttToColumnMap = HashMap<String, String>()
-        assocJoins.forEach { assocAttToColumnMap[it.attribute] = it.srcColumn }
         assocTableJoins.forEach { assocAttToColumnMap[it.attribute] = it.srcColumn }
+        assocJoinWithPredicates.forEach { assocAttToColumnMap[it.attribute] = it.srcColumn }
 
         val tableCtx = getTableContext()
 

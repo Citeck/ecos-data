@@ -15,6 +15,7 @@ import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValue
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValueWithCustomName
+import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
@@ -31,10 +32,15 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.temporal.Temporal
 import java.util.*
 import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
 import kotlin.collections.LinkedHashMap
 import kotlin.collections.LinkedHashSet
 
-class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValue {
+class DbRecord(
+    private val ctx: DbRecordsDaoCtx,
+    val entity: DbEntity,
+    assocTypes: Map<String, EntityRef> = emptyMap()
+) : AttValue {
 
     companion object {
         const val ATT_NAME = "_name"
@@ -127,12 +133,15 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
 
     private val permsValue by lazy { DbRecPermsValue(ctx, this) }
     private val additionalAtts: Map<String, Any?>
+    private val assocsInnerAdditionalAtts: Map<String, Any?>
     private val assocMapping: Map<Long, EntityRef>
 
     private val typeInfo: TypeInfo
     private val attTypes: Map<String, AttributeType>
     private val allAttDefs: Map<String, AttributeDef>
     private val nonSystemAttDefs: Map<String, AttributeDef>
+
+    private val defaultContentAtt: String
 
     init {
         val recData = LinkedHashMap(entity.attributes)
@@ -166,12 +175,15 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                     DbColumnType.JSON -> {
                         attTypes[it.name] = AttributeType.JSON
                     }
+
                     DbColumnType.TEXT -> {
                         attTypes[it.name] = AttributeType.TEXT
                     }
+
                     DbColumnType.INT -> {
                         attTypes[it.name] = AttributeType.NUMBER
                     }
+
                     DbColumnType.LONG -> {
                         if (it.name == RecordConstants.ATT_PARENT) {
                             attTypes[it.name] = AttributeType.ASSOC
@@ -179,6 +191,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                             attTypes[it.name] = AttributeType.ASSOC
                         }
                     }
+
                     else -> {
                     }
                 }
@@ -206,6 +219,33 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 assocIdValues.add(value)
             }
         }
+
+        val innerAssocAttsByAtt = HashMap<String, Map<String, AttributeDef>>()
+        fun getInnerAssocAtts(assocId: String) = innerAssocAttsByAtt.computeIfAbsent(assocId) { id ->
+            val attsById = HashMap<String, AttributeDef>(GLOBAL_ATTS)
+            val typeInfo = ctx.ecosTypeService.getTypeInfo(assocTypes[id]?.getLocalId() ?: "")
+            typeInfo?.model?.getAllAttributes()?.forEach {
+                attsById[it.id] = it
+            }
+            attsById
+        }
+
+        if (assocTypes.isNotEmpty()) {
+            recData.forEach { recDataEntry ->
+                val dotIdx = recDataEntry.key.indexOf('.')
+                if (dotIdx != -1) {
+                    val assocId = recDataEntry.key.substring(0, dotIdx)
+                    val innerAssocAttsById = getInnerAssocAtts(assocId)
+                    val attDef = innerAssocAttsById[recDataEntry.key.substring(dotIdx + 1)]
+                    if (DbRecordsUtils.isAssocLikeAttribute(attDef)) {
+                        DbAttValueUtils.forEachLongValue(recDataEntry.value) {
+                            assocIdValues.add(it)
+                        }
+                    }
+                }
+            }
+        }
+
         assocMapping = if (assocIdValues.isNotEmpty()) {
             val assocIdValuesList = assocIdValues.toList()
             val assocRefValues = ctx.recordRefService.getEntityRefsByIds(assocIdValuesList)
@@ -214,51 +254,79 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
             emptyMap()
         }
 
-        val defaultContentAtt = getDefaultContentAtt()
+        defaultContentAtt = getDefaultContentAtt()
 
         attTypes.forEach { (attId, attType) ->
-            val value = recData[attId]
-            if (DbRecordsUtils.isEntityRefAttribute(attType)) {
-                if (attId == ATT_ASPECTS) {
-                    val fullAspects = LinkedHashSet<String>()
-                    typeInfo.aspects.forEach {
-                        fullAspects.add(it.ref.getLocalId())
-                    }
-                    if (value != null) {
-                        val refs = toEntityRef(value)
-                        if (refs is Collection<*>) {
-                            for (ref in refs) {
-                                (ref as? EntityRef)?.let { fullAspects.add(it.getLocalId()) }
-                            }
-                        } else if (refs is EntityRef) {
-                            fullAspects.add(refs.getLocalId())
-                        }
-                    }
-                    recData[attId] = DbAspectsValue(fullAspects)
-                } else if (value != null) {
-                    recData[attId] = toEntityRef(value)
+            recData[attId] = convertValue(attId, attType, recData[attId])
+        }
+        val assocInnerKeys = recData.keys.filter { it.contains('.') }
+        if (assocInnerKeys.isEmpty() || assocTypes.isEmpty()) {
+            assocsInnerAdditionalAtts = emptyMap()
+        } else {
+            val complexAtts = LinkedHashMap<String, MutableMap<String, Any?>>()
+
+            for (key in assocInnerKeys) {
+                val data = recData[key]
+                val dotIdx = key.indexOf('.')
+                val keyFirst = key.substring(0, dotIdx)
+                val keySecond = key.substring(dotIdx + 1)
+                val innerAttDef = getInnerAssocAtts(keyFirst)[keySecond]
+                val convertedData = if (innerAttDef != null) {
+                    convertValue(keySecond, innerAttDef.type, data)
+                } else {
+                    data
                 }
-            } else {
-                when (attType) {
-                    AttributeType.JSON -> {
-                        if (value is String) {
-                            recData[attId] = Json.mapper.read(value)
+                complexAtts.computeIfAbsent(keyFirst) { LinkedHashMap() }[keySecond] = convertedData
+            }
+            assocsInnerAdditionalAtts = complexAtts
+        }
+        this.additionalAtts = recData
+    }
+
+    private fun convertValue(attId: String, attType: AttributeType, value: Any?): Any? {
+        if (DbRecordsUtils.isEntityRefAttribute(attType)) {
+            if (attId == ATT_ASPECTS) {
+                val fullAspects = LinkedHashSet<String>()
+                typeInfo.aspects.forEach {
+                    fullAspects.add(it.ref.getLocalId())
+                }
+                if (value != null) {
+                    val refs = toEntityRef(value)
+                    if (refs is Collection<*>) {
+                        for (ref in refs) {
+                            (ref as? EntityRef)?.let { fullAspects.add(it.getLocalId()) }
                         }
+                    } else if (refs is EntityRef) {
+                        fullAspects.add(refs.getLocalId())
                     }
-                    AttributeType.MLTEXT -> {
-                        if (value is String) {
-                            recData[attId] = Json.mapper.read(value, MLText::class.java)
-                        }
+                }
+                return DbAspectsValue(fullAspects)
+            } else if (value != null) {
+                return toEntityRef(value)
+            }
+        } else {
+            when (attType) {
+                AttributeType.JSON -> {
+                    if (value is String) {
+                        return Json.mapper.read(value)
                     }
-                    AttributeType.CONTENT -> {
-                        recData[attId] = convertContentAtt(value, attId, attId == defaultContentAtt)
+                }
+
+                AttributeType.MLTEXT -> {
+                    if (value is String) {
+                        return Json.mapper.read(value, MLText::class.java)
                     }
-                    else -> {
-                    }
+                }
+
+                AttributeType.CONTENT -> {
+                    return convertContentAtt(value, attId, attId == defaultContentAtt)
+                }
+
+                else -> {
                 }
             }
         }
-        this.additionalAtts = recData
+        return value
     }
 
     private fun convertContentAtt(value: Any?, attId: String, isDefaultContentAtt: Boolean): Any? {
@@ -293,6 +361,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 }
                 result
             }
+
             is Long -> assocMapping[value] ?: error("Ref doesn't found for id $value")
             else -> error("Unexpected ref value type: ${value::class}")
         }
@@ -417,6 +486,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                         }
                         value
                     }
+
                     is DbAspectsValue -> value.getAspectRefs()
                     else -> filterUnknownJsonTypes(attribute, value)
                 }
@@ -510,6 +580,13 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
     }
 
     override fun getAtt(name: String): Any? {
+        if (assocsInnerAdditionalAtts.containsKey(name)) {
+            return if (!isCurrentUserHasAttReadPerms(name)) {
+                null
+            } else {
+                assocsInnerAdditionalAtts[name]
+            }
+        }
         return when (name) {
             "id" -> entity.extId
             ATT_NAME -> displayName
@@ -523,6 +600,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                 val attValue = ctx.attValuesConverter.toAttValue(statusDef) ?: EmptyAttValue.INSTANCE
                 return DbStatusValue(statusDef, attValue)
             }
+
             ATT_PERMISSIONS -> permsValue
             RecordConstants.ATT_CONTENT -> getDefaultContent()
             RecordConstants.ATT_PARENT -> additionalAtts[RecordConstants.ATT_PARENT]
@@ -546,7 +624,7 @@ class DbRecord(private val ctx: DbRecordsDaoCtx, val entity: DbEntity) : AttValu
                     ) {
                         return "1.0"
                     }
-                    additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
+                    return additionalAtts[ATTS_MAPPING.getOrDefault(name, name)]
                 } else {
                     null
                 }
