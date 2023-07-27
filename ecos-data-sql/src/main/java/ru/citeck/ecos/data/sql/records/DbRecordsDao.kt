@@ -26,6 +26,7 @@ import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
 import ru.citeck.ecos.data.sql.records.dao.delete.DbRecordsDeleteDao
+import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
@@ -114,6 +115,7 @@ class DbRecordsDao(
     private val recsUpdatedInThisTxnKey = IdentityKey()
 
     private val recsPrepareToCommitTxnKey = IdentityKey()
+    private val recsCurrentlyInDeletion = IdentityKey()
 
     private var defaultContentStorage: EcosContentStorageConfig? = null
 
@@ -324,7 +326,7 @@ class DbRecordsDao(
                     }
                 }
             }
-            daoCtx.deleteDao.delete(recordIds)
+            daoCtx.deleteDao.delete(recordIds, getRecsCurrentlyInDeletion())
         }
     }
 
@@ -384,31 +386,36 @@ class DbRecordsDao(
         }
         return TxnContext.doInTxn {
             val resultEntity = mutateInTxn(record)
-            val resultRecId = resultEntity.extId
+            if (resultEntity == null) {
+                record.id
+            } else {
+                val resultRecId = resultEntity.extId
 
-            var queryPermsPolicy = QueryPermsPolicy.OWN
-            val typeRef = recordRefService.getEntityRefById(resultEntity.type)
-            queryPermsPolicy = ecosTypeService.getTypeInfo(typeRef.getLocalId())?.queryPermsPolicy ?: queryPermsPolicy
+                var queryPermsPolicy = QueryPermsPolicy.OWN
+                val typeRef = recordRefService.getEntityRefById(resultEntity.type)
+                queryPermsPolicy =
+                    ecosTypeService.getTypeInfo(typeRef.getLocalId())?.queryPermsPolicy ?: queryPermsPolicy
 
-            val txn = TxnContext.getTxn()
-            if (queryPermsPolicy == QueryPermsPolicy.OWN) {
-                val prepareToCommitEntities = txn.getData(recsPrepareToCommitTxnKey) {
-                    LinkedHashSet<String>()
-                }
-                if (prepareToCommitEntities.isEmpty()) {
-                    TxnContext.doBeforeCommit(0f) {
-                        entityPermsService.setReadPerms(getEntitiesPerms(prepareToCommitEntities))
+                val txn = TxnContext.getTxn()
+                if (queryPermsPolicy == QueryPermsPolicy.OWN) {
+                    val prepareToCommitEntities = txn.getData(recsPrepareToCommitTxnKey) {
+                        LinkedHashSet<String>()
                     }
+                    if (prepareToCommitEntities.isEmpty()) {
+                        TxnContext.doBeforeCommit(0f) {
+                            entityPermsService.setReadPerms(getEntitiesPerms(prepareToCommitEntities))
+                        }
+                    }
+                    prepareToCommitEntities.add(resultRecId)
                 }
-                prepareToCommitEntities.add(resultRecId)
-            }
-            getUpdatedInTxnIds(txn).add(resultRecId)
+                getUpdatedInTxnIds(txn).add(resultRecId)
 
-            resultRecId
+                resultRecId
+            }
         }
     }
 
-    private fun mutateInTxn(record: LocalRecordAtts): DbEntity {
+    private fun mutateInTxn(record: LocalRecordAtts): DbEntity? {
 
         val typeId = getTypeIdForRecord(record)
         val typeInfo = ecosTypeService.getTypeInfo(typeId)
@@ -422,7 +429,14 @@ class DbRecordsDao(
         record: LocalRecordAtts,
         typeInfo: TypeInfo,
         typeAttColumnsArg: List<EcosAttColumnDef>,
-    ): DbEntity {
+    ): DbEntity? {
+
+        if (record.id.isNotBlank() &&
+            record.getAtt(RecMutAssocHandler.MUTATION_FROM_CHILD_FLAG).asBoolean() &&
+            getRecsCurrentlyInDeletion().contains(daoCtx.getGlobalRef(record.id))
+        ) {
+            return null
+        }
 
         if (record.attributes.has(DbRecord.ATT_ASPECTS)) {
             error(
@@ -1151,6 +1165,10 @@ class DbRecordsDao(
         // If user has already modified a record in this transaction,
         // he can modify it again until commit without checking permissions.
         return txn?.getData(AuthContext.getCurrentRunAsUser() to recsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
+    }
+
+    private fun getRecsCurrentlyInDeletion(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<EntityRef> {
+        return txn?.getData(recsCurrentlyInDeletion) { HashSet() } ?: HashSet()
     }
 
     private class IdentityKey
