@@ -814,10 +814,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                     appendRecordColumnName(query, table, columnName)
                 }
                 if (sort.ascending) {
-                    query.append(" ASC ")
+                    query.append(" ASC")
                 } else {
-                    query.append(" DESC ")
+                    query.append(" DESC")
                 }
+                query.append(",")
             }
             query.setLength(query.length - 1)
         }

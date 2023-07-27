@@ -100,6 +100,9 @@ class DbRecordsDao(
         private const val ASPECT_VERSIONABLE_DATA = "${DbRecord.ASPECT_VERSIONABLE}-data"
 
         private val log = KotlinLogging.logger {}
+
+        // This set will contain the global references, and it's safe to use it across multiple DAOs.
+        private val recsCurrentlyInDeletion = IdentityKey()
     }
 
     private lateinit var ecosTypeService: DbEcosModelService
@@ -115,7 +118,6 @@ class DbRecordsDao(
     private val recsUpdatedInThisTxnKey = IdentityKey()
 
     private val recsPrepareToCommitTxnKey = IdentityKey()
-    private val recsCurrentlyInDeletion = IdentityKey()
 
     private var defaultContentStorage: EcosContentStorageConfig? = null
 
@@ -1167,6 +1169,9 @@ class DbRecordsDao(
         return txn?.getData(AuthContext.getCurrentRunAsUser() to recsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
     }
 
+    /**
+     * Get set of records currently being deleted.
+     */
     private fun getRecsCurrentlyInDeletion(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<EntityRef> {
         return txn?.getData(recsCurrentlyInDeletion) { HashSet() } ?: HashSet()
     }
