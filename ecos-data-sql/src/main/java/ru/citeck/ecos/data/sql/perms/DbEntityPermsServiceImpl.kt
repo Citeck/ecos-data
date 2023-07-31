@@ -104,7 +104,7 @@ class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntit
             }
 
             if (allowedAuth.isEmpty()) {
-                return
+                continue
             }
 
             val entitiesToSave = ArrayList<DbPermsEntity>(allowedAuth.size)

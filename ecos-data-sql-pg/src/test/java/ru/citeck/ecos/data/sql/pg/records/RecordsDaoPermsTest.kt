@@ -3,18 +3,57 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.context.lib.auth.AuthGroup
 import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.txn.lib.TxnContext
 import java.util.UUID
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class RecordsDaoPermsTest : DbRecordsTestBase() {
+
+    @Test
+    fun createWithParentPermsTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("children")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                    withConfig(ObjectData.create().set("child", true))
+                }
+            )
+        )
+
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
+
+        val root = createRecord()
+        setAuthoritiesWithReadPerms(root, AuthGroup.EVERYONE)
+        val childrenRecs = (1..10).map {
+            TxnContext.doInTxn {
+                createRecord("_parent" to root, "_parentAtt" to "children")
+            }
+        }
+
+        val queryRes = AuthContext.runAs("user", listOf(AuthGroup.EVERYONE)) {
+            records.query(
+                baseQuery.copy {
+                    withQuery(Predicates.eq("_parent", root.toString()))
+                }
+            ).getRecords()
+        }
+
+        assertThat(queryRes).containsExactlyInAnyOrderElementsOf(childrenRecs)
+    }
 
     @Test
     fun createInTxnPermsTest() {
