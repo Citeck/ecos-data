@@ -240,14 +240,16 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             error("Current ref is empty. RecordRef: ${ctx.getGlobalRef(recAfterSave.extId)}")
         }
 
-        val parentAttBefore = recBeforeSave.attributes[RecordConstants.ATT_PARENT_ATT] as? String ?: ""
+        val parentAttBeforeId = recBeforeSave.attributes[RecordConstants.ATT_PARENT_ATT] as? Long ?: -1L
         val parentRefIdBefore = recBeforeSave.attributes[RecordConstants.ATT_PARENT] as? Long
-        val parentAttAfter = recAfterSave.attributes[RecordConstants.ATT_PARENT_ATT] as? String ?: ""
+        val parentAttAfterId = recAfterSave.attributes[RecordConstants.ATT_PARENT_ATT] as? Long ?: -1L
         val parentRefIdAfter = recAfterSave.attributes[RecordConstants.ATT_PARENT] as? Long
 
-        if (parentRefIdBefore == parentRefIdAfter && parentAttBefore == parentAttAfter) {
+        if (parentRefIdBefore == parentRefIdAfter && parentAttBeforeId == parentAttAfterId) {
             return
         }
+        val parentAttBefore = ctx.assocsService.getAttById(parentAttBeforeId)
+        val parentAttAfter = ctx.assocsService.getAttById(parentAttAfterId)
 
         val parentRefAfter = parentRefIdAfter?.let {
             ctx.recordRefService.getEntityRefById(it)
@@ -432,10 +434,6 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             addOrRemoveParentRef.invoke(it.key, it.value.added, true)
         }
     }
-/*
-    fun processMultiAssocValuesAfterMutation(values: Map<String, DbMultiAssocAttValuesContainer>) {
-
-    }*/
 
     private data class AddedRemovedAssocs(
         val added: Set<Long>,

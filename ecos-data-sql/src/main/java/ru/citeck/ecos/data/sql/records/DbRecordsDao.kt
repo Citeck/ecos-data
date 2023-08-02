@@ -1090,6 +1090,10 @@ class DbRecordsDao(
                             )
                         )
                     }
+                } else if (dbColumnDef.name == RecordConstants.ATT_PARENT_ATT) {
+                    val textAtt = atts[dbColumnDef.name].asText()
+                    val attributeId = daoCtx.assocsService.getIdForAtt(textAtt, true)
+                    recToMutate.attributes[dbColumnDef.name] = attributeId
                 } else {
                     recToMutate.attributes[dbColumnDef.name] = daoCtx.mutConverter.convert(
                         atts[dbColumnDef.name],

@@ -3,10 +3,7 @@ package ru.citeck.ecos.data.sql.domain.migration
 import mu.KotlinLogging
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
-import ru.citeck.ecos.data.sql.domain.migration.domain.DbDomainMigration
-import ru.citeck.ecos.data.sql.domain.migration.domain.MigrateMetaFieldsToRefs
-import ru.citeck.ecos.data.sql.domain.migration.domain.MoveAssocsToAssocsTable
-import ru.citeck.ecos.data.sql.domain.migration.domain.MovePermsToSchemaTable
+import ru.citeck.ecos.data.sql.domain.migration.domain.*
 import ru.citeck.ecos.data.sql.domain.migration.schema.*
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.txn.lib.TxnContext
@@ -24,6 +21,7 @@ class DbMigrationService {
         domainMigrations.add(MovePermsToSchemaTable())
         domainMigrations.add(MoveAssocsToAssocsTable())
         domainMigrations.add(MigrateMetaFieldsToRefs())
+        domainMigrations.add(MigrateParentAttFieldToAttId())
 
         schemaMigrations.add(ChangeContentCreatorType())
         schemaMigrations.add(RemoveAllowedFlagFromPerms())

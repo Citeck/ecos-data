@@ -50,9 +50,10 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
         val entityGlobalRef = ctx.recordRefService.getEntityRefById(entity.refId)
 
         val parentRefId = entity.attributes[RecordConstants.ATT_PARENT] as? Long
-        val parentAtt = entity.attributes[RecordConstants.ATT_PARENT_ATT] as? String
+        val parentAttId = entity.attributes[RecordConstants.ATT_PARENT_ATT] as? Long
+        val parentAtt = ctx.assocsService.getAttById(parentAttId ?: -1L)
 
-        if (parentRefId != null && !parentAtt.isNullOrBlank()) {
+        if (parentRefId != null && parentAtt.isNotBlank()) {
             val parentRef = ctx.recordRefService.getEntityRefById(parentRefId)
             if (parentRef.getAppName() != AppName.ALFRESCO &&
                 EntityRef.isNotEmpty(parentRef) &&
@@ -117,17 +118,6 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
 
         if (childrenIdsToDelete.isNotEmpty()) {
             val refsToDelete = ctx.recordRefService.getEntityRefsByIds(childrenIdsToDelete.toList())
-            /*               ctx.recordsService.mutate(
-                               refsToDelete.map {
-                                   RecordAtts(
-                                       it,
-                                       ObjectData.create()
-                                           .set(RecordConstants.ATT_PARENT, null)
-                                           .set(RecordConstants.ATT_PARENT_ATT, null)
-                                           .set(RecMutAssocHandler.MUTATION_FROM_PARENT_FLAG, true)
-                                   )
-                               }
-                           )*/
             ctx.recordsService.delete(refsToDelete)
         }
         if (isForceDeletion) {

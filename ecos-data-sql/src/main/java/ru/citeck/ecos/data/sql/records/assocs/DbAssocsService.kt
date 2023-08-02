@@ -43,8 +43,20 @@ class DbAssocsService(
         return attsService.getIdsForAtts(attributes, createIfNotExists)
     }
 
+    // todo: move this logic to external service
     fun getIdForAtt(attribute: String, createIfNotExists: Boolean = false): Long {
+        if (attribute.isEmpty()) {
+            return -1L
+        }
         return attsService.getIdsForAtts(listOf(attribute), createIfNotExists)[attribute] ?: -1L
+    }
+
+    // todo: move this logic to external service
+    fun getAttById(attribute: Long): String {
+        if (attribute == -1L) {
+            return ""
+        }
+        return attsService.getAttsByIds(listOf(attribute))[attribute] ?: ""
     }
 
     fun createAssocs(
@@ -192,12 +204,16 @@ class DbAssocsService(
     }
 
     fun getSourceAssocs(targetId: Long, attribute: String, page: DbFindPage): DbFindRes<DbAssocDto> {
+        return getSourceAssocs(targetId, getIdForAtt(attribute), page)
+    }
+
+    fun getSourceAssocs(targetId: Long, attribute: Long, page: DbFindPage): DbFindRes<DbAssocDto> {
 
         val conditions = mutableListOf(
             Predicates.eq(DbAssocEntity.TARGET_ID, targetId)
         )
-        if (attribute.isNotEmpty()) {
-            conditions.add(Predicates.eq(DbAssocEntity.ATTRIBUTE, getIdForAtt(attribute)))
+        if (attribute != -1L) {
+            conditions.add(Predicates.eq(DbAssocEntity.ATTRIBUTE, attribute))
         }
 
         val result = dataService.find(

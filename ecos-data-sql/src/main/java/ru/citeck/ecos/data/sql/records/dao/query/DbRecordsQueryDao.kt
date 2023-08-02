@@ -338,6 +338,19 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                         typePredicateExists = true
                         processTypePredicate(currentPred)
                     }
+                    RecordConstants.ATT_PARENT_ATT -> {
+                        var value = currentPred.getValue()
+                        value = if (value.isArray()) {
+                            DataValue.of(value.map { daoCtx.assocsService.getIdForAtt(it.asText()) })
+                        } else {
+                            DataValue.of(daoCtx.assocsService.getIdForAtt(value.asText()))
+                        }
+                        ValuePredicate(
+                            currentPred.getAttribute(),
+                            currentPred.getType(),
+                            value
+                        )
+                    }
 
                     DbRecord.ATT_ASPECTS -> {
                         processAspectsPredicate(currentPred, typeAspects)

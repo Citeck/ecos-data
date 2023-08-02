@@ -91,7 +91,7 @@ class DbRecord(
             },
             DbColumnDef.create {
                 withName(RecordConstants.ATT_PARENT_ATT)
-                withType(DbColumnType.TEXT)
+                withType(DbColumnType.LONG)
             },
             DbColumnDef.create {
                 withName(ATT_ASPECTS)
@@ -154,6 +154,11 @@ class DbRecord(
         nonSystemAttDefs = meta.nonSystemAtts
         meta.allAttributes.forEach {
             attTypes[it.key] = it.value.type
+        }
+
+        if (recData.containsKey(RecordConstants.ATT_PARENT_ATT)) {
+            val attId = recData[RecordConstants.ATT_PARENT_ATT] as? Long ?: -1L
+            recData[RecordConstants.ATT_PARENT_ATT] = ctx.assocsService.getAttById(attId)
         }
 
         allAttDefs.values.forEach {
