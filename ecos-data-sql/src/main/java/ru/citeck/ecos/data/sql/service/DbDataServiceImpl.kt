@@ -344,8 +344,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 withSortBy(sort)
                 withDeleted(withDeleted)
                 withGroupBy(groupBy)
-                withAssocJoins(assocTableJoins)
-                withAssocTableJoins(assocJoinWithPredicates)
+                withAssocTableJoins(assocTableJoins)
+                withAssocJoinWithPredicates(assocJoinWithPredicates)
             },
             page,
             withTotalCount
@@ -381,8 +381,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 withSortBy(sort)
                 withDeleted(withDeleted)
                 withGroupBy(groupBy)
-                withAssocJoins(assocTableJoins)
-                withAssocTableJoins(assocJoinWithPredicates)
+                withAssocTableJoins(assocTableJoins)
+                withAssocJoinWithPredicates(assocJoinWithPredicates)
             },
             page,
             withTotalCount

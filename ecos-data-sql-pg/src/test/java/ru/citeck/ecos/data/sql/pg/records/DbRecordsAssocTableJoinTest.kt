@@ -21,6 +21,31 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
     private lateinit var childDao: RecordsDaoTestCtx
 
     @Test
+    fun testWithMultipleAssoc() {
+
+        val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 10)
+        val targetRec1 = targetDao.createRecord("targetText" to "def", "targetNum" to 100)
+
+        val targetRec2 = targetDao.createRecord("targetText" to "hij", "targetNum" to 5)
+        val targetRec3 = targetDao.createRecord("targetText" to "klm", "targetNum" to 50)
+
+        val record0 = createRecord("multiAssocAtt" to listOf(targetRec0, targetRec1))
+        val record1 = createRecord("multiAssocAtt" to listOf(targetRec2, targetRec3))
+
+        val queryRes0 = records.query(baseQuery.copy{
+            withQuery(Predicates.eq("multiAssocAtt.targetText", "klm" ))
+        }).getRecords()
+
+        assertThat(queryRes0).containsExactly(record1)
+
+        val queryRes1 = records.query(baseQuery.copy{
+            withQuery(Predicates.inVals("multiAssocAtt.targetText", listOf("klm", "abc") ))
+        }).getRecords()
+
+        assertThat(queryRes1).containsExactlyInAnyOrder(record0, record1)
+    }
+
+    @Test
     fun groupByParentTest() {
 
         val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 10)
@@ -126,6 +151,12 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
                 AttributeDef.create {
                     withId("assocAtt")
                     withType(AttributeType.ASSOC)
+                    withConfig(ObjectData.create().set("typeRef", targetTypeRef.toString()))
+                },
+                AttributeDef.create {
+                    withId("multiAssocAtt")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
                     withConfig(ObjectData.create().set("typeRef", targetTypeRef.toString()))
                 },
                 AttributeDef.create {

@@ -712,9 +712,20 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
     ) {
         val targetTableName = "$table$RECORD_TABLE_ALIAS"
         val targetTable = tableJoin.tableContext.getTableRef()
-        query.append("EXISTS(SELECT 1 FROM ${targetTable.fullName} $targetTableName WHERE ")
-            .append("\"$table\".\"${tableJoin.srcColumn}\"=\"${targetTableName}\".\"${DbEntity.REF_ID}\" AND ")
 
+        query.append("EXISTS(SELECT 1 FROM ")
+        if (tableJoin.multipleAssoc) {
+            query.append(targetTable.withTable(DbAssocEntity.MAIN_TABLE).fullName)
+                .append(" assoc INNER JOIN ")
+                .append(targetTable.fullName).append(" ").append(targetTableName)
+                .append(" ON assoc.\"${DbAssocEntity.SOURCE_ID}\"=\"$table\".\"${DbEntity.REF_ID}\" ")
+                .append("AND assoc.\"${DbAssocEntity.ATTRIBUTE}\"=${tableJoin.srcAttributeId} ")
+                .append("AND assoc.\"${DbAssocEntity.TARGET_ID}\"=\"${targetTableName}\".\"${DbEntity.REF_ID}\"")
+                .append(" WHERE ")
+        } else {
+            query.append("${targetTable.fullName} $targetTableName WHERE ")
+                .append("\"$table\".\"${tableJoin.srcColumn}\"=\"${targetTableName}\".\"${DbEntity.REF_ID}\" AND ")
+        }
         val assocJoins = tableJoin.assocTableJoins.associateBy { it.attribute }
         val assocTableJoins = tableJoin.assocJoinsWithPredicate.associateBy { it.attribute }
 

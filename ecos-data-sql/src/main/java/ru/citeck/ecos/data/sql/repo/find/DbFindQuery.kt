@@ -90,7 +90,7 @@ class DbFindQuery(
             return this
         }
 
-        fun withAssocJoins(assocTableJoins: List<AssocTableJoin>?): Builder {
+        fun withAssocTableJoins(assocTableJoins: List<AssocTableJoin>?): Builder {
             this.assocTableJoins = ArrayList(assocTableJoins ?: emptyList())
             return this
         }
@@ -105,7 +105,7 @@ class DbFindQuery(
             return this
         }
 
-        fun withAssocTableJoins(assocJoinWithPredicates: List<AssocJoinWithPredicate>?): Builder {
+        fun withAssocJoinWithPredicates(assocJoinWithPredicates: List<AssocJoinWithPredicate>?): Builder {
             this.assocJoinWithPredicates = ArrayList(assocJoinWithPredicates ?: emptyList())
             return this
         }

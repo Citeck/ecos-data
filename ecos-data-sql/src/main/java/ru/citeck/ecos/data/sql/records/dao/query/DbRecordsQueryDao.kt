@@ -76,7 +76,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         }
         val typeInfoData = getTypeInfoData(ecosTypeRef.getLocalId())
 
-        val assocsType = extractAssocsType(typeInfoData, originalPredicate)
+        val assocsTypes = extractAssocsTypes(typeInfoData, originalPredicate)
 
         val expressionsCtx = DbExpressionAttsContext(recsQuery.groupBy.isNotEmpty())
 
@@ -86,11 +86,9 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             }
         }
 
-        val predicateData = processPredicate(
-            typeInfoData,
-            recsQuery.getQuery(Predicate::class.java),
-            assocsType
-        ) { expressionsCtx.register(it) }
+        val predicateData = processPredicate(typeInfoData, originalPredicate, assocsTypes) {
+            expressionsCtx.register(it)
+        }
 
         var predicate = predicateData.predicate
 
@@ -143,7 +141,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                     }
                     return null
                 }
-                tableCtxOpt = Optional.ofNullable(getAssocTableCtxToJoin(attDef.id, assocsType))
+                tableCtxOpt = Optional.ofNullable(getAssocTableCtxToJoin(attDef.id, assocsTypes))
                 assocTargetTableContextsByAttribute[srcAttName] = tableCtxOpt
             }
             if (!tableCtxOpt.isPresent) {
@@ -193,8 +191,8 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                     }
                 )
                 withAssocSelectJoins(assocSelectJoins)
-                withAssocJoins(predicateData.assocTableJoins)
-                withAssocTableJoins(predicateData.assocJoinWithPredicates)
+                withAssocTableJoins(predicateData.assocTableJoins)
+                withAssocJoinWithPredicates(predicateData.assocJoinWithPredicates)
                 withExpressions(expressionsCtx.getExpressions())
             }
 
@@ -216,13 +214,13 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
 
         val queryRes = RecsQueryRes<DbRecord>()
         queryRes.setTotalCount(findRes.totalCount)
-        queryRes.setRecords(entities.map { DbRecord(daoCtx, it, assocsType) })
+        queryRes.setRecords(entities.map { DbRecord(daoCtx, it, assocsTypes) })
         queryRes.setHasMore(findRes.totalCount > findRes.entities.size + page.skipCount)
 
         return queryRes
     }
 
-    private fun extractAssocsType(typeData: TypeInfoData, predicate: Predicate): Map<String, EntityRef> {
+    private fun extractAssocsTypes(typeData: TypeInfoData, predicate: Predicate): Map<String, EntityRef> {
 
         val typesByAssocId = LinkedHashMap<String, EntityRef>()
         typeData.attributesById.values.forEach {
@@ -376,13 +374,20 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                                     val innerPredData = processPredicate(
                                         innerTypeInfoData,
                                         innerPredicate,
-                                        extractAssocsType(innerTypeInfoData, innerPredicate)
+                                        extractAssocsTypes(innerTypeInfoData, innerPredicate)
                                     ) { it }
                                     val assocJoinAttName = "$attribute-${assocJoinsCounter++}"
+                                    val srcAttId = if (srcAttDef.multiple) {
+                                        daoCtx.assocsService.getIdForAtt(srcAttDef.id)
+                                    } else {
+                                        -1L
+                                    }
                                     assocJoinWithPredicates.add(
                                         AssocJoinWithPredicate(
                                             assocJoinAttName,
                                             srcAttName,
+                                            srcAttId,
+                                            srcAttDef.multiple,
                                             targetTableCtx,
                                             innerPredData.predicate,
                                             innerPredData.assocTableJoins,
