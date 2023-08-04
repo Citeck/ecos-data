@@ -1,13 +1,16 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
+import ru.citeck.ecos.data.sql.context.DbTableContext
+import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.expression.ExpressionParser
 import ru.citeck.ecos.data.sql.service.expression.ExpressionTools
 import ru.citeck.ecos.data.sql.service.expression.token.*
-import java.util.HashMap
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.collections.HashMap
 
 class DbExpressionAttsContext(
+    private val queryContext: DbFindQueryContext,
     private val withGrouping: Boolean
 ) {
 
@@ -19,7 +22,43 @@ class DbExpressionAttsContext(
     fun register(attribute: String): String {
         var expression = ExpressionParser.parse(attribute)
         if (!withGrouping) {
-            expression = ExpressionTools.resolveAggregateFunctionsForNonGroupedQuery(expression)
+            var expressionProcessed = false
+            if (expression is FunctionToken &&
+                ExpressionTools.AGGREGATE_FUNCTIONS.contains(expression.name) &&
+                expression.args.size == 1 &&
+                expression.args[0] is ColumnToken
+            ) {
+                val column = (expression.args[0] as ColumnToken)
+                val dotIdx = column.name.indexOf('.')
+                if (dotIdx > 0) {
+                    val assocAtt = column.name.substring(0, dotIdx)
+                    val innerAtt = column.name.substring(dotIdx + 1)
+                    if (!innerAtt.all { it == ':' || it in 'a'..'z' || it in 'A'..'Z' }) {
+                        error("invalid inner attribute: $innerAtt")
+                    }
+
+                    val assocRecordsCtx = queryContext.getAssocRecordsCtxToJoin(assocAtt)
+                        ?: error("Invalid expression: '$attribute'")
+
+                    val innerExpression = FunctionToken(
+                        expression.name,
+                        listOf(ColumnToken(innerAtt))
+                    )
+
+                    val tableContext = assocRecordsCtx.dataService.getTableContext()
+                    val attributeId = tableContext.getAssocsService().getIdForAtt(assocAtt)
+
+                    expression = AssocAggregationSelectExpression(
+                        assocRecordsCtx.dataService.getTableContext(),
+                        innerExpression,
+                        attributeId
+                    )
+                    expressionProcessed = true
+                }
+            }
+            if (!expressionProcessed) {
+                expression = ExpressionTools.resolveAggregateFunctionsForNonGroupedQuery(expression)
+            }
         }
         expression = ExpressionTools.mapTokens(expression, ExpressionToken::class.java) { token ->
             if (token is ColumnToken) {
@@ -108,6 +147,19 @@ class DbExpressionAttsContext(
             entities
         } else {
             entities.map { mapEntityAtts(it) }
+        }
+    }
+
+    class AssocAggregationSelectExpression(
+        val tableContext: DbTableContext,
+        val expression: ExpressionToken,
+        val attributeId: Long
+    ) : ExpressionToken {
+
+        override fun validate() {
+        }
+
+        override fun <T : ExpressionToken> visit(type: Class<T>, visitor: (T) -> Unit) {
         }
     }
 }

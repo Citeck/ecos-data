@@ -21,8 +21,12 @@ class GroupToken(val tokens: List<ExpressionToken>) : ExpressionToken {
         tokens.forEach { it.visit(type, visitor) }
     }
 
+    override fun toString(converter: (ExpressionToken) -> String): String {
+        return "(" + tokens.joinToString(" ") { it.toString(converter) } + ")"
+    }
+
     override fun toString(): String {
-        return "(" + tokens.joinToString(" ") + ")"
+        return toString { it.toString() }
     }
 
     override fun validate() {

@@ -13,4 +13,8 @@ interface ExpressionToken {
     fun visitFunctions(visitor: (FunctionToken) -> Unit) {
         visit(FunctionToken::class.java, visitor)
     }
+
+    fun toString(converter: (ExpressionToken) -> String): String {
+        return converter(this)
+    }
 }

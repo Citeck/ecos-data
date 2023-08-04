@@ -15,6 +15,7 @@ import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValue
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValueWithCustomName
+import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -39,7 +40,7 @@ import kotlin.collections.LinkedHashSet
 class DbRecord(
     private val ctx: DbRecordsDaoCtx,
     val entity: DbEntity,
-    assocTypes: Map<String, EntityRef> = emptyMap()
+    queryCtx: DbFindQueryContext? = null
 ) : AttValue {
 
     companion object {
@@ -225,17 +226,19 @@ class DbRecord(
             }
         }
 
+        val assocsTypes = queryCtx?.getAssocsTypes() ?: emptyMap()
+
         val innerAssocAttsByAtt = HashMap<String, Map<String, AttributeDef>>()
         fun getInnerAssocAtts(assocId: String) = innerAssocAttsByAtt.computeIfAbsent(assocId) { id ->
             val attsById = HashMap<String, AttributeDef>(GLOBAL_ATTS)
-            val typeInfo = ctx.ecosTypeService.getTypeInfo(assocTypes[id]?.getLocalId() ?: "")
+            val typeInfo = ctx.ecosTypeService.getTypeInfo(assocsTypes[id] ?: "")
             typeInfo?.model?.getAllAttributes()?.forEach {
                 attsById[it.id] = it
             }
             attsById
         }
 
-        if (assocTypes.isNotEmpty()) {
+        if (assocsTypes.isNotEmpty()) {
             recData.forEach { recDataEntry ->
                 val dotIdx = recDataEntry.key.indexOf('.')
                 if (dotIdx != -1) {
@@ -265,7 +268,7 @@ class DbRecord(
             recData[attId] = convertValue(attId, attType, recData[attId])
         }
         val assocInnerKeys = recData.keys.filter { it.contains('.') }
-        if (assocInnerKeys.isEmpty() || assocTypes.isEmpty()) {
+        if (assocInnerKeys.isEmpty() || assocsTypes.isEmpty()) {
             assocsInnerAdditionalAtts = emptyMap()
         } else {
             val complexAtts = LinkedHashMap<String, MutableMap<String, Any?>>()

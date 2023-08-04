@@ -17,16 +17,20 @@ class CaseToken(
         orElse?.visit(type, visitor)
     }
 
-    override fun toString(): String {
+    override fun toString(converter: (ExpressionToken) -> String): String {
         val result = StringBuilder("CASE")
         branches.forEach {
-            result.append(" WHEN ${it.condition} THEN ${it.thenResult}")
+            result.append(" WHEN ${it.condition.toString(converter)} THEN ${it.thenResult.toString(converter)}")
         }
         if (orElse != null) {
-            result.append(" ELSE $orElse")
+            result.append(" ELSE ${orElse.toString(converter)}")
         }
         result.append(" END")
         return result.toString()
+    }
+
+    override fun toString(): String {
+        return toString { it.toString() }
     }
 
     override fun equals(other: Any?): Boolean {

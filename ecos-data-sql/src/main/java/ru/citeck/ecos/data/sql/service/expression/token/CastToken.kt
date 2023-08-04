@@ -13,6 +13,10 @@ class CastToken(val token: ExpressionToken, val castTo: String) : ExpressionToke
         }
     }
 
+    override fun toString(converter: (ExpressionToken) -> String): String {
+        return "${token.toString(converter)}$DELIMITER$castTo"
+    }
+
     override fun <T : ExpressionToken> visit(type: Class<T>, visitor: (T) -> Unit) {
     }
 
@@ -40,6 +44,6 @@ class CastToken(val token: ExpressionToken, val castTo: String) : ExpressionToke
     }
 
     override fun toString(): String {
-        return "$token$DELIMITER$castTo"
+        return toString { it.toString() }
     }
 }

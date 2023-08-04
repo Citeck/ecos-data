@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.perms.DbPermsEntity
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
+import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -638,7 +639,19 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             }
         }
         expressions.forEach {
-            selectColumnsStr.append(it.value)
+            val expressionStr = it.value.toString { token ->
+                if (token is DbExpressionAttsContext.AssocAggregationSelectExpression) {
+                    val tableRef = token.tableContext.getTableRef()
+                    val assocTable = tableRef.withTable(DbAssocEntity.MAIN_TABLE)
+                    "(SELECT ${token.expression} FROM ${tableRef.fullName} target INNER JOIN ${assocTable.fullName} assoc " +
+                        "ON assoc.${DbAssocEntity.SOURCE_ID} = $table.${DbEntity.REF_ID} " +
+                        "AND assoc.${DbAssocEntity.ATTRIBUTE} = ${token.attributeId} " +
+                        "AND assoc.${DbAssocEntity.TARGET_ID} = target.${DbEntity.REF_ID} GROUP BY assoc.${DbAssocEntity.SOURCE_ID})"
+                } else {
+                    token.toString()
+                }
+            }
+            selectColumnsStr.append(expressionStr)
                 .append(" AS ${it.key}")
                 .append(",")
         }

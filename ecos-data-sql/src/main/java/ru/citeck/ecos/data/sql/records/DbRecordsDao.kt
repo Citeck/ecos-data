@@ -8,6 +8,7 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
+import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
@@ -22,11 +23,11 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
 import ru.citeck.ecos.data.sql.records.dao.atts.DbAssocAttValuesContainer
 import ru.citeck.ecos.data.sql.records.dao.atts.DbEmptyRecord
-import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
 import ru.citeck.ecos.data.sql.records.dao.delete.DbRecordsDeleteDao
 import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler
+import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
@@ -109,10 +110,11 @@ class DbRecordsDao(
     private lateinit var daoCtx: DbRecordsDaoCtx
     private val daoCtxInitialized = AtomicBoolean(false)
 
-    private val recordRefService: DbRecordRefService = dataService.getTableContext().getRecordRefsService()
-    private val assocsService: DbAssocsService = dataService.getTableContext().getAssocsService()
-    private val contentService: DbContentService = dataService.getTableContext().getContentService()
-    private val entityPermsService: DbEntityPermsService = dataService.getTableContext().getPermsService()
+    private val tableContext: DbTableContext = dataService.getTableContext()
+    private val recordRefService: DbRecordRefService = tableContext.getRecordRefsService()
+    private val assocsService: DbAssocsService = tableContext.getAssocsService()
+    private val contentService: DbContentService = tableContext.getContentService()
+    private val entityPermsService: DbEntityPermsService = tableContext.getPermsService()
 
     private val listeners: MutableList<DbRecordsListener> = CopyOnWriteArrayList()
     private val recsUpdatedInThisTxnKey = IdentityKey()
@@ -272,12 +274,15 @@ class DbRecordsDao(
 
     override fun getRecordsAtts(recordIds: List<String>): List<AttValue> {
 
-        val expressionsCtx = DbExpressionAttsContext(false)
+        val queryCtx = DbFindQueryContext(
+            daoCtx,
+            config.typeRef.getLocalId(),
+            false,
+            null
+        )
 
         AttContext.getCurrent()?.getSchemaAtt()?.inner?.forEach {
-            if (it.name.contains("(")) {
-                expressionsCtx.register(it.name)
-            }
+            queryCtx.registerSelectAtt(it.name, false)
         }
 
         return TxnContext.doInTxn(readOnly = true) {
@@ -285,8 +290,8 @@ class DbRecordsDao(
                 if (id.isEmpty()) {
                     DbEmptyRecord(daoCtx)
                 } else {
-                    findDbEntityByExtId(id, expressionsCtx.getExpressions())?.let {
-                        DbRecord(daoCtx, expressionsCtx.mapEntityAtts(it))
+                    findDbEntityByExtId(id, queryCtx.expressionsCtx.getExpressions())?.let {
+                        DbRecord(daoCtx, queryCtx.expressionsCtx.mapEntityAtts(it), queryCtx)
                     } ?: EmptyAttValue.INSTANCE
                 }
             }
@@ -530,7 +535,7 @@ class DbRecordsDao(
                     }
                 }
                 return daoCtx.recContentHandler.withContentDbDataAware {
-                    val attsToCopy = DbRecord(daoCtx, entityToMutate).getAttsForCopy()
+                    val attsToCopy = DbRecord(daoCtx, entityToMutate, null).getAttsForCopy()
                     val newRec = LocalRecordAtts("", record.attributes.deepCopy())
                     attsToCopy.forEach { (k, v) ->
                         if (!newRec.hasAtt(k)) {

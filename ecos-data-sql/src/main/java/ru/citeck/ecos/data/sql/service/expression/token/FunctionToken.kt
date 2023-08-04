@@ -56,10 +56,14 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
     }
 
     override fun toString(): String {
+        return toString { it.toString() }
+    }
+
+    override fun toString(converter: (ExpressionToken) -> String): String {
         return if (FUNCTIONS_WITHOUT_BRACES.contains(name)) {
             name
         } else {
-            "$name(${args.joinToString()})"
+            "$name(${args.joinToString { it.toString(converter) }})"
         }
     }
 

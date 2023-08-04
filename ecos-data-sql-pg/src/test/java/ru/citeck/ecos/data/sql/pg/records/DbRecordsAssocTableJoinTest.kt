@@ -3,7 +3,10 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
@@ -20,8 +23,9 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
     private lateinit var targetDao: RecordsDaoTestCtx
     private lateinit var childDao: RecordsDaoTestCtx
 
-    @Test
-    fun testWithMultipleAssoc() {
+    @ParameterizedTest
+    @ValueSource(strings = ["multiAssocAtt", "aspect0:multiAssocAtt"])
+    fun testWithMultipleAssoc(multiAssocName: String) {
 
         val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 10)
         val targetRec1 = targetDao.createRecord("targetText" to "def", "targetNum" to 100)
@@ -29,20 +33,62 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         val targetRec2 = targetDao.createRecord("targetText" to "hij", "targetNum" to 5)
         val targetRec3 = targetDao.createRecord("targetText" to "klm", "targetNum" to 50)
 
-        val record0 = createRecord("multiAssocAtt" to listOf(targetRec0, targetRec1))
-        val record1 = createRecord("multiAssocAtt" to listOf(targetRec2, targetRec3))
+        val record0 = createRecord(multiAssocName to listOf(targetRec0, targetRec1))
+        val record1 = createRecord(multiAssocName to listOf(targetRec2, targetRec3))
 
-        val queryRes0 = records.query(baseQuery.copy{
-            withQuery(Predicates.eq("multiAssocAtt.targetText", "klm" ))
-        }).getRecords()
+        val queryRes0 = records.query(
+            baseQuery.copy {
+                withQuery(Predicates.eq("$multiAssocName.targetText", "klm"))
+            }
+        ).getRecords()
 
         assertThat(queryRes0).containsExactly(record1)
 
-        val queryRes1 = records.query(baseQuery.copy{
-            withQuery(Predicates.inVals("multiAssocAtt.targetText", listOf("klm", "abc") ))
-        }).getRecords()
+        val queryRes1 = records.query(
+            baseQuery.copy {
+                withQuery(Predicates.inVals("$multiAssocName.targetText", listOf("klm", "abc")))
+            }
+        ).getRecords()
 
         assertThat(queryRes1).containsExactlyInAnyOrder(record0, record1)
+
+        val queryRes2 = records.query(baseQuery, mapOf("sum" to "sum(\"$multiAssocName.targetNum\")"))
+            .getRecords()
+            .associate { it.getId() to it["sum"].asInt() }
+
+        assertThat(queryRes2[record0]).isEqualTo(110)
+        assertThat(queryRes2[record1]).isEqualTo(55)
+
+        fun sortTest(asc: Boolean) {
+            val queryRes = records.query(
+                baseQuery.copy()
+                    .withSortBy(SortBy("sum(\"$multiAssocName.targetNum\")", asc))
+                    .build(),
+                mapOf("sum" to "sum(\"$multiAssocName.targetNum\")")
+            )
+                .getRecords()
+                .map { it["sum"].asInt() }
+
+            if (asc) {
+                assertThat(queryRes).containsExactly(55, 110)
+            } else {
+                assertThat(queryRes).containsExactly(110, 55)
+            }
+        }
+        sortTest(true)
+        sortTest(false)
+
+        val value = records.getAtt(record0, "sum(\"$multiAssocName.targetNum\")?num").asInt()
+        assertThat(value).isEqualTo(110)
+
+        /*
+        todo
+        val queryRes3 = records.query(baseQuery.copy {
+            withQuery(Predicates.eq("sum(\"$multiAssocName.targetNum\")", 110))
+        }).getRecords()
+
+        assertThat(queryRes3).containsExactly(record0)
+        */
     }
 
     @Test
@@ -72,7 +118,10 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         ).getRecords()
 
         assertThat(recsResult).hasSize(2)
-        assertThat(recsResult.map { it["assocAtt"].asText() }).containsExactly(targetRec0.toString(), targetRec1.toString())
+        assertThat(recsResult.map { it["assocAtt"].asText() }).containsExactly(
+            targetRec0.toString(),
+            targetRec1.toString()
+        )
         assertThat(recsResult.map { it["count"].asInt() }).containsExactly(1, 2)
     }
 
@@ -142,6 +191,27 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
 
         val targetTypeRef = ModelUtils.getTypeRef("target-type")
         val childTypeRef = ModelUtils.getTypeRef("child-type")
+
+        registerAspect(
+            AspectInfo.create {
+                withId("aspect0")
+                withAttributes(
+                    listOf(
+                        AttributeDef.create {
+                            withId("aspect0:assocAtt")
+                            withType(AttributeType.ASSOC)
+                            withConfig(ObjectData.create().set("typeRef", targetTypeRef.toString()))
+                        },
+                        AttributeDef.create {
+                            withId("aspect0:multiAssocAtt")
+                            withType(AttributeType.ASSOC)
+                            withMultiple(true)
+                            withConfig(ObjectData.create().set("typeRef", targetTypeRef.toString()))
+                        }
+                    )
+                )
+            }
+        )
 
         registerAtts(
             listOf(
