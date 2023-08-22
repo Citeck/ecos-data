@@ -29,12 +29,13 @@ class MigrateParentAttFieldToAttId : DbDomainMigration {
             context.schemaDao.getColumns(
                 context.dataSource,
                 tableRef
-            ).mapTo(HashSet()) {
+            ).associateBy {
                 it.name
             }
         }
 
-        if (!currentColumns.contains(RecordConstants.ATT_PARENT_ATT)) {
+        val currentParentAttColumn = currentColumns[RecordConstants.ATT_PARENT_ATT]
+        if (currentParentAttColumn == null || currentParentAttColumn.type != DbColumnType.TEXT) {
             // nothing to migrate
             return
         }
@@ -48,7 +49,7 @@ class MigrateParentAttFieldToAttId : DbDomainMigration {
                     withType(DbColumnType.LONG)
                 }
             ).filter {
-                !currentColumns.contains(it.name)
+                !currentColumns.containsKey(it.name)
             }
 
             if (newColumns.isNotEmpty()) {
@@ -64,7 +65,10 @@ class MigrateParentAttFieldToAttId : DbDomainMigration {
 
         fun findNext(withTotalCount: Boolean): DbFindRes<EntityData> {
             return context.dataService.findRaw(
-                Predicates.empty(TEMP_FIELD_PARENT_ATT),
+                Predicates.and(
+                    Predicates.empty(TEMP_FIELD_PARENT_ATT),
+                    Predicates.notEmpty(RecordConstants.ATT_PARENT_ATT)
+                ),
                 emptyList(),
                 DbFindPage(0, 100),
                 true,
