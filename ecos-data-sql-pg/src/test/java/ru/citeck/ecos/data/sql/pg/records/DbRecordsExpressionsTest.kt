@@ -50,12 +50,14 @@ class DbRecordsExpressionsTest : DbRecordsTestBase() {
 
         val exprAvgNum0 = "avg(num0)"
         val exprCount = "count(*)"
+        val greatest = "max(greatest(num0, num1))"
+        val least = "min(least(num0, num1))"
         val result1 = records.query(
             baseQuery.copy {
                 withGroupBy(listOf("text0"))
                 withSortBy(emptyList())
             },
-            listOf("text0", exprAvgNum0, exprCount)
+            listOf("text0", exprAvgNum0, exprCount, greatest, least)
         )
             .getRecords()
             .associateBy { it.getAtt("text0", "") }
@@ -63,8 +65,12 @@ class DbRecordsExpressionsTest : DbRecordsTestBase() {
         assertThat(result1).hasSize(2)
         assertThat(result1["text-0"]!!.getAtt(exprAvgNum0).asDouble()).isEqualTo(0.0)
         assertThat(result1["text-0"]!!.getAtt(exprCount).asInt()).isEqualTo(1)
+        assertThat(result1["text-0"]!!.getAtt(greatest).asInt()).isEqualTo(1)
+        assertThat(result1["text-0"]!!.getAtt(least).asInt()).isEqualTo(0)
         assertThat(result1["text-1"]!!.getAtt(exprAvgNum0).asDouble()).isEqualTo(2.0)
         assertThat(result1["text-1"]!!.getAtt(exprCount).asInt()).isEqualTo(2)
+        assertThat(result1["text-1"]!!.getAtt(greatest).asInt()).isEqualTo(4)
+        assertThat(result1["text-1"]!!.getAtt(least).asInt()).isEqualTo(1)
 
         val result2 = records.query(
             baseQuery,

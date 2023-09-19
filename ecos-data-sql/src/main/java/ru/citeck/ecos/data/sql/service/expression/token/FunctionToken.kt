@@ -3,10 +3,20 @@ package ru.citeck.ecos.data.sql.service.expression.token
 class FunctionToken(val name: String, val args: List<ExpressionToken>) : ExpressionToken {
 
     companion object {
+        val AGG_FUNCTIONS = setOf(
+            "avg",
+            "count",
+            "max",
+            "min",
+            "sum"
+        )
         val NUM_FUNCTIONS = setOf(
-            "abs", "avg", "ceil", "ceiling", "count", "div", "exp", "floor",
-            "max", "min", "mod", "power", "random", "round",
-            "sign", "sqrt", "sum", "trunc"
+            "abs", "ceil", "ceiling", "div", "exp", "floor",
+            "mod", "power", "round",
+            "sign", "sqrt", "trunc", "pi"
+        )
+        val RANDOM_FUNCTIONS = setOf(
+            "random"
         )
         val DATETIME_FUNCTIONS = setOf(
             "age", "current_date", "current_time", "current_timestamp",
@@ -14,7 +24,7 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
             "isfinite", "justify_days", "justify_hours", "justify_interval",
             "make_date", "make_interval", "make_time", "make_timestamp",
             "make_timestamptz", "statement_timestamp", "timeofday",
-            "transaction_timestamp", "to_timestamp", "extract", "localtime",
+            "transaction_timestamp", "extract", "localtime",
             "localtimestamp", "now"
         )
         val CONVERSION_FUNCTIONS = setOf(
@@ -29,13 +39,18 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
             "substring", "translate", "trim", "upper",
         )
         val OTHER_FUNCTIONS = setOf(
-            "coalesce"
+            "coalesce",
+            "nullif",
+            "greatest",
+            "least"
         )
         val CUSTOM_FUNCTIONS = setOf(
             "startOfMonth",
             "endOfMonth"
         )
         private val ALLOWED_FUNCTIONS = setOf(
+            *AGG_FUNCTIONS.toTypedArray(),
+            *RANDOM_FUNCTIONS.toTypedArray(),
             *DATETIME_FUNCTIONS.toTypedArray(),
             *NUM_FUNCTIONS.toTypedArray(),
             *CONVERSION_FUNCTIONS.toTypedArray(),
