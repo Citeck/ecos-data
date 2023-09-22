@@ -4,12 +4,14 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttDef
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttStoringType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttType
 import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 
 class DbRecordsComputedAttsTest : DbRecordsTestBase() {
@@ -48,10 +50,21 @@ class DbRecordsComputedAttsTest : DbRecordsTestBase() {
 
         fun getComputedAttId(type: ComputedAttStoringType): String = "computed-storing-$type"
 
+        val computedAssocRef = EntityRef.valueOf("emodel/person@abc")
+
         registerAtts(
             listOf(
                 AttributeDef.create()
                     .withId("simple")
+                    .build(),
+                AttributeDef.create()
+                    .withId("computedAssoc")
+                    .withType(AttributeType.ASSOC)
+                    .withComputed(ComputedAttDef.create()
+                        .withType(ComputedAttType.VALUE)
+                        .withStoringType(ComputedAttStoringType.ON_EMPTY)
+                        .withConfig(ObjectData.create("""{"value":"$computedAssocRef"}"""))
+                        .build())
                     .build(),
                 *ComputedAttStoringType.values().map { storingType ->
                     AttributeDef.create()
@@ -68,12 +81,14 @@ class DbRecordsComputedAttsTest : DbRecordsTestBase() {
             )
         )
 
-        createRecord(
+        val record = createRecord(
             "simple" to "computedAttId",
             *ComputedAttStoringType.values().map {
                 getComputedAttId(it) to "$it-value"
             }.toTypedArray()
         )
+
+        assertThat(records.getAtt(record, "computedAssoc?id").toEntityRef()).isEqualTo(computedAssocRef)
 
         val columns = getColumns().associateBy { it.name }
 
