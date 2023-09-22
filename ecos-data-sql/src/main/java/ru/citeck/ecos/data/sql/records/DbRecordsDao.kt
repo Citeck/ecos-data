@@ -882,7 +882,8 @@ class DbRecordsDao(
                     isNewEntity,
                     typeInfo.id,
                     fullColumns,
-                    currentUserRefId
+                    currentUserRefId,
+                    typeAttColumns
                 )
             } else {
                 recAfterSave
@@ -920,11 +921,14 @@ class DbRecordsDao(
         isNewRecord: Boolean,
         recTypeId: String,
         columns: List<DbColumnDef>,
-        currentUserRefId: Long
+        currentUserRefId: Long,
+        typeAttColumns: List<EcosAttColumnDef>
     ): DbEntity {
 
         val typeRef = ModelUtils.getTypeRef(recTypeId)
         val atts = component.computeAttsToStore(DbRecord(daoCtx, entity), isNewRecord, typeRef)
+
+        daoCtx.mutAssocHandler.replaceRefsById(atts, typeAttColumns)
 
         val fullColumns = ArrayList(columns)
         DbRecord.COMPUTABLE_OPTIONAL_COLUMNS.forEach {
