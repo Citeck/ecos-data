@@ -712,7 +712,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
 
         addGrouping(query, table, expressions, groupBy)
-        addSortAndPage(query, table, expressions, sort, page, groupBy)
+        addSortAndPage(query, table, expressions, sort, page)
 
         return query.toString()
     }
@@ -816,8 +816,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         table: String,
         expressions: Map<String, ExpressionToken>,
         sorting: List<DbFindSort>,
-        page: DbFindPage,
-        groupBy: List<String>
+        page: DbFindPage
     ) {
 
         if (sorting.isNotEmpty()) {
@@ -828,14 +827,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 } else if (sort.column.startsWith(VIRTUAL_COLUMN_PREFIX)) {
                     query.append("\"").append(sort.column).append("\"")
                 } else {
-                    val columnName = if (sort.column == DbEntity.CREATED && groupBy.isEmpty()) {
-                        // this replacement improve query performance
-                        // works only if ID counter in postgres without cache
-                        DbEntity.ID
-                    } else {
-                        sort.column
-                    }
-                    appendRecordColumnName(query, table, columnName)
+                    appendRecordColumnName(query, table, sort.column)
                 }
                 if (sort.ascending) {
                     query.append(" ASC")
