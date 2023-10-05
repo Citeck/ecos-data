@@ -98,7 +98,9 @@ class DbRecordsDao(
         private const val ATT_ID = "id"
         private const val ATT_STATE = "_state"
         private const val ATT_CUSTOM_NAME = "name"
-        private const val ATT_DISABLE_AUDIT = "DISABLE_AUDIT"
+
+        private const val ATT_DISABLE_AUDIT = "__disableAudit"
+        private const val ATT_UPDATE_PERMISSIONS = "__updatePermissions"
 
         private const val ASPECT_VERSIONABLE_DATA = "${DbRecord.ASPECT_VERSIONABLE}-data"
 
@@ -514,7 +516,7 @@ class DbRecordsDao(
                         addTypeAttColumn(column)
                     }
                 }
-                if (record.attributes["__updatePermissions"].asBoolean()) {
+                if (record.attributes[ATT_UPDATE_PERMISSIONS].asBoolean()) {
                     if (!isRunAsSystemOrAdmin) {
                         error("Permissions update allowed only for admin. Record: $record sourceId: '${getId()}'")
                     }
