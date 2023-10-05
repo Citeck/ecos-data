@@ -5,6 +5,7 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.data.Version
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
@@ -97,6 +98,7 @@ class DbRecordsDao(
         private const val ATT_ID = "id"
         private const val ATT_STATE = "_state"
         private const val ATT_CUSTOM_NAME = "name"
+        private const val ATT_DISABLE_AUDIT = "DISABLE_AUDIT"
 
         private const val ASPECT_VERSIONABLE_DATA = "${DbRecord.ASPECT_VERSIONABLE}-data"
 
@@ -451,6 +453,7 @@ class DbRecordsDao(
                     "Please use att_add_${DbRecord.ATT_ASPECTS} and att_rem_${DbRecord.ATT_ASPECTS} to change aspects"
             )
         }
+
         val isAssocForceDeletion = record.getAtt(DbRecordsDeleteDao.ASSOC_FORCE_DELETION_FLAG)
             .asBoolean(true)
 
@@ -477,6 +480,11 @@ class DbRecordsDao(
         val isRunAsSystem = AuthContext.isSystemAuth(runAsAuth)
         val isRunAsAdmin = AuthContext.isAdminAuth(runAsAuth)
         val isRunAsSystemOrAdmin = isRunAsSystem || isRunAsAdmin
+
+        val disableAudit = record.getAtt(ATT_DISABLE_AUDIT).asBoolean()
+        if (disableAudit && !isRunAsSystem) {
+            error("$ATT_DISABLE_AUDIT attribute can't be used outside of system context")
+        }
 
         val currentRunAsUser = runAsAuth.getUser()
         val currentRunAsAuthorities = DbRecordsUtils.getCurrentAuthorities(runAsAuth)
@@ -552,15 +560,44 @@ class DbRecordsDao(
         }
 
         val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
-
-        val nowInstant = Instant.now()
         val currentUserRefId = daoCtx.getOrCreateUserRefId(AuthContext.getCurrentUser())
-        if (isNewEntity) {
-            entityToMutate.created = nowInstant
-            entityToMutate.creator = currentUserRefId
+
+        if (disableAudit) {
+            fun getUserId(user: String): Long {
+                val userName = if (user.contains('@')) {
+                    EntityRef.valueOf(user).getLocalId()
+                } else {
+                    user
+                }
+                return daoCtx.getOrCreateUserRefId(userName)
+            }
+            if (record.hasAtt(RecordConstants.ATT_MODIFIER)) {
+                entityToMutate.modifier = getUserId(record.getAtt(RecordConstants.ATT_MODIFIER).asText())
+            }
+            if (record.hasAtt(RecordConstants.ATT_MODIFIED)) {
+                record.getAtt(RecordConstants.ATT_MODIFIED).getAsInstant()?.let { entityToMutate.modified = it }
+            }
+            if (record.hasAtt(RecordConstants.ATT_CREATOR)) {
+                entityToMutate.creator = getUserId(record.getAtt(RecordConstants.ATT_CREATOR).asText())
+            }
+            if (record.hasAtt(RecordConstants.ATT_CREATED)) {
+                record.getAtt(RecordConstants.ATT_CREATED).getAsInstant()?.let { entityToMutate.created = it }
+            }
+            if (entityToMutate.creator == -1L) {
+                entityToMutate.creator = getUserId(AuthUser.ANONYMOUS)
+            }
+            if (entityToMutate.modifier == -1L) {
+                entityToMutate.modifier = getUserId(AuthUser.ANONYMOUS)
+            }
+        } else {
+            val nowInstant = Instant.now()
+            if (isNewEntity) {
+                entityToMutate.created = nowInstant
+                entityToMutate.creator = currentUserRefId
+            }
+            entityToMutate.modified = nowInstant
+            entityToMutate.modifier = currentUserRefId
         }
-        entityToMutate.modified = nowInstant
-        entityToMutate.modifier = currentUserRefId
 
         var recordPerms = DbRecordPermsContext(DbRecordAllowedAllPerms)
         if (!isNewEntity && !isRunAsSystem) {
