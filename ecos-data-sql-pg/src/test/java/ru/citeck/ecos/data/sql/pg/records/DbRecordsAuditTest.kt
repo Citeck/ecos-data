@@ -6,21 +6,12 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
-import ru.citeck.ecos.context.lib.auth.AuthGroup
-import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
+import ru.citeck.ecos.data.sql.records.DbRecordsControlAtts
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
-import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.model.lib.role.constants.RoleConstants
-import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
-import ru.citeck.ecos.model.lib.type.dto.TypeInfo
-import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
-import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
-import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.lang.Exception
 import java.time.Instant
-import kotlin.collections.ArrayList
 
 class DbRecordsAuditTest : DbRecordsTestBase() {
 
@@ -53,7 +44,7 @@ class DbRecordsAuditTest : DbRecordsTestBase() {
         val customCreated = Instant.parse("2021-01-01T00:00:00Z")
         val customModified = Instant.parse("2022-01-01T00:00:00Z")
         val mutAtts = mapOf(
-            "DISABLE_AUDIT" to true,
+            DbRecordsControlAtts.DISABLE_AUDIT to true,
             RecordConstants.ATT_CREATED to customCreated,
             RecordConstants.ATT_CREATOR to customCreator,
             RecordConstants.ATT_MODIFIED to customModified,

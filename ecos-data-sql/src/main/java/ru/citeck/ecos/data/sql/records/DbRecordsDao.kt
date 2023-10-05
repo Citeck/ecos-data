@@ -99,9 +99,6 @@ class DbRecordsDao(
         private const val ATT_STATE = "_state"
         private const val ATT_CUSTOM_NAME = "name"
 
-        private const val ATT_DISABLE_AUDIT = "__disableAudit"
-        private const val ATT_UPDATE_PERMISSIONS = "__updatePermissions"
-
         private const val ASPECT_VERSIONABLE_DATA = "${DbRecord.ASPECT_VERSIONABLE}-data"
 
         private val log = KotlinLogging.logger {}
@@ -483,9 +480,9 @@ class DbRecordsDao(
         val isRunAsAdmin = AuthContext.isAdminAuth(runAsAuth)
         val isRunAsSystemOrAdmin = isRunAsSystem || isRunAsAdmin
 
-        val disableAudit = record.getAtt(ATT_DISABLE_AUDIT).asBoolean()
+        val disableAudit = record.getAtt(DbRecordsControlAtts.DISABLE_AUDIT).asBoolean()
         if (disableAudit && !isRunAsSystem) {
-            error("$ATT_DISABLE_AUDIT attribute can't be used outside of system context")
+            error("${DbRecordsControlAtts.DISABLE_AUDIT} attribute can't be used outside of system context")
         }
 
         val currentRunAsUser = runAsAuth.getUser()
@@ -516,7 +513,7 @@ class DbRecordsDao(
                         addTypeAttColumn(column)
                     }
                 }
-                if (record.attributes[ATT_UPDATE_PERMISSIONS].asBoolean()) {
+                if (record.attributes[DbRecordsControlAtts.UPDATE_PERMISSIONS].asBoolean()) {
                     if (!isRunAsSystemOrAdmin) {
                         error("Permissions update allowed only for admin. Record: $record sourceId: '${getId()}'")
                     }

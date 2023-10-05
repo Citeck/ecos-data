@@ -60,11 +60,13 @@ class DbRecordsComputedAttsTest : DbRecordsTestBase() {
                 AttributeDef.create()
                     .withId("computedAssoc")
                     .withType(AttributeType.ASSOC)
-                    .withComputed(ComputedAttDef.create()
-                        .withType(ComputedAttType.VALUE)
-                        .withStoringType(ComputedAttStoringType.ON_EMPTY)
-                        .withConfig(ObjectData.create("""{"value":"$computedAssocRef"}"""))
-                        .build())
+                    .withComputed(
+                        ComputedAttDef.create()
+                            .withType(ComputedAttType.VALUE)
+                            .withStoringType(ComputedAttStoringType.ON_EMPTY)
+                            .withConfig(ObjectData.create("""{"value":"$computedAssocRef"}"""))
+                            .build()
+                    )
                     .build(),
                 *ComputedAttStoringType.values().map { storingType ->
                     AttributeDef.create()
