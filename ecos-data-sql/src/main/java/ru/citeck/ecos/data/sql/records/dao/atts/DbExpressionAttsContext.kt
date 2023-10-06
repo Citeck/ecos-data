@@ -40,19 +40,25 @@ class DbExpressionAttsContext(
                     val assocRecordsCtx = queryContext.getAssocRecordsCtxToJoin(assocAtt)
                         ?: error("Invalid expression: '$attribute'")
 
-                    val innerExpression = FunctionToken(
-                        expression.name,
-                        listOf(ColumnToken(innerAtt))
-                    )
+                    if (!innerAtt.contains(".") && assocRecordsCtx.getDbColumnByName(innerAtt) == null) {
 
-                    val tableContext = assocRecordsCtx.dataService.getTableContext()
-                    val attributeId = tableContext.getAssocsService().getIdForAtt(assocAtt)
+                        expression = ExpressionTools.resolveAggregateFunctionForNonExistentColumn(expression)
+                    } else {
 
-                    expression = AssocAggregationSelectExpression(
-                        assocRecordsCtx.dataService.getTableContext(),
-                        innerExpression,
-                        attributeId
-                    )
+                        val innerExpression = FunctionToken(
+                            expression.name,
+                            listOf(ColumnToken(innerAtt))
+                        )
+
+                        val tableContext = assocRecordsCtx.dataService.getTableContext()
+                        val attributeId = tableContext.getAssocsService().getIdForAtt(assocAtt)
+
+                        expression = AssocAggregationSelectExpression(
+                            assocRecordsCtx.dataService.getTableContext(),
+                            innerExpression,
+                            attributeId
+                        )
+                    }
                     expressionProcessed = true
                 }
             }

@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao
 
 import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.data.sql.content.DbContentService
+import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
@@ -65,6 +66,10 @@ class DbRecordsDaoCtx(
 
     fun getGlobalRef(extId: String): EntityRef {
         return globalRefCalculator.getGlobalRef(appName, sourceId, extId)
+    }
+
+    fun getDbColumnByName(name: String): DbColumnDef? {
+        return dataService.getTableContext().getColumnByName(name)
     }
 
     fun getEntityMeta(entity: DbEntity): DbEntityMeta {

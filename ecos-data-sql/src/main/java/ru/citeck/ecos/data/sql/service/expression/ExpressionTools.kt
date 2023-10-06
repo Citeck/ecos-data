@@ -16,6 +16,16 @@ object ExpressionTools {
         "bit_or",
     )
 
+    private val NUMERIC_AGGREGATE_FUNCTIONS = setOf(
+        "max",
+        "min",
+        "sum",
+        "avg",
+        "count",
+        "bit_and",
+        "bit_or"
+    )
+
     fun <T : ExpressionToken> mapTokens(
         token: ExpressionToken,
         type: Class<T>,
@@ -51,6 +61,18 @@ object ExpressionTools {
             mapFunc.invoke(type.cast(tokenWithInnerTokensMapped))
         } else {
             tokenWithInnerTokensMapped
+        }
+    }
+
+    fun resolveAggregateFunctionForNonExistentColumn(token: FunctionToken): ExpressionToken {
+        return if (NUMERIC_AGGREGATE_FUNCTIONS.contains(token.name)) {
+            ScalarToken(0)
+        } else if (token.name == "bool_and") {
+            ScalarToken(true)
+        } else if (token.name == "bool_or") {
+            ScalarToken(false)
+        } else {
+            error("Unknown function: $token")
         }
     }
 

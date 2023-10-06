@@ -17,6 +17,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
+import ru.citeck.ecos.data.sql.service.expression.token.ColumnToken
 import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
@@ -643,7 +644,14 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 if (token is DbExpressionAttsContext.AssocAggregationSelectExpression) {
                     val tableRef = token.tableContext.getTableRef()
                     val assocTable = tableRef.withTable(DbAssocEntity.MAIN_TABLE)
-                    "(SELECT ${token.expression} FROM ${tableRef.fullName} target INNER JOIN ${assocTable.fullName} assoc " +
+                    val expressionStr = token.expression.toString { toStrToken ->
+                        if (toStrToken is ColumnToken) {
+                            "\"target\".\"${toStrToken.name}\""
+                        } else {
+                            toStrToken.toString()
+                        }
+                    }
+                    "(SELECT $expressionStr FROM ${tableRef.fullName} target INNER JOIN ${assocTable.fullName} assoc " +
                         "ON assoc.${DbAssocEntity.SOURCE_ID} = $table.${DbEntity.REF_ID} " +
                         "AND assoc.${DbAssocEntity.ATTRIBUTE} = ${token.attributeId} " +
                         "AND assoc.${DbAssocEntity.TARGET_ID} = target.${DbEntity.REF_ID} GROUP BY assoc.${DbAssocEntity.SOURCE_ID})"

@@ -20,8 +20,55 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
 
+    private val mainTypeRef = REC_TEST_TYPE_REF
+    private val targetTypeRef = ModelUtils.getTypeRef("target-type")
+    private val childTypeRef = ModelUtils.getTypeRef("child-type")
+
     private lateinit var targetDao: RecordsDaoTestCtx
     private lateinit var childDao: RecordsDaoTestCtx
+
+    @Test
+    fun testWithNonExistentColumn() {
+
+        val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 1)
+        val targetRec1 = targetDao.createRecord("targetText" to "abc", "targetNum" to 2)
+        val mainRec = createRecord("multiAssocAtt" to listOf(targetRec0, targetRec1))
+
+        val res0 = records.getAtt(mainRec, "sum(multiAssocAtt.targetNum)").asInt()
+        assertThat(res0).isEqualTo(3)
+
+        addAttribute(
+            mainTypeRef.getLocalId(),
+            AttributeDef.create()
+                .withId("number")
+                .withType(AttributeType.NUMBER)
+                .build()
+        )
+
+        val res1 = records.getAtt(mainRec, "sum(multiAssocAtt.number)").asInt()
+        assertThat(res1).isEqualTo(0)
+
+        updateRecord(mainRec, "number" to 10)
+
+        val res2 = records.getAtt(mainRec, "sum(multiAssocAtt.number)").asInt()
+        assertThat(res2).isEqualTo(0)
+
+        addAttribute(
+            targetTypeRef.getLocalId(),
+            AttributeDef.create()
+                .withId("number")
+                .withType(AttributeType.NUMBER)
+                .build()
+        )
+
+        val res3 = records.getAtt(mainRec, "sum(multiAssocAtt.number)").asInt()
+        assertThat(res3).isEqualTo(0)
+
+        updateRecord(targetRec0, "number" to 123)
+
+        val res4 = records.getAtt(mainRec, "sum(multiAssocAtt.number)").asInt()
+        assertThat(res4).isEqualTo(123)
+    }
 
     @ParameterizedTest
     @ValueSource(strings = ["multiAssocAtt", "aspect0:multiAssocAtt"])
@@ -188,9 +235,6 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
 
     @BeforeEach
     fun prepare() {
-
-        val targetTypeRef = ModelUtils.getTypeRef("target-type")
-        val childTypeRef = ModelUtils.getTypeRef("child-type")
 
         registerAspect(
             AspectInfo.create {

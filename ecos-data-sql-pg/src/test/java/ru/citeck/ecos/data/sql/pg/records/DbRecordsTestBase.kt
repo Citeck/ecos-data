@@ -622,6 +622,20 @@ abstract class DbRecordsTestBase {
         this.typesInfo[fixedType.id] = fixedType
     }
 
+    fun addAttribute(typeId: String = REC_TEST_TYPE_ID, attribute: AttributeDef) {
+        updateType(typeId) {
+            it.withModel(
+                it.model.copy()
+                    .withAttributes(
+                        listOf(
+                            *it.model.attributes.toTypedArray(),
+                            attribute
+                        )
+                    ).build()
+            )
+        }
+    }
+
     fun updateType(typeId: String = REC_TEST_TYPE_ID, action: (TypeInfo.Builder) -> Unit) {
         val typeInfo = this.typesInfo[typeId] ?: error("Type '$typeId' is not found")
         val builder = typeInfo.copy()
