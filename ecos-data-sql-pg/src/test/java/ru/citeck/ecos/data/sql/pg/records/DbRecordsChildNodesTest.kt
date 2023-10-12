@@ -9,6 +9,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
+import ru.citeck.ecos.records3.record.dao.impl.proxy.RecordsDaoProxy
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -56,11 +57,16 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
         // test with sourceId mapping
 
         val otherSourceId = "other-source-id"
+
+        records.register(RecordsDaoProxy(otherSourceId, "test"))
+
         val mutatedRecords2 = RequestContext.doWithCtx({ ctxData ->
             ctxData.withSourceIdMapping(mapOf(mainCtx.dao.getId() to otherSourceId))
         }) {
             records.mutate(listOf(mainRec, childRec))
         }
+        val childAssoc = records.getAtt(mutatedRecords2[0], "childAssoc?id").getAs(EntityRef::class.java)
+        assertThat(childAssoc?.getSourceId()).isEqualTo(otherSourceId)
         val parentId2 = records.getAtt(mutatedRecords2[1], "_parent?id").getAs(EntityRef::class.java)
         assertThat(parentId2?.getSourceId()).isEqualTo(otherSourceId)
     }
