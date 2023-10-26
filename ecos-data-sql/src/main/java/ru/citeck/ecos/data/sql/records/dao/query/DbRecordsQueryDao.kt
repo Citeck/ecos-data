@@ -27,6 +27,7 @@ import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import kotlin.collections.ArrayList
+import kotlin.math.max
 import kotlin.math.min
 
 class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
@@ -96,49 +97,90 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
 
         val page = recsQuery.page
 
-        val findRes = dataService.doWithPermsPolicy(predicateData.queryPermsPolicy) {
-
-            val dbQuery = DbFindQuery.create {
-                withPredicate(predicate)
-                withSortBy(
-                    recsQuery.sortBy.mapNotNull { sortBy ->
-                        val newAtt = queryCtx.registerSelectAtt(sortBy.attribute, false)
-                        if (newAtt.isNotEmpty()) {
-                            DbFindSort(newAtt, sortBy.ascending)
-                        } else {
-                            null
-                        }
-                    }
-                )
-                withGroupBy(
-                    recsQuery.groupBy.map { groupBy -> queryCtx.registerSelectAtt(groupBy, true) }
-                )
-                withAssocSelectJoins(queryCtx.assocSelectJoins)
-                withAssocTableJoins(predicateData.assocTableJoins)
-                withAssocJoinWithPredicates(predicateData.assocJoinWithPredicates)
-                withExpressions(queryCtx.expressionsCtx.getExpressions())
-            }
-
-            dataService.find(
-                dbQuery,
-                DbFindPage(
-                    page.skipCount,
-                    if (page.maxItems == -1) {
-                        config.queryMaxItems
+        val dbQuery = DbFindQuery.create {
+            withPredicate(predicate)
+            withSortBy(
+                recsQuery.sortBy.mapNotNull { sortBy ->
+                    val newAtt = queryCtx.registerSelectAtt(sortBy.attribute, false)
+                    if (newAtt.isNotEmpty()) {
+                        DbFindSort(newAtt, sortBy.ascending)
                     } else {
-                        min(page.maxItems, config.queryMaxItems)
+                        null
                     }
-                ),
+                }
+            )
+            withGroupBy(
+                recsQuery.groupBy.map { groupBy -> queryCtx.registerSelectAtt(groupBy, true) }
+            )
+            withAssocSelectJoins(queryCtx.assocSelectJoins)
+            withAssocTableJoins(predicateData.assocTableJoins)
+            withAssocJoinWithPredicates(predicateData.assocJoinWithPredicates)
+            withExpressions(queryCtx.expressionsCtx.getExpressions())
+        }
+        val resultMaxItems = if (page.maxItems == -1) {
+            config.queryMaxItems
+        } else {
+            min(page.maxItems, config.queryMaxItems)
+        }
+        var skipCount = page.skipCount
+
+        var totalCount: Long = 0
+        val records = ArrayList<DbRecord>()
+
+        dataService.doWithPermsPolicy(predicateData.queryPermsPolicy) {
+            var findRes = dataService.find(
+                dbQuery,
+                DbFindPage(skipCount, resultMaxItems),
                 true
             )
+            totalCount = findRes.totalCount
+            var mappedEntities = queryCtx.expressionsCtx.mapEntitiesAtts(findRes.entities)
+            if (predicateData.queryPermsPolicy == QueryPermsPolicy.PUBLIC || AuthContext.isRunAsSystem()) {
+                mappedEntities.mapTo(records) { DbRecord(daoCtx, it, queryCtx) }
+            } else {
+                var filteredCount = 0
+                mappedEntities.forEach {
+                    val record = DbRecord(daoCtx, it, queryCtx)
+                    if (!record.isCurrentUserHasReadPerms()) {
+                        filteredCount++
+                        totalCount--
+                    } else {
+                        records.add(record)
+                    }
+                }
+                var iterations = 3
+                while (--iterations >= 0 && filteredCount > 0) {
+
+                    val allowedElements = findRes.totalCount - findRes.entities.size - skipCount
+                    if (allowedElements <= 0) {
+                        break
+                    }
+
+                    val newMaxItems = min(allowedElements, max(filteredCount, 10).toLong()).toInt()
+                    skipCount += findRes.entities.size
+
+                    findRes = dataService.find(dbQuery, DbFindPage(skipCount, newMaxItems), true)
+                    mappedEntities = queryCtx.expressionsCtx.mapEntitiesAtts(findRes.entities)
+
+                    for (entity in mappedEntities) {
+                        val record = DbRecord(daoCtx, entity, queryCtx)
+                        if (!record.isCurrentUserHasReadPerms()) {
+                            totalCount--
+                        } else {
+                            records.add(record)
+                            if (--filteredCount <= 0) {
+                                break
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        val entities = queryCtx.expressionsCtx.mapEntitiesAtts(findRes.entities)
-
         val queryRes = RecsQueryRes<DbRecord>()
-        queryRes.setTotalCount(findRes.totalCount)
-        queryRes.setRecords(entities.map { DbRecord(daoCtx, it, queryCtx) })
-        queryRes.setHasMore(findRes.totalCount > findRes.entities.size + page.skipCount)
+        queryRes.setTotalCount(max(totalCount, records.size.toLong()))
+        queryRes.setRecords(records)
+        queryRes.setHasMore(totalCount > records.size + skipCount)
 
         return queryRes
     }

@@ -640,6 +640,13 @@ class DbRecord(
         }
     }
 
+    fun isCurrentUserHasReadPerms(): Boolean {
+        if (AuthContext.isRunAsSystem()) {
+            return true
+        }
+        return permsValue.getRecordPerms().hasReadPerms()
+    }
+
     private fun isCurrentUserHasAttReadPerms(attribute: String): Boolean {
         if (AuthContext.isRunAsSystem()) {
             return true
