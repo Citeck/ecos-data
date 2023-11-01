@@ -27,6 +27,7 @@ class DbMigrationService {
         schemaMigrations.add(RemoveAllowedFlagFromPerms())
         schemaMigrations.add(AddDeletedAssocsTable())
         schemaMigrations.add(UpdateContentTables())
+        schemaMigrations.add(UpdateNullContentCreator())
     }
 
     fun runDomainMigrations(context: DbDomainMigrationContext) {
