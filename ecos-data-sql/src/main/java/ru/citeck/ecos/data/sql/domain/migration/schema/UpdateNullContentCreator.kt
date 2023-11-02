@@ -24,11 +24,9 @@ class UpdateNullContentCreator : DbSchemaMigration {
         dataService.runMigrations(mock = false, diff = true)
         dataService.resetColumnsCache()
 
-        val anonCreatorId = context.doInNewTxn {
-            context.recordRefService.getOrCreateIdByEntityRef(
-                EntityRef.create(AppName.EMODEL, "person", AuthUser.ANONYMOUS)
-            )
-        }
+        val anonCreatorId = context.recordRefService.getOrCreateIdByEntityRef(
+            EntityRef.create(AppName.EMODEL, "person", AuthUser.ANONYMOUS)
+        )
 
         val tableRef = context.getTableRef(DbContentEntity.TABLE)
         val updateSql = "UPDATE ${tableRef.fullName} SET " +
