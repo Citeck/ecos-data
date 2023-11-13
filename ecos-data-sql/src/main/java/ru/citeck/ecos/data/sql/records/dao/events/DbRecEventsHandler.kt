@@ -8,6 +8,7 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
@@ -63,18 +64,21 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
 
         val recBefore = DbRecord(ctx, before)
         val recAfter = DbRecord(ctx, after)
-        val attsBefore = mutableMapOf<String, Any?>()
-        val attsAfter = mutableMapOf<String, Any?>()
 
-        val attsDef = meta.nonSystemAtts.values
-        attsDef.forEach {
-            if (!DbRecordsUtils.isAssocLikeAttribute(it)) {
-                attsBefore[it.id] = recBefore.getAtt(it.id)
-                attsAfter[it.id] = recAfter.getAtt(it.id)
-            }
-        }
+        val nonSystemChangedAttsData = getChangedAttsData(
+            recBefore,
+            recAfter,
+            assocsDiff,
+            meta.nonSystemAtts
+        )
+        val systemChangedAttsData = getChangedAttsData(
+            recBefore,
+            recAfter,
+            assocsDiff,
+            meta.systemAtts
+        )
 
-        if (attsBefore != attsAfter || assocsDiff.isNotEmpty()) {
+        if (nonSystemChangedAttsData.hasDiff() || systemChangedAttsData.hasDiff()) {
             val recChangedEvent = DbRecordChangedEvent(
                 localRef,
                 globalRef,
@@ -82,14 +86,20 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
                 recAfter,
                 typeInfo,
                 aspectsInfo,
-                attsBefore,
-                attsAfter,
-                assocsDiff
+                nonSystemChangedAttsData.before,
+                nonSystemChangedAttsData.after,
+                nonSystemChangedAttsData.assocs,
+                systemChangedAttsData.before,
+                systemChangedAttsData.after,
+                systemChangedAttsData.assocs
             )
             ctx.listeners.forEach {
                 it.onChanged(recChangedEvent)
             }
         }
+
+        val nonSystemAttsBefore = nonSystemChangedAttsData.before
+        val nonSystemAttsAfter = nonSystemChangedAttsData.after
 
         val contentBefore = recBefore.getDefaultContent()
         val contentAfter = recAfter.getDefaultContent()
@@ -100,7 +110,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
 
         if (contentBefore != null || contentAfter != null) {
 
-            if (attsBefore[DbRecord.ATT_CONTENT_VERSION] != attsAfter[DbRecord.ATT_CONTENT_VERSION] ||
+            if (nonSystemAttsBefore[DbRecord.ATT_CONTENT_VERSION] != nonSystemAttsAfter[DbRecord.ATT_CONTENT_VERSION] ||
                 !isEqualContentData(contentBefore?.getContentDbData(), contentAfter?.getContentDbData())
             ) {
 
@@ -113,8 +123,8 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
                     aspectsInfo,
                     contentBefore,
                     contentAfter,
-                    attsBefore,
-                    attsAfter
+                    nonSystemAttsBefore,
+                    nonSystemAttsAfter
                 )
                 ctx.listeners.forEach {
                     it.onContentChanged(contentChangedEvent)
@@ -164,12 +174,58 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         }
     }
 
+    private fun getChangedAttsData(
+        recBefore: DbRecord,
+        recAfter: DbRecord,
+        assocsDiff: List<DbAssocRefsDiff>,
+        attributes: Map<String, AttributeDef>
+    ): ChangedAttsData {
+
+        if (attributes.isEmpty()) {
+            return ChangedAttsData.EMPTY
+        }
+
+        val attsBefore = mutableMapOf<String, Any?>()
+        val attsAfter = mutableMapOf<String, Any?>()
+
+        attributes.values.forEach {
+            if (!DbRecordsUtils.isAssocLikeAttribute(it)) {
+                attsBefore[it.id] = recBefore.getAtt(it.id)
+                attsAfter[it.id] = recAfter.getAtt(it.id)
+            }
+        }
+
+        val filteredAssocsDiff = assocsDiff.filter {
+            attributes.containsKey(it.assocId)
+        }
+
+        return ChangedAttsData(attsBefore, attsAfter, filteredAssocsDiff)
+    }
+
     private fun getStatusDef(id: String, typeInfo: TypeInfo): StatusDef {
         if (id.isBlank()) {
             return StatusDef.create {}
         }
         return typeInfo.model.statuses.firstOrNull { it.id == id } ?: StatusDef.create {
             withId(id)
+        }
+    }
+
+    private class ChangedAttsData(
+        val before: Map<String, Any?>,
+        val after: Map<String, Any?>,
+        val assocs: List<DbAssocRefsDiff>
+    ) {
+        companion object {
+            val EMPTY = ChangedAttsData(emptyMap(), emptyMap(), emptyList())
+        }
+
+        fun hasDiff(): Boolean {
+            return before != after || assocs.isNotEmpty()
+        }
+
+        fun isEmpty(): Boolean {
+            return before.isEmpty() && after.isEmpty() && assocs.isEmpty()
         }
     }
 }

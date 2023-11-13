@@ -28,6 +28,16 @@ class DbRecordsEventsTest : DbRecordsTestBase() {
                     withType(AttributeType.ASSOC)
                     withMultiple(true)
                 }
+            ),
+            listOf(
+                AttributeDef.create {
+                    withId("systemTxtAtt")
+                    withType(AttributeType.TEXT)
+                },
+                AttributeDef.create {
+                    withId("systemAssocAtt")
+                    withType(AttributeType.ASSOC)
+                }
             )
         )
         val changedEvents = ArrayList<DbRecordChangedEvent>()
@@ -56,5 +66,23 @@ class DbRecordsEventsTest : DbRecordsTestBase() {
         assertThat(changedEvents[0].assocs[0].assocId).isEqualTo("multiAssocAtt")
         assertThat(changedEvents[0].assocs[0].added).containsExactly(assocRecs[3], assocRecs[4])
         assertThat(changedEvents[0].assocs[0].removed).isEmpty()
+
+        changedEvents.clear()
+
+        updateRecord(rec0, "systemAssocAtt" to listOf(assocRecs[3]))
+        assertThat(changedEvents).hasSize(1)
+        assertThat(changedEvents[0].assocs).isEmpty()
+        assertThat(changedEvents[0].systemAssocs).hasSize(1)
+        assertThat(changedEvents[0].systemAssocs[0].assocId).isEqualTo("systemAssocAtt")
+        assertThat(changedEvents[0].systemAssocs[0].added).containsExactly(assocRecs[3])
+        assertThat(changedEvents[0].systemAssocs[0].removed).isEmpty()
+
+        changedEvents.clear()
+
+        updateRecord(rec0, "systemTxtAtt" to "abc")
+        assertThat(changedEvents).hasSize(1)
+        assertThat(changedEvents[0].systemAssocs).isEmpty()
+        assertThat(changedEvents[0].systemBefore["systemTxtAtt"]).isNull()
+        assertThat(changedEvents[0].systemAfter["systemTxtAtt"]).isEqualTo("abc")
     }
 }

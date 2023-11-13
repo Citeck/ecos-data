@@ -79,8 +79,20 @@ class DbRecordChangedEvent(
     val aspects: List<AspectInfo>,
     val before: Map<String, Any?>,
     val after: Map<String, Any?>,
-    val assocs: List<DbAssocRefsDiff>
-)
+    val assocs: List<DbAssocRefsDiff>,
+    val systemBefore: Map<String, Any?>,
+    val systemAfter: Map<String, Any?>,
+    val systemAssocs: List<DbAssocRefsDiff>
+) {
+
+    fun isSystemAttsChanged(): Boolean {
+        return systemBefore.isNotEmpty() || systemAfter.isNotEmpty() || systemAssocs.isNotEmpty()
+    }
+
+    fun isNonSystemAttsChanged(): Boolean {
+        return before.isNotEmpty() || after.isNotEmpty() || assocs.isNotEmpty()
+    }
+}
 
 class DbRecordContentChangedEvent(
     val localRef: EntityRef,

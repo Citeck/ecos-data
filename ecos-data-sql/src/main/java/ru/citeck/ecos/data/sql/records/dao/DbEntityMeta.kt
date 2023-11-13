@@ -11,6 +11,7 @@ data class DbEntityMeta(
     val isDraft: Boolean,
     val typeInfo: TypeInfo,
     val aspectsInfo: List<AspectInfo>,
+    val systemAtts: Map<String, AttributeDef>,
     val nonSystemAtts: Map<String, AttributeDef>,
     val allAttributes: Map<String, AttributeDef>
 )
