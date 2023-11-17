@@ -491,11 +491,26 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val columnsByName = columns.associateBy { it.name }
 
+        fun isColumnValid(name: String): Boolean {
+            if (columnsByName.containsKey(name) || query.expressions.containsKey(name)) {
+                return true
+            }
+            val dotIdx = name.indexOf('.')
+            if (dotIdx == -1) {
+                return false
+            }
+            val nameBeforeDot = name.substring(0, dotIdx)
+            if (query.assocSelectJoins.containsKey(nameBeforeDot)) {
+                return true
+            }
+            return false
+        }
+
         if (query.expressions.isNotEmpty()) {
             val invalidColumns = LinkedHashSet<String>()
             query.expressions.values.forEach {
                 it.visitColumns { token ->
-                    if (!columnsByName.containsKey(token.name)) {
+                    if (!isColumnValid(token.name)) {
                         invalidColumns.add(token.name)
                     }
                 }
@@ -506,16 +521,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
         val queryGroupBy = ArrayList(query.groupBy)
         if (queryGroupBy.isNotEmpty()) {
-            val invalidColumns = queryGroupBy.filter {
-                val isPlainColumnOrExpression = columnsByName.containsKey(it) || query.expressions.containsKey(it)
-                if (isPlainColumnOrExpression) {
-                    false
-                } else if (!it.contains('.')) {
-                    true
-                } else {
-                    !query.assocSelectJoins.containsKey(it.substringBefore('.'))
-                }
-            }
+            val invalidColumns = queryGroupBy.filter { !isColumnValid(it) }
             if (invalidColumns.isNotEmpty()) {
                 error("Grouping by columns $invalidColumns is not allowed")
             }
@@ -639,8 +645,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 }
             }
         }
-        expressions.forEach {
-            val expressionStr = it.value.toString { token ->
+        expressions.forEach { expression ->
+            val expressionStr = expression.value.toString { token ->
                 if (token is DbExpressionAttsContext.AssocAggregationSelectExpression) {
                     val tableRef = token.tableContext.getTableRef()
                     val assocTable = tableRef.withTable(DbAssocEntity.MAIN_TABLE)
@@ -656,11 +662,22 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         "AND assoc.${DbAssocEntity.ATTRIBUTE} = ${token.attributeId} " +
                         "AND assoc.${DbAssocEntity.TARGET_ID} = target.${DbEntity.REF_ID} GROUP BY assoc.${DbAssocEntity.SOURCE_ID})"
                 } else {
-                    token.toString()
+                    if (token is ColumnToken) {
+                        val dotIdx = token.name.indexOf('.')
+                        if (dotIdx > 0) {
+                            val joinSrcAtt = token.name.substring(0, dotIdx)
+                            val joinTgtAtt = token.name.substring(dotIdx + 1)
+                            "\"asj__$joinSrcAtt\".\"$joinTgtAtt\""
+                        } else {
+                            "\"${token.name}\""
+                        }
+                    } else {
+                        token.toString()
+                    }
                 }
             }
             selectColumnsStr.append(expressionStr)
-                .append(" AS ${it.key}")
+                .append(" AS ${expression.key}")
                 .append(",")
         }
 

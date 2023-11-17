@@ -139,6 +139,36 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
     }
 
     @Test
+    fun groupByParentAttTest() {
+
+        val srcRec0 = createRecord("numAtt" to 1, "textAtt" to "abc")
+        val srcRec1 = createRecord("numAtt" to 2, "textAtt" to "def")
+
+        childDao.createRecord("_parent" to srcRec0, "_parentAtt" to "childAssocAtt")
+        childDao.createRecord("_parent" to srcRec1, "_parentAtt" to "childAssocAtt")
+        childDao.createRecord("_parent" to srcRec1, "_parentAtt" to "childAssocAtt")
+
+        val recsResult = records.query(
+            baseQuery.copy {
+                withSourceId(childDao.dao.getId())
+                withQuery(Predicates.eq("_parent._type", REC_TEST_TYPE_REF))
+                withSortBy(listOf(SortBy("_parent.textAtt", true)))
+                withGroupBy(listOf("_parent.textAtt"))
+            },
+            mapOf(
+                "textAtt" to "_parent.textAtt",
+                "numSum" to "sum(_parent.numAtt)",
+                "count" to "count(*)"
+            )
+        ).getRecords()
+
+        assertThat(recsResult).hasSize(2)
+        assertThat(recsResult.map { it["textAtt"].asText() }).containsExactly("abc", "def")
+        assertThat(recsResult.map { it["numSum"].asInt() }).containsExactly(1, 4)
+        assertThat(recsResult.map { it["count"].asInt() }).containsExactly(1, 2)
+    }
+
+    @Test
     fun groupByParentTest() {
 
         val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 10)
@@ -261,6 +291,10 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
             listOf(
                 AttributeDef.create {
                     withId("textAtt")
+                },
+                AttributeDef.create {
+                    withId("numAtt")
+                    withType(AttributeType.NUMBER)
                 },
                 AttributeDef.create {
                     withId("assocAtt")
