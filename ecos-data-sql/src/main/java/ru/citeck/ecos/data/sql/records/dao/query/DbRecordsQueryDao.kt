@@ -96,21 +96,27 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         }
 
         val page = recsQuery.page
+        val groupBy = recsQuery.groupBy
 
         val dbQuery = DbFindQuery.create {
             withPredicate(predicate)
             withSortBy(
                 recsQuery.sortBy.mapNotNull { sortBy ->
-                    val newAtt = queryCtx.registerSelectAtt(sortBy.attribute, false)
-                    if (newAtt.isNotEmpty()) {
-                        DbFindSort(newAtt, sortBy.ascending)
-                    } else {
+                    val sortAtt = sortBy.attribute
+                    if (groupBy.isNotEmpty() && !groupBy.contains(sortAtt) && !sortAtt.contains("(")) {
                         null
+                    } else {
+                        val newAtt = queryCtx.registerSelectAtt(sortBy.attribute, false)
+                        if (newAtt.isNotEmpty()) {
+                            DbFindSort(newAtt, sortBy.ascending)
+                        } else {
+                            null
+                        }
                     }
                 }
             )
             withGroupBy(
-                recsQuery.groupBy.map { groupBy -> queryCtx.registerSelectAtt(groupBy, true) }
+                groupBy.map { groupBy -> queryCtx.registerSelectAtt(groupBy, true) }
             )
             withAssocSelectJoins(queryCtx.assocSelectJoins)
             withAssocTableJoins(predicateData.assocTableJoins)
@@ -135,8 +141,12 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             )
             totalCount = findRes.totalCount
             var mappedEntities = queryCtx.expressionsCtx.mapEntitiesAtts(findRes.entities)
-            if (predicateData.queryPermsPolicy == QueryPermsPolicy.PUBLIC || AuthContext.isRunAsSystem()) {
-                mappedEntities.mapTo(records) { DbRecord(daoCtx, it, queryCtx) }
+            if (predicateData.queryPermsPolicy == QueryPermsPolicy.PUBLIC ||
+                AuthContext.isRunAsSystem() ||
+                groupBy.isNotEmpty()
+            ) {
+                val isGroupEntities = groupBy.isNotEmpty()
+                mappedEntities.mapTo(records) { DbRecord(daoCtx, it, queryCtx, isGroupEntities) }
             } else {
                 var filteredCount = 0
                 mappedEntities.forEach {

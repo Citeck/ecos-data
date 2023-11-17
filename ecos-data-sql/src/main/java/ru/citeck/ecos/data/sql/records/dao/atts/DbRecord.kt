@@ -40,7 +40,8 @@ import kotlin.collections.LinkedHashSet
 class DbRecord(
     private val ctx: DbRecordsDaoCtx,
     val entity: DbEntity,
-    queryCtx: DbFindQueryContext? = null
+    queryCtx: DbFindQueryContext? = null,
+    private val isGroupEntity: Boolean = false
 ) : AttValue {
 
     companion object {
@@ -143,6 +144,12 @@ class DbRecord(
     private val nonSystemAttDefs: Map<String, AttributeDef>
 
     private val defaultContentAtt: String
+
+    private val extId = if (isGroupEntity) {
+        "g-" + UUID.randomUUID()
+    } else {
+        entity.extId
+    }
 
     init {
         val recData = LinkedHashMap(entity.attributes)
@@ -347,7 +354,7 @@ class DbRecord(
         return if (ctx.contentService != null) {
             DbContentValue(
                 ctx,
-                entity.extId,
+                extId,
                 typeInfo,
                 value,
                 attId,
@@ -376,7 +383,7 @@ class DbRecord(
     }
 
     override fun getId(): EntityRef {
-        return ctx.getGlobalRef(entity.extId)
+        return ctx.getGlobalRef(extId)
     }
 
     override fun asText(): String {
@@ -451,7 +458,7 @@ class DbRecord(
     override fun asJson(): Any {
 
         val jsonAtts = LinkedHashMap<String, Any?>()
-        jsonAtts["id"] = entity.extId
+        jsonAtts["id"] = extId
 
         val nonSystemAttIds = typeInfo.model.attributes.map { it.id }.toSet()
 
@@ -596,7 +603,7 @@ class DbRecord(
             }
         }
         return when (name) {
-            "id" -> entity.extId
+            "id" -> extId
             ATT_NAME -> displayName
             RecordConstants.ATT_MODIFIED, "cm:modified" -> entity.modified
             RecordConstants.ATT_CREATED, "cm:created" -> entity.created
@@ -695,6 +702,10 @@ class DbRecord(
     }
 
     override fun getType(): EntityRef {
-        return ModelUtils.getTypeRef(typeInfo.id)
+        return if (isGroupEntity) {
+            EntityRef.EMPTY
+        } else {
+            ModelUtils.getTypeRef(typeInfo.id)
+        }
     }
 }
