@@ -707,8 +707,12 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         val dotIdx = token.name.indexOf('.')
                         if (dotIdx > 0) {
                             val joinSrcAtt = token.name.substring(0, dotIdx)
-                            val joinTgtAtt = token.name.substring(dotIdx + 1)
-                            "\"asj__$joinSrcAtt\".\"$joinTgtAtt\""
+                            if (!rawTableJoins.containsKey(joinSrcAtt)) {
+                                val joinTgtAtt = token.name.substring(dotIdx + 1)
+                                "\"asj__$joinSrcAtt\".\"$joinTgtAtt\""
+                            } else {
+                                token.name.split(".").joinToString(".") { "\"$it\"" }
+                            }
                         } else {
                             "\"${token.name}\""
                         }
