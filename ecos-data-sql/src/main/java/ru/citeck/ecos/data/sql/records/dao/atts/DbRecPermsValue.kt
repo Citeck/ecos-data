@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
+import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsContext
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 
@@ -21,7 +22,11 @@ class DbRecPermsValue(
     }
 
     private val recordPermsValue: DbRecordPermsContext by lazy {
-        ctx.recordsDao.getRecordPerms(record)
+        if (record.entity.id == -1L) {
+            DbRecordPermsContext(DbRecordAllowedAllPerms)
+        } else {
+            ctx.recordsDao.getRecordPerms(record)
+        }
     }
     private val additionalPermsUpper: Set<String> by lazy {
         recordPermsValue.getAdditionalPerms().mapTo(HashSet()) { it.uppercase() }
