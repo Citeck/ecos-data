@@ -686,8 +686,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 }
             }
         }
-        expressions.forEach {
-            val expressionStr = it.value.toString { token ->
+        expressions.forEach { expression ->
+            val expressionStr = expression.value.toString { token ->
                 if (token is DbExpressionAttsContext.AssocAggregationSelectExpression) {
                     val tableRef = token.tableContext.getTableRef()
                     val assocTable = tableRef.withTable(DbAssocEntity.MAIN_TABLE)
@@ -703,11 +703,22 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         "AND assoc.${DbAssocEntity.ATTRIBUTE} = ${token.attributeId} " +
                         "AND assoc.${DbAssocEntity.TARGET_ID} = target.${DbEntity.REF_ID} GROUP BY assoc.${DbAssocEntity.SOURCE_ID})"
                 } else {
-                    token.toString()
+                    if (token is ColumnToken) {
+                        val dotIdx = token.name.indexOf('.')
+                        if (dotIdx > 0) {
+                            val joinSrcAtt = token.name.substring(0, dotIdx)
+                            val joinTgtAtt = token.name.substring(dotIdx + 1)
+                            "\"asj__$joinSrcAtt\".\"$joinTgtAtt\""
+                        } else {
+                            "\"${token.name}\""
+                        }
+                    } else {
+                        token.toString()
+                    }
                 }
             }
             selectColumnsStr.append(expressionStr)
-                .append(" AS ${it.key}")
+                .append(" AS ${expression.key}")
                 .append(",")
         }
 
