@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.context
 
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
+import ru.citeck.ecos.data.sql.remote.DbRecordsRemoteActionsClient
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
@@ -15,7 +16,8 @@ class DbDataSourceContext(
     val dataSource: DbDataSource,
     dataServiceFactory: DbDataServiceFactory,
     private val migrationService: DbMigrationService,
-    private val webAppApi: EcosWebAppApi
+    private val webAppApi: EcosWebAppApi,
+    val remoteActionsClient: DbRecordsRemoteActionsClient? = null
 ) {
     val appName: String = webAppApi.getProperties().appName
     val converter: DbTypesConverter = DbTypesConverter()

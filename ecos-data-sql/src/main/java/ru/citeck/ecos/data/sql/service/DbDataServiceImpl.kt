@@ -39,6 +39,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
 import java.lang.IllegalStateException
 import java.sql.SQLException
 import java.time.Instant
@@ -879,7 +880,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     private inner class DbTableContextImpl(
         private val table: String,
         private val columns: List<DbColumnDef> = emptyList(),
-        val schemaCtx: DbSchemaContext
+        private val schemaCtx: DbSchemaContext
     ) : DbTableContext {
 
         private val tableRef = DbTableRef(schemaCtx.schema, table)
@@ -901,6 +902,10 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
         override fun getPermsService(): DbEntityPermsService {
             return schemaCtx.entityPermsService
+        }
+
+        override fun getAuthoritiesApi(): EcosAuthoritiesApi {
+            return schemaCtx.authoritiesApi
         }
 
         override fun getTableRef(): DbTableRef {
@@ -962,6 +967,10 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 columns,
                 schemaCtx
             )
+        }
+
+        override fun getSchemaCtx(): DbSchemaContext {
+            return schemaCtx
         }
     }
 }

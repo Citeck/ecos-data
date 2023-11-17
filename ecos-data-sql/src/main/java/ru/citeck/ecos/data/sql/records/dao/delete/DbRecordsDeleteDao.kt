@@ -116,6 +116,8 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
             }
         }
 
+        ctx.remoteActionsClient?.deleteRemoteAssocs(ctx.tableCtx, meta.globalRef, isForceDeletion)
+
         if (childrenIdsToDelete.isNotEmpty()) {
             val refsToDelete = ctx.recordRefService.getEntityRefsByIds(childrenIdsToDelete.toList())
             ctx.recordsService.delete(refsToDelete)

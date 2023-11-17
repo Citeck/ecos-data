@@ -17,6 +17,7 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.net.URLEncoder
 import java.util.*
+import kotlin.collections.LinkedHashSet
 
 class DbRecordsAssocTest : DbRecordsTestBase() {
 
@@ -107,6 +108,50 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
 
         // printQueryRes("SELECT * FROM ${tableRef.withTable("ecos_record_ref").fullName}")
         // printQueryRes("SELECT * FROM ${tableRef.fullName}")
+    }
+
+    @Test
+    fun findNonChildrenTargetRecsSrcIdsTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("assoc")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                },
+                AttributeDef.create {
+                    withId("childAssoc")
+                    withType(AttributeType.ASSOC)
+                    withConfig(ObjectData.create().set("child", true))
+                    withMultiple(true)
+                }
+            )
+        )
+
+        val assocRefs = listOf(
+            "some0/assoc@abc",
+            "some0/assoc@def",
+            "some0/assoc@klm",
+            "some1/assoc@abc",
+            "some1/assoc@hij",
+            "some2/assoc@abc",
+            "some3/assoc@abc",
+            "some4/assoc@abc",
+            "some5/assoc@abc"
+        )
+
+        val childRef = createRecord()
+        val rec = createRecord("assoc" to assocRefs, "childAssoc" to childRef)
+
+        val refId = dbRecordRefService.getOrCreateIdByEntityRef(rec)
+        val result = assocsService.findNonChildrenTargetRecsSrcIds(refId)
+
+        assertThat(result).containsExactlyInAnyOrderElementsOf(
+            assocRefs.mapTo(LinkedHashSet()) {
+                it.substringBefore('@')
+            }
+        )
     }
 
     @Test

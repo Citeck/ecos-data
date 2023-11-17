@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.context
 
+import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.DbContentServiceImpl
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
@@ -20,6 +21,8 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
+import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbSchemaContext(
     val schema: String,
@@ -54,6 +57,8 @@ class DbSchemaContext(
 
     val contentStorageService: EcosContentStorageService = EcosContentStorageServiceImpl(webAppApi, this)
     val contentService: DbContentService = DbContentServiceImpl(contentStorageService, this)
+
+    val authoritiesApi: EcosAuthoritiesApi = webAppApi.getAuthoritiesApi()
 
     init {
         dataSourceCtx.schemaDao.addSchemaListener(
@@ -105,5 +110,31 @@ class DbSchemaContext(
 
     fun <T> doInNewRoTxn(action: () -> T): T {
         return dataSourceCtx.doInNewRoTxn(action)
+    }
+
+    fun getUserRef(userName: String): EntityRef {
+        val nonEmptyUserName = userName.ifBlank { AuthUser.ANONYMOUS }
+        return authoritiesApi.getPersonRef(nonEmptyUserName)
+    }
+
+    override fun equals(other: Any?): Boolean {
+        other ?: return false
+        if (this === other) {
+            return true
+        }
+        if (other !is DbSchemaContext) {
+            return false
+        }
+        return dataSourceCtx === other.dataSourceCtx && schema == other.schema
+    }
+
+    override fun hashCode(): Int {
+        var hash = dataSourceCtx.hashCode()
+        hash = 31 * hash + schema.hashCode()
+        return hash
+    }
+
+    override fun toString(): String {
+        return "DbSchemaContext[$schema]"
     }
 }

@@ -28,6 +28,7 @@ import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.records.perms.DefaultDbPermsComponent
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
+import ru.citeck.ecos.data.sql.remote.DbRecordsRemoteActionsServiceImpl
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataService
@@ -213,6 +214,8 @@ abstract class DbRecordsTestBase {
                 override fun isManaged() = true
             }
 
+            val remoteActions = DbRecordsRemoteActionsServiceImpl()
+
             dbDataSource = DbDataSourceImpl(jdbcDataSource)
             dataSourceCtx = DbDataSourceContext(
                 dbDataSource,
@@ -282,6 +285,8 @@ abstract class DbRecordsTestBase {
 
             records = recordsServiceFactory.recordsServiceV1
             RequestContext.setDefaultServices(recordsServiceFactory)
+
+            remoteActions.init(webAppApi, records)
         }
 
         mainCtx = createRecordsDao()

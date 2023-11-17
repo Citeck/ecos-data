@@ -2,6 +2,8 @@ package ru.citeck.ecos.data.sql.records.assocs
 
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.records.attnames.DbEcosAttributesService
+import ru.citeck.ecos.data.sql.records.refs.DbRecordRefEntity
+import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
@@ -9,8 +11,10 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
+import ru.citeck.ecos.data.sql.service.RawTableJoin
 import ru.citeck.ecos.data.sql.service.expression.token.ColumnToken
 import ru.citeck.ecos.data.sql.service.expression.token.FunctionToken
+import ru.citeck.ecos.data.sql.service.expression.token.ScalarToken
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
@@ -18,7 +22,7 @@ import ru.citeck.ecos.txn.lib.TxnContext
 import java.time.Instant
 
 class DbAssocsService(
-    schemaCtx: DbSchemaContext
+    private val schemaCtx: DbSchemaContext
 ) {
 
     private val dataService: DbDataService<DbAssocEntity> = DbDataServiceImpl(
@@ -133,6 +137,49 @@ class DbAssocsService(
             dataService.save(entitiesToCreate)
         }
         return assocsToCreate.toList()
+    }
+
+    fun findNonChildrenTargetRecsSrcIds(sourceId: Long): Set<String> {
+
+        val func = FunctionToken(
+            "substringBefore",
+            listOf(
+                ColumnToken("ref.${DbRecordRefEntity.EXT_ID}"),
+                ScalarToken("@")
+            )
+        )
+        val refsTableCtx = schemaCtx.recordRefService.getDataService().getTableContext()
+
+        val query = DbFindQuery.create()
+            .withPredicate(
+                Predicates.and(
+                    Predicates.eq(DbAssocEntity.CHILD, false),
+                    Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId)
+                )
+            )
+            .withRawTableJoins(
+                mapOf(
+                    "ref" to RawTableJoin(
+                        refsTableCtx,
+                        Predicates.eq(DbAssocEntity.TARGET_ID, "ref.${DbEntity.ID}")
+                    )
+                )
+            )
+            .withExpressions(mapOf("srcId" to func))
+            .withGroupBy(listOf("srcId"))
+            .build()
+
+        val queryRes = dataService.findRaw(
+            query,
+            DbFindPage(0, 10_000),
+            false
+        )
+
+        return queryRes.entities
+            .asSequence()
+            .map { it["srcId"].toString() }
+            .filter { it.isNotBlank() }
+            .toSet()
     }
 
     fun removeAssocs(sourceId: Long, force: Boolean) {

@@ -36,7 +36,7 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
         val STRING_FUNCTIONS = setOf(
             "btrim", "char_length", "character_length", "initcap", "length", "lower",
             "lpad", "ltrim", "position", "repeat", "replace", "rpad", "rtrim", "strpos",
-            "substring", "translate", "trim", "upper",
+            "substring", "translate", "trim", "upper", "substringBefore"
         )
         val OTHER_FUNCTIONS = setOf(
             "coalesce",
@@ -78,7 +78,23 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
         return if (FUNCTIONS_WITHOUT_BRACES.contains(name)) {
             name
         } else {
-            "$name(${args.joinToString { it.toString(converter) }})"
+            when (name) {
+                "substring" -> {
+                    var str = "substring(" + converter(args[0]) + " from " + converter(args[1])
+                    if (args.size > 2) {
+                        str += " for " + converter(args[2])
+                    }
+                    str += ")"
+                    str
+                }
+                "substringBefore" -> {
+                    "substring(${args[0].toString(converter)}, 0, " +
+                        "position(${args[1].toString(converter)} IN ${args[0].toString(converter)}))"
+                }
+                else -> {
+                    "$name(${args.joinToString { it.toString(converter) }})"
+                }
+            }
         }
     }
 

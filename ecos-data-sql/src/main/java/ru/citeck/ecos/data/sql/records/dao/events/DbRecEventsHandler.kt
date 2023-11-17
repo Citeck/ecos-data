@@ -32,6 +32,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
     fun emitEventsAfterMutation(
         before: DbEntity,
         after: DbEntity,
+        meta: DbEntityMeta,
         isNewRecord: Boolean,
         assocsDiff: List<DbAssocRefsDiff>
     ) {
@@ -40,7 +41,6 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             return
         }
 
-        val meta = ctx.getEntityMeta(after)
         val typeInfo = meta.typeInfo
         val aspectsInfo = meta.aspectsInfo
         val localRef = meta.localRef

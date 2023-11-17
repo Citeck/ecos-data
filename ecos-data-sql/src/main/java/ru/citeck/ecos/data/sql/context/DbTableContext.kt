@@ -9,6 +9,7 @@ import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
+import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
 
 interface DbTableContext {
 
@@ -19,6 +20,8 @@ interface DbTableContext {
     fun getRecordRefsService(): DbRecordRefService
 
     fun getContentService(): DbContentService
+
+    fun getAuthoritiesApi(): EcosAuthoritiesApi
 
     fun getColumns(): List<DbColumnDef>
 
@@ -41,4 +44,6 @@ interface DbTableContext {
     fun getQueryPermsPolicy(): QueryPermsPolicy
 
     fun isSameSchema(other: DbTableContext): Boolean
+
+    fun getSchemaCtx(): DbSchemaContext
 }

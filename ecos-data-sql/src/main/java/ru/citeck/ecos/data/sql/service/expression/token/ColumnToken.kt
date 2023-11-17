@@ -9,7 +9,11 @@ class ColumnToken(val name: String) : ExpressionToken {
     }
 
     override fun toString(): String {
-        return "\"" + name + "\""
+        return if (name.contains(".")) {
+            name.split(".").joinToString(".") { "\"$it\"" }
+        } else {
+            "\"" + name + "\""
+        }
     }
     override fun validate() {}
 

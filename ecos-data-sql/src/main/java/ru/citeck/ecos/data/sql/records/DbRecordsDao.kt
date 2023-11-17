@@ -37,6 +37,7 @@ import ru.citeck.ecos.data.sql.records.refs.DbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.refs.DefaultDbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
+import ru.citeck.ecos.data.sql.remote.DbRecordsRemoteActionsClient
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.service.DbDataService
@@ -484,6 +485,10 @@ class DbRecordsDao(
         if (disableAudit && !isRunAsSystem) {
             error("${DbRecordsControlAtts.DISABLE_AUDIT} attribute can't be used outside of system context")
         }
+        val disableEvents = record.getAtt(DbRecordsControlAtts.DISABLE_EVENTS).asBoolean()
+        if (disableEvents && !isRunAsSystem) {
+            error("${DbRecordsControlAtts.DISABLE_EVENTS} attribute can't be used outside of system context")
+        }
 
         val currentRunAsUser = runAsAuth.getUser()
         val currentRunAsAuthorities = DbRecordsUtils.getCurrentAuthorities(runAsAuth)
@@ -559,7 +564,8 @@ class DbRecordsDao(
         }
 
         val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
-        val currentUserRefId = daoCtx.getOrCreateUserRefId(AuthContext.getCurrentUser())
+        val currentUser = AuthContext.getCurrentUser()
+        val currentUserRefId = daoCtx.getOrCreateUserRefId(currentUser)
 
         if (disableAudit) {
             fun getUserId(user: String): Long {
@@ -941,12 +947,18 @@ class DbRecordsDao(
             record.attributes
         )
 
-        daoCtx.recEventsHandler.emitEventsAfterMutation(
-            recordEntityBeforeMutation,
-            recAfterSave,
-            isNewEntity,
-            changedAssocs
-        )
+        val meta = daoCtx.getEntityMeta(recAfterSave)
+        daoCtx.remoteActionsClient?.updateRemoteAssocs(daoCtx.tableCtx, meta.globalRef, currentUser, changedAssocs)
+
+        if (!disableEvents) {
+            daoCtx.recEventsHandler.emitEventsAfterMutation(
+                recordEntityBeforeMutation,
+                recAfterSave,
+                meta,
+                isNewEntity,
+                changedAssocs
+            )
+        }
 
         return recAfterSave
     }
@@ -1172,12 +1184,19 @@ class DbRecordsDao(
     @Synchronized
     override fun setRecordsServiceFactory(serviceFactory: RecordsServiceFactory) {
         super.setRecordsServiceFactory(serviceFactory)
+
+        val remoteActionsClient: DbRecordsRemoteActionsClient? = dataService.getTableContext()
+            .getSchemaCtx()
+            .dataSourceCtx
+            .remoteActionsClient
+
         ecosTypeService = DbEcosModelService(modelServices)
         val appName = serviceFactory.webappProps.appName
         daoCtx = DbRecordsDaoCtx(
             appName,
             getId(),
             dataService.getTableRef(),
+            dataService.getTableContext(),
             config,
             dataService,
             contentService,
@@ -1185,14 +1204,14 @@ class DbRecordsDao(
             ecosTypeService,
             serviceFactory.recordsServiceV1,
             serviceFactory.getEcosWebAppApi()?.getContentApi(),
-            serviceFactory.getEcosWebAppApi()?.getAuthoritiesApi(),
             listeners,
             this,
             serviceFactory.attValuesConverter,
             serviceFactory.getEcosWebAppApi()?.getWebClientApi(),
             modelServices.delegationService,
             assocsService,
-            globalRefCalculator ?: DefaultDbGlobalRefCalculator()
+            globalRefCalculator ?: DefaultDbGlobalRefCalculator(),
+            remoteActionsClient
         )
         daoCtxInitialized.set(true)
         listeners.forEach {

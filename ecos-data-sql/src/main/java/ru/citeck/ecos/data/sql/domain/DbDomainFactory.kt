@@ -14,6 +14,7 @@ import ru.citeck.ecos.data.sql.records.listener.DbIntegrityCheckListener
 import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.refs.DbGlobalRefCalculator
+import ru.citeck.ecos.data.sql.remote.DbRecordsRemoteActionsClient
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
@@ -29,7 +30,8 @@ class DbDomainFactory(
     val computedAttsComponent: DbComputedAttsComponent,
     val defaultListeners: List<DbRecordsListener>,
     val dataServiceFactory: DbDataServiceFactory,
-    val webAppApi: EcosWebAppApi
+    val webAppApi: EcosWebAppApi,
+    val remoteActionsClient: DbRecordsRemoteActionsClient?
 ) {
 
     private val recordsDaoWithoutDefaultContentStorage = Collections.synchronizedList(ArrayList<DbRecordsDao>())
@@ -40,7 +42,8 @@ class DbDomainFactory(
         dataSource,
         dataServiceFactory,
         migrationService,
-        webAppApi
+        webAppApi,
+        remoteActionsClient
     )
 
     private var defaultContentStorage: EcosContentStorageConfig? = null
@@ -53,7 +56,8 @@ class DbDomainFactory(
             computedAttsComponent,
             defaultListeners,
             dataServiceFactory,
-            webAppApi
+            webAppApi,
+            remoteActionsClient
         )
     }
 

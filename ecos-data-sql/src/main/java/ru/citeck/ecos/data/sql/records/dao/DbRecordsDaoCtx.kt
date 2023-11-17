@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao
 
 import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.data.sql.content.DbContentService
+import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
@@ -20,14 +21,13 @@ import ru.citeck.ecos.data.sql.records.listener.DbRecordsListener
 import ru.citeck.ecos.data.sql.records.refs.DbGlobalRefCalculator
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
+import ru.citeck.ecos.data.sql.remote.DbRecordsRemoteActionsClient
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.value.AttValuesConverter
-import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
-import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.content.EcosContentApi
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.web.client.EcosWebClientApi
@@ -36,6 +36,7 @@ class DbRecordsDaoCtx(
     val appName: String,
     val sourceId: String,
     val tableRef: DbTableRef,
+    val tableCtx: DbTableContext,
     val config: DbRecordsDaoConfig,
     val dataService: DbDataService<DbEntity>,
     val contentService: DbContentService?,
@@ -43,14 +44,14 @@ class DbRecordsDaoCtx(
     val ecosTypeService: DbEcosModelService,
     val recordsService: RecordsService,
     val contentApi: EcosContentApi?,
-    val authoritiesApi: EcosAuthoritiesApi?,
     val listeners: List<DbRecordsListener>,
     val recordsDao: DbRecordsDao,
     val attValuesConverter: AttValuesConverter,
     val webApiClient: EcosWebClientApi?,
     val delegationService: DelegationService,
     val assocsService: DbAssocsService,
-    val globalRefCalculator: DbGlobalRefCalculator
+    val globalRefCalculator: DbGlobalRefCalculator,
+    val remoteActionsClient: DbRecordsRemoteActionsClient?
 ) {
     val recContentHandler: DbRecContentHandler by lazy { DbRecContentHandler(this) }
     val mutConverter = RecMutConverter()
@@ -59,6 +60,7 @@ class DbRecordsDaoCtx(
     val recEventsHandler: DbRecEventsHandler by lazy { DbRecEventsHandler(this) }
     val deleteDao: DbRecordsDeleteDao by lazy { DbRecordsDeleteDao(this) }
     val queryDao: DbRecordsQueryDao by lazy { DbRecordsQueryDao(this) }
+    val authoritiesApi = dataService.getTableContext().getAuthoritiesApi()
 
     fun getLocalRef(extId: String): EntityRef {
         return EntityRef.create(appName, sourceId, extId)
@@ -138,7 +140,6 @@ class DbRecordsDaoCtx(
 
     fun getUserRef(userName: String): EntityRef {
         val nonEmptyUserName = userName.ifBlank { AuthUser.ANONYMOUS }
-        return authoritiesApi?.getPersonRef(nonEmptyUserName)
-            ?: EntityRef.create(AppName.EMODEL, "person", nonEmptyUserName)
+        return authoritiesApi.getPersonRef(nonEmptyUserName)
     }
 }

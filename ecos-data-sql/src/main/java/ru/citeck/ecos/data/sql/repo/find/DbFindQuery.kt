@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.repo.find
 
 import ru.citeck.ecos.data.sql.context.DbTableContext
+import ru.citeck.ecos.data.sql.service.RawTableJoin
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
@@ -12,6 +13,7 @@ class DbFindQuery(
     val assocTableJoins: List<AssocTableJoin>,
     val assocSelectJoins: Map<String, DbTableContext>,
     val assocJoinsWithPredicate: List<AssocJoinWithPredicate>,
+    val rawTableJoins: Map<String, RawTableJoin>,
     val predicate: Predicate,
     val withDeleted: Boolean,
     val sortBy: List<DbFindSort>,
@@ -48,6 +50,7 @@ class DbFindQuery(
         var assocTableJoins: MutableList<AssocTableJoin> = ArrayList()
         var assocSelectJoins: Map<String, DbTableContext> = HashMap()
         var assocJoinWithPredicates: MutableList<AssocJoinWithPredicate> = ArrayList()
+        var rawTableJoins: Map<String, RawTableJoin> = emptyMap()
 
         constructor(base: DbFindQuery) : this() {
             this.predicate = base.predicate.copy()
@@ -58,6 +61,7 @@ class DbFindQuery(
             this.assocTableJoins = ArrayList(base.assocTableJoins)
             this.assocSelectJoins = HashMap(base.assocSelectJoins)
             this.assocJoinWithPredicates = ArrayList(base.assocJoinsWithPredicate)
+            this.rawTableJoins = base.rawTableJoins
         }
 
         fun withPredicate(predicate: Predicate?): Builder {
@@ -115,12 +119,18 @@ class DbFindQuery(
             return this
         }
 
+        fun withRawTableJoins(rawTableJoins: Map<String, RawTableJoin>): Builder {
+            this.rawTableJoins = rawTableJoins
+            return this
+        }
+
         fun build(): DbFindQuery {
             return DbFindQuery(
                 expressions = expressions,
                 assocTableJoins = assocTableJoins,
                 assocSelectJoins = assocSelectJoins,
                 assocJoinsWithPredicate = assocJoinWithPredicates,
+                rawTableJoins = rawTableJoins,
                 predicate = predicate,
                 withDeleted = withDeleted,
                 sortBy = sortBy,

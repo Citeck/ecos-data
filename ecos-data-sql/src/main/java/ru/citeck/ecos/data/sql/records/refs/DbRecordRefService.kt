@@ -40,6 +40,23 @@ class DbRecordRefService(
     /**
      * Get or create record references
      */
+    fun getOrCreateIdByEntityRefsMap(refs: Collection<EntityRef>): Map<EntityRef, Long> {
+        val refsList = if (refs is List<EntityRef>) {
+            refs
+        } else {
+            refs.toList()
+        }
+        val ids = getOrCreateIdByEntityRefs(refsList)
+        val result = LinkedHashMap<EntityRef, Long>()
+        for ((idx, ref) in refsList.withIndex()) {
+            result[ref] = ids[idx]
+        }
+        return result
+    }
+
+    /**
+     * Get or create record references
+     */
     fun getOrCreateIdByEntityRefs(refs: List<EntityRef>): List<Long> {
         val txnCache = getIdsByRefsTxnCache()
         val refsIds = getIdByEntityRefs(refs)
@@ -59,6 +76,10 @@ class DbRecordRefService(
             }
         }
         return result.toList()
+    }
+
+    fun getIdByEntityRef(ref: EntityRef): Long {
+        return getIdByEntityRefs(listOf(ref))[0]
     }
 
     /**
