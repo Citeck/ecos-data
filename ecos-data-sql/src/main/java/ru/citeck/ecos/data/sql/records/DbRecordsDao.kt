@@ -939,12 +939,14 @@ class DbRecordsDao(
             record.attributes,
             typeAttColumns,
             changedByOperationsAtts,
-            allAssocsValues
+            allAssocsValues,
+            disableEvents
         )
         daoCtx.mutAssocHandler.processParentAfterMutation(
             recordEntityBeforeMutation,
             recAfterSave,
-            record.attributes
+            record.attributes,
+            disableEvents
         )
 
         val meta = daoCtx.getEntityMeta(recAfterSave)

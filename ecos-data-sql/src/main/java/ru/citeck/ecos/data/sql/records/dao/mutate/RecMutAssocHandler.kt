@@ -5,6 +5,7 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
+import ru.citeck.ecos.data.sql.records.DbRecordsControlAtts
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbAssocAttValuesContainer
@@ -212,7 +213,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
     fun processParentAfterMutation(
         recBeforeSave: DbEntity,
         recAfterSave: DbEntity,
-        attributes: ObjectData
+        attributes: ObjectData,
+        disableEvents: Boolean
     ) {
         if (attributes.get(MUTATION_FROM_PARENT_FLAG, false)) {
             return
@@ -294,6 +296,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 }
                 if (atts.isNotEmpty()) {
                     atts[MUTATION_FROM_CHILD_FLAG] = true
+                    if (disableEvents) {
+                        atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
+                    }
                     ctx.recordsService.mutate(RecordAtts(parentRefBefore, atts))
                 }
             } else {
@@ -304,6 +309,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 }
                 if (atts.isNotEmpty()) {
                     atts[MUTATION_FROM_CHILD_FLAG] = true
+                    if (disableEvents) {
+                        atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
+                    }
                     ctx.recordsService.mutate(RecordAtts(parentRefBefore, atts))
                 }
             }
@@ -320,6 +328,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         val atts = ObjectData.create()
         atts[OperationType.ATT_ADD.prefix + parentAttAfter] = currentRef
         atts[MUTATION_FROM_CHILD_FLAG] = true
+        if (disableEvents) {
+            atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
+        }
         ctx.recordsService.mutate(RecordAtts(parentRefAfter, atts))
     }
 
@@ -329,7 +340,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         attributes: ObjectData,
         columns: List<EcosAttColumnDef>,
         changedByOperationsAtts: Set<String>,
-        assocsValues: Map<String, DbAssocAttValuesContainer>
+        assocsValues: Map<String, DbAssocAttValuesContainer>,
+        disableEvents: Boolean
     ) {
 
         if (recAfterSave.refId < 0) {
@@ -424,6 +436,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                         childAtts.setAtt(RecordConstants.ATT_PARENT_ATT, null)
                     }
                     childAtts.setAtt(MUTATION_FROM_PARENT_FLAG, true)
+                    if (disableEvents) {
+                        childAtts.setAtt(DbRecordsControlAtts.DISABLE_EVENTS, true)
+                    }
                     ctx.recordsService.mutate(childAtts)
                 }
             }
