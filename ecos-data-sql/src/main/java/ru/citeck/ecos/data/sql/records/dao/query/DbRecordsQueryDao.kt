@@ -22,6 +22,7 @@ import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.*
 import ru.citeck.ecos.records3.record.atts.schema.resolver.AttContext
+import ru.citeck.ecos.records3.record.atts.schema.utils.AttStrUtils
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -48,6 +49,20 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         if (language.isNotEmpty() && language != PredicateService.LANGUAGE_PREDICATE) {
             return RecsQueryRes()
         }
+
+        var groupBy = recsQuery.groupBy
+        // add support of legacy grouping with '&' as delimiter for attributes
+        // groupBy(field0&field1) should work as groupBy(field0, field1)
+        // see ru.citeck.ecos.records3.record.dao.impl.group.RecordsGroupDao
+        if (groupBy.isNotEmpty() && AttStrUtils.indexOf(groupBy[0], '&') > 0) {
+            val newGroupBy = ArrayList<String>()
+            newGroupBy.addAll(AttStrUtils.split(groupBy[0], '&'))
+            for (i in 1 until groupBy.size) {
+                newGroupBy.add(groupBy[i])
+            }
+            groupBy = newGroupBy
+        }
+
         val originalPredicate = if (recsQuery.query.isNull()) {
             Predicates.alwaysTrue()
         } else {
@@ -69,7 +84,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         val queryCtx = DbFindQueryContext(
             daoCtx,
             ecosTypeRef.getLocalId(),
-            recsQuery.groupBy.isNotEmpty(),
+            groupBy.isNotEmpty(),
             null
         )
         queryCtx.registerAssocsTypesHints(originalPredicate)
@@ -96,7 +111,6 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         }
 
         val page = recsQuery.page
-        val groupBy = recsQuery.groupBy
 
         val dbQuery = DbFindQuery.create {
             withPredicate(predicate)

@@ -2,15 +2,18 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
 import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.util.TreeMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
@@ -229,6 +232,126 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         assertThat(countByStatus).hasSize(2)
         assertThat(countByStatus["draft"]).isEqualTo(3)
         assertThat(countByStatus["confirm"]).isEqualTo(2)
+    }
+
+    @Test
+    fun testWithGroupingByMultipleAttsFromAssoc() {
+
+        val assocTypeRef = ModelUtils.getTypeRef("assoc-type")
+        val assocSourceId = "assoc-src-id"
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("assoc")
+                    .withType(AttributeType.ASSOC)
+                    .withConfig(ObjectData.create().set("typeRef", assocTypeRef))
+                    .build()
+            )
+        )
+        registerType(
+            TypeInfo.create()
+                .withId(assocTypeRef.getLocalId())
+                .withSourceId(assocSourceId)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("assocTextField0")
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("assocTextField1")
+                                    .build()
+                            )
+                        ).build()
+                ).build()
+        )
+        val assocDaoCtx = createRecordsDao(
+            DEFAULT_TABLE_REF.withTable("assoc-table"),
+            assocTypeRef,
+            assocSourceId
+        )
+
+        val assocRef0 = assocDaoCtx.createRecord(
+            "assocTextField0" to "field0text0",
+            "assocTextField1" to "field1text0"
+        )
+        val assocRef1 = assocDaoCtx.createRecord(
+            "assocTextField0" to "field0text1",
+            "assocTextField1" to "field1text1"
+        )
+
+        mainCtx.createRecord("assoc" to assocRef0)
+        mainCtx.createRecord("assoc" to assocRef0)
+        mainCtx.createRecord("assoc" to assocRef0)
+
+        mainCtx.createRecord("assoc" to assocRef1)
+        mainCtx.createRecord("assoc" to assocRef1)
+
+        val countAtt = "count(*)"
+        val assocAtt = "assoc?id"
+
+        val queryRes0 = records.query(baseQuery.copy()
+            .withGroupBy(listOf("assoc"))
+            .withSortBy(listOf(SortBy(countAtt, true)))
+            .build(),
+            listOf(assocAtt, countAtt)
+        ).getRecords()
+
+        assertThat(queryRes0).hasSize(2)
+        assertThat(queryRes0[0][countAtt].asInt()).isEqualTo(2)
+        assertThat(queryRes0[0][assocAtt].toEntityRef()).isEqualTo(assocRef1)
+        assertThat(queryRes0[1][countAtt].asInt()).isEqualTo(3)
+        assertThat(queryRes0[1][assocAtt].toEntityRef()).isEqualTo(assocRef0)
+
+        val assocTextField0Att = "assoc.assocTextField0"
+
+        val queryRes1 = records.query(baseQuery.copy()
+            .withGroupBy(listOf(assocTextField0Att))
+            .withSortBy(listOf(SortBy(countAtt, true)))
+            .build(),
+            listOf(assocTextField0Att, countAtt)
+        ).getRecords()
+
+        assertThat(queryRes1).hasSize(2)
+        assertThat(queryRes1[0][countAtt].asInt()).isEqualTo(2)
+        assertThat(queryRes1[0][assocTextField0Att].asText()).isEqualTo("field0text1")
+        assertThat(queryRes1[1][countAtt].asInt()).isEqualTo(3)
+        assertThat(queryRes1[1][assocTextField0Att].asText()).isEqualTo("field0text0")
+
+        val assocTextField1Att = "assoc.assocTextField1"
+
+        val queryRes2 = records.query(baseQuery.copy()
+            .withGroupBy(listOf(assocTextField0Att, assocTextField1Att))
+            .withSortBy(listOf(SortBy(countAtt, true)))
+            .build(),
+            listOf(assocTextField0Att, assocTextField1Att, countAtt)
+        ).getRecords()
+
+        assertThat(queryRes2).hasSize(2)
+        assertThat(queryRes2[0][countAtt].asInt()).isEqualTo(2)
+        assertThat(queryRes2[0][assocTextField0Att].asText()).isEqualTo("field0text1")
+        assertThat(queryRes2[0][assocTextField1Att].asText()).isEqualTo("field1text1")
+        assertThat(queryRes2[1][countAtt].asInt()).isEqualTo(3)
+        assertThat(queryRes2[1][assocTextField0Att].asText()).isEqualTo("field0text0")
+        assertThat(queryRes2[1][assocTextField1Att].asText()).isEqualTo("field1text0")
+
+        val queryRes3 = records.query(baseQuery.copy()
+            // legacy grouping with '&' delimiter. groupBy(field0&field1) should work as groupBy(field0, field1)
+            // see ru.citeck.ecos.records3.record.dao.impl.group.RecordsGroupDao
+            .withGroupBy(listOf("$assocTextField0Att&$assocTextField1Att"))
+            .withSortBy(listOf(SortBy(countAtt, true)))
+            .build(),
+            listOf(assocTextField0Att, assocTextField1Att, countAtt)
+        ).getRecords()
+
+        assertThat(queryRes3).hasSize(2)
+        assertThat(queryRes3[0][countAtt].asInt()).isEqualTo(2)
+        assertThat(queryRes3[0][assocTextField0Att].asText()).isEqualTo("field0text1")
+        assertThat(queryRes3[0][assocTextField1Att].asText()).isEqualTo("field1text1")
+        assertThat(queryRes3[1][countAtt].asInt()).isEqualTo(3)
+        assertThat(queryRes3[1][assocTextField0Att].asText()).isEqualTo("field0text0")
+        assertThat(queryRes3[1][assocTextField1Att].asText()).isEqualTo("field1text0")
     }
 
     open class TaskIdWithCount(
