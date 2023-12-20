@@ -291,10 +291,14 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         val countAtt = "count(*)"
         val assocAtt = "assoc?id"
 
-        val queryRes0 = records.query(baseQuery.copy()
-            .withGroupBy(listOf("assoc"))
-            .withSortBy(listOf(SortBy(countAtt, true)))
-            .build(),
+        val assocTextField0Att = "assoc.assocTextField0"
+        val assocTextField1Att = "assoc.assocTextField1"
+
+        val queryRes0 = records.query(
+            baseQuery.copy()
+                .withGroupBy(listOf("assoc"))
+                .withSortBy(listOf(SortBy(countAtt, true)))
+                .build(),
             listOf(assocAtt, countAtt)
         ).getRecords()
 
@@ -304,12 +308,11 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         assertThat(queryRes0[1][countAtt].asInt()).isEqualTo(3)
         assertThat(queryRes0[1][assocAtt].toEntityRef()).isEqualTo(assocRef0)
 
-        val assocTextField0Att = "assoc.assocTextField0"
-
-        val queryRes1 = records.query(baseQuery.copy()
-            .withGroupBy(listOf(assocTextField0Att))
-            .withSortBy(listOf(SortBy(countAtt, true)))
-            .build(),
+        val queryRes1 = records.query(
+            baseQuery.copy()
+                .withGroupBy(listOf(assocTextField0Att))
+                .withSortBy(listOf(SortBy(countAtt, true)))
+                .build(),
             listOf(assocTextField0Att, countAtt)
         ).getRecords()
 
@@ -319,12 +322,11 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         assertThat(queryRes1[1][countAtt].asInt()).isEqualTo(3)
         assertThat(queryRes1[1][assocTextField0Att].asText()).isEqualTo("field0text0")
 
-        val assocTextField1Att = "assoc.assocTextField1"
-
-        val queryRes2 = records.query(baseQuery.copy()
-            .withGroupBy(listOf(assocTextField0Att, assocTextField1Att))
-            .withSortBy(listOf(SortBy(countAtt, true)))
-            .build(),
+        val queryRes2 = records.query(
+            baseQuery.copy()
+                .withGroupBy(listOf(assocTextField0Att, assocTextField1Att))
+                .withSortBy(listOf(SortBy(countAtt, true)))
+                .build(),
             listOf(assocTextField0Att, assocTextField1Att, countAtt)
         ).getRecords()
 
@@ -336,12 +338,13 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         assertThat(queryRes2[1][assocTextField0Att].asText()).isEqualTo("field0text0")
         assertThat(queryRes2[1][assocTextField1Att].asText()).isEqualTo("field1text0")
 
-        val queryRes3 = records.query(baseQuery.copy()
-            // legacy grouping with '&' delimiter. groupBy(field0&field1) should work as groupBy(field0, field1)
-            // see ru.citeck.ecos.records3.record.dao.impl.group.RecordsGroupDao
-            .withGroupBy(listOf("$assocTextField0Att&$assocTextField1Att"))
-            .withSortBy(listOf(SortBy(countAtt, true)))
-            .build(),
+        val queryRes3 = records.query(
+            baseQuery.copy()
+                // legacy grouping with '&' delimiter. groupBy(field0&field1) should work as groupBy(field0, field1)
+                // see ru.citeck.ecos.records3.record.dao.impl.group.RecordsGroupDao
+                .withGroupBy(listOf("$assocTextField0Att&$assocTextField1Att"))
+                .withSortBy(listOf(SortBy(countAtt, true)))
+                .build(),
             listOf(assocTextField0Att, assocTextField1Att, countAtt)
         ).getRecords()
 
@@ -352,6 +355,22 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         assertThat(queryRes3[1][countAtt].asInt()).isEqualTo(3)
         assertThat(queryRes3[1][assocTextField0Att].asText()).isEqualTo("field0text0")
         assertThat(queryRes3[1][assocTextField1Att].asText()).isEqualTo("field1text0")
+
+        val queryRes4 = records.query(
+            baseQuery.copy()
+                .withGroupBy(listOf("assoc", assocTextField1Att))
+                .withSortBy(listOf(SortBy(countAtt, true)))
+                .build(),
+            listOf("assoc", assocAtt, assocTextField1Att, countAtt)
+        ).getRecords()
+
+        assertThat(queryRes4).hasSize(2)
+        assertThat(queryRes4[0][countAtt].asInt()).isEqualTo(2)
+        assertThat(queryRes4[0][assocAtt].toEntityRef()).isEqualTo(assocRef1)
+        assertThat(queryRes4[0][assocTextField1Att].asText()).isEqualTo("field1text1")
+        assertThat(queryRes4[1][countAtt].asInt()).isEqualTo(3)
+        assertThat(queryRes4[1][assocAtt].toEntityRef()).isEqualTo(assocRef0)
+        assertThat(queryRes4[1][assocTextField1Att].asText()).isEqualTo("field1text0")
     }
 
     open class TaskIdWithCount(

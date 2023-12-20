@@ -263,6 +263,27 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         assertThat(result[1]["count"].asInt()).isEqualTo(1)
     }
 
+    @Test
+    fun joinInFunctionTest() {
+
+        val target10 = targetDao.createRecord("targetNum" to 10)
+        val target30 = targetDao.createRecord("targetNum" to 30)
+
+        mainCtx.createRecord("numAtt" to 50, "assocAtt" to target10)
+        mainCtx.createRecord("numAtt" to 100, "assocAtt" to target30)
+
+        val queryRes5 = records.query(
+            baseQuery.copy()
+                .withSortBy(emptyList())
+                .build(),
+            mapOf("funcAmount" to "(assocAtt.targetNum - numAtt)")
+        ).getRecords().map { it["funcAmount"].asInt() }.sorted()
+
+        assertThat(queryRes5).hasSize(2)
+        assertThat(queryRes5[0]).isEqualTo(-70)
+        assertThat(queryRes5[1]).isEqualTo(-40)
+    }
+
     @BeforeEach
     fun prepare() {
 

@@ -284,6 +284,9 @@ class DbRecord(
                 val data = recData[key]
                 val dotIdx = key.indexOf('.')
                 val keyFirst = key.substring(0, dotIdx)
+                if (recData[keyFirst] is EntityRef) {
+                    continue
+                }
                 val keySecond = key.substring(dotIdx + 1)
                 val innerAttDef = getInnerAssocAtts(keyFirst)[keySecond]
                 val convertedData = if (innerAttDef != null) {

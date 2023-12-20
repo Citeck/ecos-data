@@ -69,10 +69,16 @@ class DbExpressionAttsContext(
         expression = ExpressionTools.mapTokens(expression, ExpressionToken::class.java) { token ->
             if (token is ColumnToken) {
                 val newColumnName = DbRecord.ATTS_MAPPING.getOrDefault(token.name, token.name)
-                if (newColumnName != token.name) {
+                val resToken = if (newColumnName != token.name) {
                     ColumnToken(newColumnName)
                 } else {
                     token
+                }
+                if (resToken.name.contains('.')) {
+                    val newName = queryContext.prepareAssocSelectJoin(resToken.name, true)
+                    ColumnToken(newName ?: "")
+                } else {
+                    resToken
                 }
             } else if (token is FunctionToken) {
                 if (token.name == "startOfMonth" || token.name == "endOfMonth") {
