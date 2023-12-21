@@ -164,8 +164,16 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val parameters = arrayListOf<Any?>()
         toSqlCondition(
-            context, query, RECORD_TABLE_ALIAS, predicate,
-            emptyMap(), emptyMap(), emptyMap(), emptyMap(), parameters
+            context,
+            query,
+            RECORD_TABLE_ALIAS,
+            predicate,
+            emptyMap(),
+            emptyMap(),
+            emptyMap(),
+            emptyMap(),
+            emptyMap(),
+            parameters
         )
 
         context.getDataSource().update(query.toString(), parameters)
@@ -179,8 +187,16 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val parameters = arrayListOf<Any?>()
         toSqlCondition(
-            context, query, RECORD_TABLE_ALIAS,
-            predicate, emptyMap(), emptyMap(), emptyMap(), emptyMap(), parameters
+            context,
+            query,
+            RECORD_TABLE_ALIAS,
+            predicate,
+            emptyMap(),
+            emptyMap(),
+            emptyMap(),
+            emptyMap(),
+            emptyMap(),
+            parameters
         )
 
         context.getDataSource().update(query.toString(), parameters)
@@ -401,6 +417,12 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val repoAssocJoins = query.assocTableJoins.associateBy { it.attribute }
         val repoAssocTableJoins = query.assocJoinsWithPredicate.associateBy { it.attribute }
 
+        val sqlExpressionsByAlias = getSqlExpressionsByAliases(
+            RECORD_TABLE_ALIAS,
+            query.expressions,
+            query.rawTableJoins
+        )
+
         val params = mutableListOf<Any?>()
         val sqlCondition = toSqlCondition(
             context,
@@ -410,6 +432,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             repoAssocTableJoins,
             query.rawTableJoins,
             query.expressions,
+            sqlExpressionsByAlias,
             params
         )
 
@@ -423,6 +446,57 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             query.assocSelectJoins,
             query.rawTableJoins
         )
+    }
+
+    private fun getSqlExpressionsByAliases(
+        table: String,
+        expressions: Map<String, ExpressionToken>,
+        rawTableJoins: Map<String, RawTableJoin>
+    ): Map<String, String> {
+
+        if (expressions.isEmpty()) {
+            return emptyMap()
+        }
+
+        val sqlExpressionsByAlias = HashMap<String, String>()
+        expressions.forEach { expression ->
+            val expressionStr = expression.value.toString { token ->
+                if (token is DbExpressionAttsContext.AssocAggregationSelectExpression) {
+                    val tableRef = token.tableContext.getTableRef()
+                    val assocTable = tableRef.withTable(DbAssocEntity.MAIN_TABLE)
+                    val expressionStr = token.expression.toString { toStrToken ->
+                        if (toStrToken is ColumnToken) {
+                            "\"target\".\"${toStrToken.name}\""
+                        } else {
+                            toStrToken.toString()
+                        }
+                    }
+                    "(SELECT $expressionStr FROM ${tableRef.fullName} target INNER JOIN ${assocTable.fullName} assoc " +
+                        "ON assoc.${DbAssocEntity.SOURCE_ID} = $table.${DbEntity.REF_ID} " +
+                        "AND assoc.${DbAssocEntity.ATTRIBUTE} = ${token.attributeId} " +
+                        "AND assoc.${DbAssocEntity.TARGET_ID} = target.${DbEntity.REF_ID} GROUP BY assoc.${DbAssocEntity.SOURCE_ID})"
+                } else {
+                    if (token is ColumnToken) {
+                        val dotIdx = token.name.indexOf('.')
+                        if (dotIdx > 0) {
+                            val joinSrcAtt = token.name.substring(0, dotIdx)
+                            if (!rawTableJoins.containsKey(joinSrcAtt)) {
+                                val joinTgtAtt = token.name.substring(dotIdx + 1)
+                                "\"asj__$joinSrcAtt\".\"$joinTgtAtt\""
+                            } else {
+                                token.name.split(".").joinToString(".") { "\"$it\"" }
+                            }
+                        } else {
+                            "\"${token.name}\""
+                        }
+                    } else {
+                        token.toString()
+                    }
+                }
+            }
+            sqlExpressionsByAlias[expression.key] = expressionStr
+        }
+        return sqlExpressionsByAlias
     }
 
     private fun getPermsColumn(context: DbTableContext): String {
@@ -557,7 +631,13 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val repoAssocJoins = query.assocTableJoins.associateBy { it.attribute }
         val repoAssocTableJoins = query.assocJoinsWithPredicate.associateBy { it.attribute }
-        val rawTableJoin = query.rawTableJoins
+        val rawTableJoins = query.rawTableJoins
+
+        val sqlExpressionsByAlias = getSqlExpressionsByAliases(
+            RECORD_TABLE_ALIAS,
+            query.expressions,
+            rawTableJoins
+        )
 
         val params = mutableListOf<Any?>()
         val sqlCondition =
@@ -567,8 +647,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 RECORD_TABLE_ALIAS,
                 repoAssocJoins,
                 repoAssocTableJoins,
-                rawTableJoin,
+                rawTableJoins,
                 query.expressions,
+                sqlExpressionsByAlias,
                 params
             )
 
@@ -584,6 +665,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             page,
             queryGroupBy,
             query.expressions,
+            sqlExpressionsByAlias,
             query.assocSelectJoins,
             query.rawTableJoins,
             asjAliases
@@ -634,6 +716,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         page: DbFindPage = DbFindPage.ALL,
         groupBy: List<String> = emptyList(),
         expressions: Map<String, ExpressionToken>,
+        sqlExpressionsByAlias: Map<String, String>,
         assocSelectJoins: Map<String, DbTableContext>,
         rawTableJoins: Map<String, RawTableJoin>,
         asjAliases: MutableMap<String, String>
@@ -664,6 +747,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 alias
             }
         }
+
         val convertedGroupBy = groupBy.map { registerAsjColumn(it) }
         val convertedSortBy = sort.map {
             if (it.column.contains('.')) {
@@ -686,44 +770,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 }
             }
         }
-        expressions.forEach { expression ->
-            val expressionStr = expression.value.toString { token ->
-                if (token is DbExpressionAttsContext.AssocAggregationSelectExpression) {
-                    val tableRef = token.tableContext.getTableRef()
-                    val assocTable = tableRef.withTable(DbAssocEntity.MAIN_TABLE)
-                    val expressionStr = token.expression.toString { toStrToken ->
-                        if (toStrToken is ColumnToken) {
-                            "\"target\".\"${toStrToken.name}\""
-                        } else {
-                            toStrToken.toString()
-                        }
-                    }
-                    "(SELECT $expressionStr FROM ${tableRef.fullName} target INNER JOIN ${assocTable.fullName} assoc " +
-                        "ON assoc.${DbAssocEntity.SOURCE_ID} = $table.${DbEntity.REF_ID} " +
-                        "AND assoc.${DbAssocEntity.ATTRIBUTE} = ${token.attributeId} " +
-                        "AND assoc.${DbAssocEntity.TARGET_ID} = target.${DbEntity.REF_ID} GROUP BY assoc.${DbAssocEntity.SOURCE_ID})"
-                } else {
-                    if (token is ColumnToken) {
-                        val dotIdx = token.name.indexOf('.')
-                        if (dotIdx > 0) {
-                            val joinSrcAtt = token.name.substring(0, dotIdx)
-                            if (!rawTableJoins.containsKey(joinSrcAtt)) {
-                                val joinTgtAtt = token.name.substring(dotIdx + 1)
-                                "\"asj__$joinSrcAtt\".\"$joinTgtAtt\""
-                            } else {
-                                token.name.split(".").joinToString(".") { "\"$it\"" }
-                            }
-                        } else {
-                            "\"${token.name}\""
-                        }
-                    } else {
-                        token.toString()
-                    }
-                }
-            }
-            selectColumnsStr.append(expressionStr)
-                .append(" AS ${expression.key}")
-                .append(",")
+
+        for ((alias, expression) in sqlExpressionsByAlias) {
+            selectColumnsStr.append(expression).append(" AS ").append(alias).append(",")
         }
 
         selectColumnsStr.setLength(selectColumnsStr.length - 1)
@@ -843,6 +892,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             tableJoin.predicate,
             assocJoins,
             assocTableJoins,
+            emptyMap(),
             emptyMap(),
             emptyMap(),
             queryParams
@@ -1069,6 +1119,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         assocTargetJoinsWithPredicate: Map<String, AssocJoinWithPredicate>,
         rawTableJoins: Map<String, RawTableJoin>,
         expressions: Map<String, ExpressionToken>,
+        sqlExpressionsByAlias: Map<String, String>,
         queryParams: MutableList<Any?>
     ): String {
         val sb = StringBuilder()
@@ -1081,6 +1132,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             assocTargetJoinsWithPredicate,
             rawTableJoins,
             expressions,
+            sqlExpressionsByAlias,
             queryParams
         )
         return sb.toString()
@@ -1095,6 +1147,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         assocTargetJoinsWithPredicate: Map<String, AssocJoinWithPredicate>,
         rawTableJoins: Map<String, RawTableJoin>,
         expressions: Map<String, ExpressionToken>,
+        sqlExpressionsByAlias: Map<String, String>,
         queryParams: MutableList<Any?>
     ): Boolean {
 
@@ -1119,6 +1172,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                             assocTargetJoinsWithPredicate,
                             rawTableJoins,
                             expressions,
+                            sqlExpressionsByAlias,
                             queryParams
                         )
                     ) {
@@ -1196,6 +1250,34 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         return true
                     }
                 }
+
+                val expression = expressions[attribute]
+                if (expression != null) {
+                    val operator = when (type) {
+                        ValuePredicate.Type.EQ,
+                        ValuePredicate.Type.CONTAINS -> "="
+
+                        ValuePredicate.Type.GT -> ">"
+                        ValuePredicate.Type.GE -> ">="
+                        ValuePredicate.Type.LT -> "<"
+                        ValuePredicate.Type.LE -> "<="
+                        else -> {
+                            log.error { "Unknown predicate type: $type for expression" }
+                            return false
+                        }
+                    }
+                    val convertedParam = if (value.isIntegralNumber()) {
+                        value.asLong()
+                    } else {
+                        value.asDouble()
+                    }
+                    val sqlExpression =
+                        sqlExpressionsByAlias[attribute] ?: error("SQL expression is not found for $expression")
+                    query.append(sqlExpression).append(" ").append(operator).append(" ?")
+                    queryParams.add(convertedParam)
+                    return true
+                }
+
                 if (columnDef.multiple) {
 
                     if (type != ValuePredicate.Type.EQ &&
@@ -1353,6 +1435,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         assocTargetJoinsWithPredicate,
                         rawTableJoins,
                         expressions,
+                        sqlExpressionsByAlias,
                         queryParams
                     )
                 ) {

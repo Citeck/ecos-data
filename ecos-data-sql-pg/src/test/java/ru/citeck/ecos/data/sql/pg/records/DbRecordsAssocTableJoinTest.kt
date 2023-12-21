@@ -128,14 +128,13 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         val value = records.getAtt(record0, "sum(\"$multiAssocName.targetNum\")?num").asInt()
         assertThat(value).isEqualTo(110)
 
-        /*
-        todo
-        val queryRes3 = records.query(baseQuery.copy {
-            withQuery(Predicates.eq("sum(\"$multiAssocName.targetNum\")", 110))
-        }).getRecords()
+        val queryRes3 = records.query(
+            baseQuery.copy {
+                withQuery(Predicates.eq("sum(\"$multiAssocName.targetNum\")", 110))
+            }
+        ).getRecords()
 
         assertThat(queryRes3).containsExactly(record0)
-        */
     }
 
     @Test
@@ -272,16 +271,27 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         mainCtx.createRecord("numAtt" to 50, "assocAtt" to target10)
         mainCtx.createRecord("numAtt" to 100, "assocAtt" to target30)
 
-        val queryRes5 = records.query(
+        val queryRes0 = records.query(
             baseQuery.copy()
                 .withSortBy(emptyList())
                 .build(),
             mapOf("funcAmount" to "(assocAtt.targetNum - numAtt)")
         ).getRecords().map { it["funcAmount"].asInt() }.sorted()
 
-        assertThat(queryRes5).hasSize(2)
-        assertThat(queryRes5[0]).isEqualTo(-70)
-        assertThat(queryRes5[1]).isEqualTo(-40)
+        assertThat(queryRes0).hasSize(2)
+        assertThat(queryRes0[0]).isEqualTo(-70)
+        assertThat(queryRes0[1]).isEqualTo(-40)
+
+        val queryRes1 = records.query(
+            baseQuery.copy()
+                .withQuery(Predicates.gt("(assocAtt.targetNum - numAtt)", -50))
+                .withSortBy(emptyList())
+                .build(),
+            mapOf("funcAmount" to "(assocAtt.targetNum - numAtt)")
+        ).getRecords().map { it["funcAmount"].asInt() }.sorted()
+
+        assertThat(queryRes1).hasSize(1)
+        assertThat(queryRes1[0]).isEqualTo(-40)
     }
 
     @BeforeEach

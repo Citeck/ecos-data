@@ -791,14 +791,20 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     private fun prepareQuery(query: DbFindQuery): DbFindQuery {
         return query.copy()
             .withPredicate(
-                preparePredicate(query.predicate, query.assocTableJoins, query.assocJoinsWithPredicate)
+                preparePredicate(
+                    query.predicate,
+                    query.assocTableJoins,
+                    query.assocJoinsWithPredicate,
+                    query.expressions
+                )
             ).build()
     }
 
     private fun preparePredicate(
         predicate: Predicate,
         assocTableJoins: List<AssocTableJoin>,
-        assocJoinWithPredicates: List<AssocJoinWithPredicate>
+        assocJoinWithPredicates: List<AssocJoinWithPredicate>,
+        expressions: Map<String, ExpressionToken>
     ): Predicate {
 
         if (PredicateUtils.isAlwaysTrue(predicate) || PredicateUtils.isAlwaysFalse(predicate)) {
@@ -822,7 +828,11 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                     }
                 }
                 if (column == null) {
-                    Predicates.alwaysFalse()
+                    if (expressions.containsKey(pred.getAttribute())) {
+                        pred
+                    } else {
+                        Predicates.alwaysFalse()
+                    }
                 } else if (pred is ValuePredicate && pred.getType() == ValuePredicate.Type.IN) {
                     val value = pred.getValue()
                     if (!value.isArray() || value.isEmpty()) {
