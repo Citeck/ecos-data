@@ -294,6 +294,52 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         assertThat(queryRes1[0]).isEqualTo(-40)
     }
 
+    @Test
+    fun joinedEmptyPredicateTest() {
+
+        val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 10)
+        val targetRec1 = targetDao.createRecord("targetText" to "def", "targetNum" to 100)
+
+        val srcRec0 = createRecord("assocAtt" to null)
+        val srcRec1 = createRecord("assocAtt" to targetRec1)
+        val srcRec2 = createRecord("assocAtt" to null)
+        val srcRec3 = createRecord("assocAtt" to targetRec0)
+
+        val child0 = childDao.createRecord("_parent" to srcRec0, "_parentAtt" to "childAssocAtt", "testTypeTargetAssoc" to srcRec1)
+        val child1 = childDao.createRecord("_parent" to srcRec1, "_parentAtt" to "childAssocAtt", "testTypeTargetAssoc" to srcRec0)
+        val child2 = childDao.createRecord("_parent" to srcRec2, "_parentAtt" to "childAssocAtt", "testTypeTargetAssoc" to srcRec2)
+        val child3 = childDao.createRecord("_parent" to srcRec3, "_parentAtt" to "childAssocAtt", "testTypeTargetAssoc" to srcRec1)
+
+        val recsResult0 = records.query(
+            baseQuery.copy {
+                withSourceId(childDao.dao.getId())
+                withQuery(
+                    Predicates.and(
+                        Predicates.eq("_parent._type", REC_TEST_TYPE_REF),
+                        Predicates.empty("_parent.assocAtt")
+                    )
+                )
+            }
+        ).getRecords()
+
+        assertThat(recsResult0).hasSize(2)
+        assertThat(recsResult0).containsExactlyInAnyOrder(child0, child2)
+
+        val recsResult1 = records.query(
+            baseQuery.copy {
+                withSourceId(childDao.dao.getId())
+                withQuery(
+                    Predicates.and(
+                        Predicates.empty("testTypeTargetAssoc.assocAtt")
+                    )
+                )
+            }
+        ).getRecords()
+
+        assertThat(recsResult1).hasSize(2)
+        assertThat(recsResult1).containsExactlyInAnyOrder(child1, child2)
+    }
+
     @BeforeEach
     fun prepare() {
 
@@ -398,6 +444,11 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
                                 AttributeDef.create()
                                     .withId("childNum")
                                     .withType(AttributeType.NUMBER)
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("testTypeTargetAssoc")
+                                    .withType(AttributeType.ASSOC)
+                                    .withConfig(ObjectData.create().set("typeRef", REC_TEST_TYPE_REF))
                                     .build()
                             )
                         )

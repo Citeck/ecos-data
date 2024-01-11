@@ -218,7 +218,6 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         var typePredicateExists = false
         val assocTableJoins = ArrayList<AssocTableJoin>()
         val assocJoinWithPredicates = ArrayList<AssocJoinWithPredicate>()
-        var assocJoinsCounter = 0
         val assocsTableExists = assocsService.isAssocsTableExists()
 
         val typeAspects = typeData.getTypeAspects()
@@ -241,6 +240,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                         typePredicateExists = true
                         processTypePredicate(currentPred)
                     }
+
                     RecordConstants.ATT_PARENT_ATT -> {
                         var value = currentPred.getValue()
                         value = if (value.isArray()) {
@@ -265,51 +265,15 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
 
                         if (attDef == null) {
                             if (attribute.contains('.')) {
-                                val srcAttName = attribute.substringBefore('.')
-                                val srcAttDef = typeData.getAttribute(srcAttName)
-                                val targetRecordsCtx = queryCtx.getAssocRecordsCtxToJoin(srcAttDef?.id)
-                                if (srcAttDef != null && targetRecordsCtx != null) {
-                                    val assocTypeId = queryCtx.getAssocTargetTypeId(srcAttDef.id)
-                                    val innerPredicate = ValuePredicate(
-                                        attribute.substringAfter('.'),
-                                        currentPred.getType(),
-                                        currentPred.getValue()
-                                    )
-                                    val innerQueryCtx = DbFindQueryContext(
-                                        targetRecordsCtx,
-                                        assocTypeId,
-                                        false,
-                                        queryCtx
-                                    )
-                                    innerQueryCtx.registerAssocsTypesHints(innerPredicate)
-                                    val innerPredData = processPredicate(
-                                        innerQueryCtx,
-                                        innerQueryCtx.getMainTypeInfo(),
-                                        innerPredicate
-                                    )
-                                    val assocJoinAttName = "$attribute-${assocJoinsCounter++}"
-                                    val srcAttId = if (srcAttDef.multiple) {
-                                        daoCtx.assocsService.getIdForAtt(srcAttDef.id)
-                                    } else {
-                                        -1L
-                                    }
-                                    assocJoinWithPredicates.add(
-                                        AssocJoinWithPredicate(
-                                            assocJoinAttName,
-                                            srcAttName,
-                                            srcAttId,
-                                            srcAttDef.multiple,
-                                            targetRecordsCtx.dataService.getTableContext(),
-                                            innerPredData.predicate,
-                                            innerPredData.assocTableJoins,
-                                            innerPredData.assocJoinWithPredicates
-                                        )
-                                    )
-                                    return@mapAttributePredicates ValuePredicate(
-                                        assocJoinAttName,
-                                        ValuePredicate.Type.EQ,
-                                        ""
-                                    )
+                                val assocJoinPred = processAssocJoinWithPredicates(
+                                    attribute,
+                                    typeData,
+                                    queryCtx,
+                                    currentPred,
+                                    assocJoinWithPredicates
+                                )
+                                if (assocJoinPred != null) {
+                                    return@mapAttributePredicates assocJoinPred
                                 }
                             }
                         }
@@ -345,7 +309,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                                 EmptyPredicate(assocAtt)
                             } else {
                                 val newAttribute = if (assocAtt != RecordConstants.ATT_PARENT && assocsTableExists) {
-                                    val joinAtt = "$assocAtt-${assocJoinsCounter++}"
+                                    val joinAtt = "$assocAtt-${queryCtx.assocJoinsCounter.incrementAndGet()}"
                                     assocTableJoins.add(
                                         AssocTableJoin(
                                             assocsService.getIdForAtt(assocAtt),
@@ -408,7 +372,17 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                 if (DbRecord.ATTS_MAPPING.containsKey(attribute)) {
                     EmptyPredicate(DbRecord.ATTS_MAPPING[attribute])
                 } else {
-                    currentPred
+                    if (attribute.contains('.')) {
+                        processAssocJoinWithPredicates(
+                            attribute,
+                            typeData,
+                            queryCtx,
+                            currentPred,
+                            assocJoinWithPredicates
+                        ) ?: currentPred
+                    } else {
+                        currentPred
+                    }
                 }
             } else {
                 log.error { "Unknown predicate type: ${currentPred::class}" }
@@ -422,6 +396,60 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             assocJoinWithPredicates,
             typePredicateExists,
             queryPermsPolicy
+        )
+    }
+
+    private fun processAssocJoinWithPredicates(
+        attribute: String,
+        typeData: DbQueryTypeInfoData,
+        queryCtx: DbFindQueryContext,
+        predicate: AttributePredicate,
+        assocJoinWithPredicates: MutableList<AssocJoinWithPredicate>
+    ): ValuePredicate? {
+
+        val srcAttName = attribute.substringBefore('.')
+        val srcAttDef = typeData.getAttribute(srcAttName)
+        val targetRecordsCtx = queryCtx.getAssocRecordsCtxToJoin(srcAttDef?.id)
+        if (srcAttDef == null || targetRecordsCtx == null) {
+            return null
+        }
+        val assocTypeId = queryCtx.getAssocTargetTypeId(srcAttDef.id)
+        val innerPredicate: AttributePredicate = predicate.copy()
+        innerPredicate.setAtt(attribute.substringAfter('.'))
+        val innerQueryCtx = DbFindQueryContext(
+            targetRecordsCtx,
+            assocTypeId,
+            false,
+            queryCtx
+        )
+        innerQueryCtx.registerAssocsTypesHints(innerPredicate)
+        val innerPredData = processPredicate(
+            innerQueryCtx,
+            innerQueryCtx.getMainTypeInfo(),
+            innerPredicate
+        )
+        val assocJoinAttName = "$attribute-${queryCtx.assocJoinsCounter.incrementAndGet()}"
+        val srcAttId = if (srcAttDef.multiple) {
+            daoCtx.assocsService.getIdForAtt(srcAttDef.id)
+        } else {
+            -1L
+        }
+        assocJoinWithPredicates.add(
+            AssocJoinWithPredicate(
+                assocJoinAttName,
+                srcAttName,
+                srcAttId,
+                srcAttDef.multiple,
+                targetRecordsCtx.dataService.getTableContext(),
+                innerPredData.predicate,
+                innerPredData.assocTableJoins,
+                innerPredData.assocJoinWithPredicates
+            )
+        )
+        return ValuePredicate(
+            assocJoinAttName,
+            ValuePredicate.Type.EQ,
+            ""
         )
     }
 
@@ -511,6 +539,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                     ValuePredicate(DbEntity.TYPE, predicate.getType(), expandedValueIds)
                 }
             }
+
             else -> {
                 Predicates.alwaysFalse()
             }

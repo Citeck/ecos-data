@@ -17,6 +17,7 @@ import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.util.*
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.collections.HashMap
 import kotlin.collections.HashSet
 import kotlin.collections.LinkedHashMap
@@ -40,6 +41,8 @@ class DbFindQueryContext(
     val assocRecordsCtxByAttribute = HashMap<String, Optional<DbRecordsDaoCtx>>()
     val assocSelectJoins = HashMap<String, DbTableContext>()
     val expressionsCtx = DbExpressionAttsContext(this, withGrouping)
+
+    val assocJoinsCounter = AtomicInteger(0)
 
     private val assocsTypes: MutableMap<String, String> = HashMap()
 
