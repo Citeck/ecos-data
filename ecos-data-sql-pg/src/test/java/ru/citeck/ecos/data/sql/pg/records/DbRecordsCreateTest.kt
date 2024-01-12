@@ -64,7 +64,7 @@ class DbRecordsCreateTest : DbRecordsTestBase() {
             .set("number", 123)
             .set("boolean", true)
             .set("date", Instant.now().truncatedTo(ChronoUnit.DAYS))
-            .set("datetime", Instant.now().plus(Duration.ofDays(10)))
+            .set("datetime", Instant.now().plus(Duration.ofDays(10)).truncatedTo(ChronoUnit.MICROS))
             .set(
                 "content",
                 DataValue.createObj()
