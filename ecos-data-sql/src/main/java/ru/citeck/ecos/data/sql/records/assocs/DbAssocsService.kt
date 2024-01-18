@@ -251,15 +251,24 @@ class DbAssocsService(
     }
 
     fun getSourceAssocs(targetId: Long, attribute: String, page: DbFindPage): DbFindRes<DbAssocDto> {
-        return getSourceAssocs(targetId, getIdForAtt(attribute), page)
+        val attId = if (attribute.isEmpty()) {
+            null
+        } else {
+            getIdForAtt(attribute)
+        }
+        return getSourceAssocs(targetId, attId, page)
     }
 
-    fun getSourceAssocs(targetId: Long, attribute: Long, page: DbFindPage): DbFindRes<DbAssocDto> {
+    fun getSourceAssocs(targetId: Long, attribute: Long?, page: DbFindPage): DbFindRes<DbAssocDto> {
+
+        if (targetId == -1L || attribute == -1L) {
+            return DbFindRes.empty()
+        }
 
         val conditions = mutableListOf(
             Predicates.eq(DbAssocEntity.TARGET_ID, targetId)
         )
-        if (attribute != -1L) {
+        if (attribute != null) {
             conditions.add(Predicates.eq(DbAssocEntity.ATTRIBUTE, attribute))
         }
 
