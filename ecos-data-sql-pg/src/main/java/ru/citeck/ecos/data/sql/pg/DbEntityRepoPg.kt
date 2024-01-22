@@ -120,7 +120,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         } else {
             val columnByName = columns.associateBy { it.name }
             groupBy.forEach {
-                if (!expressions.containsKey(it)) {
+                if (it != "*" && !expressions.containsKey(it)) {
                     val alias = asjAliases[it]
                     if (alias != null) {
                         result[it] = row.getObject(alias)
@@ -623,7 +623,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
         val queryGroupBy = ArrayList(query.groupBy)
         if (queryGroupBy.isNotEmpty()) {
-            val invalidColumns = queryGroupBy.filter { !isColumnValid(it) }
+            val invalidColumns = queryGroupBy.filter { it != "*" && !isColumnValid(it) }
             if (invalidColumns.isNotEmpty()) {
                 error("Grouping by columns $invalidColumns is not allowed")
             }
@@ -764,7 +764,10 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             }
         } else {
             convertedGroupBy.forEach { groupByIt ->
-                if (!expressions.containsKey(groupByIt) && !groupByIt.startsWith(VIRTUAL_COLUMN_PREFIX)) {
+                if (groupByIt != "*" &&
+                    !expressions.containsKey(groupByIt) &&
+                    !groupByIt.startsWith(VIRTUAL_COLUMN_PREFIX)
+                ) {
                     appendRecordColumnName(selectColumnsStr, table, groupByIt)
                     selectColumnsStr.append(",")
                 }
@@ -939,7 +942,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         expressions: Map<String, ExpressionToken>,
         groupBy: List<String>
     ) {
-        if (groupBy.isEmpty()) {
+        if (groupBy.isEmpty() || groupBy.size == 1 && groupBy[0] == "*") {
             return
         }
         query.append(" GROUP BY ")

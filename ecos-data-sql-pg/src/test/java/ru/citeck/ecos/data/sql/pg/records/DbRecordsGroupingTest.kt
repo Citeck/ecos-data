@@ -373,6 +373,34 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         assertThat(queryRes4[1][assocTextField1Att].asText()).isEqualTo("field1text0")
     }
 
+    @Test
+    fun testGroupingByAllRecords() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("num")
+                    .withType(AttributeType.NUMBER)
+                    .build()
+            )
+        )
+        createRecord("num" to 1)
+        createRecord("num" to 2)
+        createRecord("num" to 3)
+
+        val query = baseQuery.copy { withGroupBy(listOf("*")) }
+
+        fun test(func: String, expected: Double) {
+            val sum = records.queryOne(query, func)
+            assertThat(sum.asDouble()).describedAs(func).isEqualTo(expected)
+        }
+        test("sum(num)", 6.0)
+        test("avg(num)", 2.0)
+        test("count(*)", 3.0)
+        test("max(num)", 3.0)
+        test("min(num)", 1.0)
+    }
+
     open class TaskIdWithCount(
         val taskId: String,
         @AttName("count(*)")
