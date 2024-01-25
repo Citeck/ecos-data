@@ -19,6 +19,8 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
 
     companion object {
         private val contentDbDataAwareSchema = ThreadLocal.withInitial { "" }
+
+        private const val CONTENT_URL_PATH_GATEWAY_PART = "/gateway/"
     }
 
     fun <T> withContentDbDataAware(action: () -> T): T {
@@ -55,7 +57,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         }
         val refArg = "?ref="
         val refArgIdx = url.indexOf(refArg)
-        if (!url.startsWith("/gateway/") || refArgIdx == -1) {
+        if (!url.startsWith(CONTENT_URL_PATH_GATEWAY_PART) || refArgIdx == -1) {
             return EntityRef.EMPTY
         }
         var refParamEnd = url.indexOf('&', refArgIdx)
@@ -63,10 +65,19 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
             refParamEnd = url.length
         }
         val encodedRef = url.substring(refArgIdx + refArg.length, refParamEnd)
-        return URLDecoder.decode(encodedRef, Charsets.UTF_8.name()).toEntityRef()
+        val entityRef = URLDecoder.decode(encodedRef, Charsets.UTF_8.name()).toEntityRef()
+
+        if (entityRef.getAppName().isEmpty()) {
+            val slashIdx = url.indexOf('/', CONTENT_URL_PATH_GATEWAY_PART.length)
+            if (slashIdx != -1) {
+                return entityRef.withAppName(url.substring(CONTENT_URL_PATH_GATEWAY_PART.length, slashIdx))
+            }
+        }
+        return entityRef
     }
 
-    fun getRecordRefFromContentUrl(url: String): EntityRef {
+    //todo: compare with getRefFromContentUrl and replace with single method or rename any function
+    private fun getRecordRefFromContentUrl(url: String): EntityRef {
         if (url.isBlank()) {
             return EntityRef.EMPTY
         }

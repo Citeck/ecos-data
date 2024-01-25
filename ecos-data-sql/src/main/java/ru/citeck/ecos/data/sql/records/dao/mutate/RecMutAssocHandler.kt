@@ -210,17 +210,22 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         return DataValue.NULL
     }
 
+    private fun mutateParentRef(ref: EntityRef, atts: ObjectData) {
+
+        if (ref.getAppName() == AppName.ALFRESCO) {
+            return
+        }
+        ctx.recordsService.mutate(RecordAtts(ref, atts))
+    }
+
     fun processParentAfterMutation(
         recBeforeSave: DbEntity,
         recAfterSave: DbEntity,
         attributes: ObjectData,
         disableEvents: Boolean
     ) {
-        if (attributes.get(MUTATION_FROM_PARENT_FLAG, false)) {
-            return
-        }
-        val hasParent = attributes[RecordConstants.ATT_PARENT].isNotEmpty()
-        val hasParentAtt = attributes[RecordConstants.ATT_PARENT_ATT].isNotEmpty()
+        val hasParent = attributes.has(RecordConstants.ATT_PARENT)
+        val hasParentAtt = attributes.has(RecordConstants.ATT_PARENT_ATT)
         if (!hasParent && !hasParentAtt) {
             // parent reference doesn't changed
             return
@@ -253,9 +258,16 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         val parentAttBefore = ctx.assocsService.getAttById(parentAttBeforeId)
         val parentAttAfter = ctx.assocsService.getAttById(parentAttAfterId)
 
-        val parentRefAfter = parentRefIdAfter?.let {
+        val parentRefBefore = parentRefIdBefore?.let {
             ctx.recordRefService.getEntityRefById(it)
         } ?: EntityRef.EMPTY
+        val parentRefAfter = if (parentRefIdAfter == parentRefIdBefore) {
+            parentRefBefore
+        } else {
+            parentRefIdAfter?.let {
+                ctx.recordRefService.getEntityRefById(it)
+            } ?: EntityRef.EMPTY
+        }
 
         var parentId: Long = parentRefIdAfter ?: -1
         while (parentId != -1L) {
@@ -280,58 +292,50 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             }
         }
 
-        val parentRefBefore = parentRefIdBefore?.let {
-            ctx.recordRefService.getEntityRefById(it)
-        } ?: EntityRef.EMPTY
+        val isMutationFromParent = attributes.get(MUTATION_FROM_PARENT_FLAG, false)
 
-        if (EntityRef.isNotEmpty(parentRefBefore)) {
-            if (parentRefIdBefore == parentRefIdAfter) {
-                // changed only parent attribute
+        if (parentRefIdBefore != parentRefIdAfter) {
+
+            // child was moved from one parent to another
+
+            if (parentRefBefore.isNotEmpty() && parentAttBefore.isNotEmpty()) {
                 val atts = ObjectData.create()
-                if (parentAttBefore.isNotEmpty()) {
-                    atts[OperationType.ATT_REMOVE.prefix + parentAttBefore] = currentRef
+                atts[OperationType.ATT_REMOVE.prefix + parentAttBefore] = currentRef
+                atts[MUTATION_FROM_CHILD_FLAG] = true
+                if (disableEvents) {
+                    atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
                 }
-                if (parentAttAfter.isNotEmpty()) {
-                    atts[OperationType.ATT_ADD.prefix + parentAttAfter] = currentRef
-                }
-                if (atts.isNotEmpty()) {
-                    atts[MUTATION_FROM_CHILD_FLAG] = true
-                    if (disableEvents) {
-                        atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
-                    }
-                    ctx.recordsService.mutate(RecordAtts(parentRefBefore, atts))
-                }
-            } else {
-                // child was moved from one parent to another
+                mutateParentRef(parentRefBefore, atts)
+            }
+
+            if (parentRefAfter.isNotEmpty() && !isMutationFromParent) {
                 val atts = ObjectData.create()
-                if (parentAttBefore.isNotEmpty()) {
-                    atts[OperationType.ATT_REMOVE.prefix + parentAttBefore] = currentRef
+                atts[OperationType.ATT_ADD.prefix + parentAttAfter] = currentRef
+                atts[MUTATION_FROM_CHILD_FLAG] = true
+                if (disableEvents) {
+                    atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
                 }
-                if (atts.isNotEmpty()) {
-                    atts[MUTATION_FROM_CHILD_FLAG] = true
-                    if (disableEvents) {
-                        atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
-                    }
-                    ctx.recordsService.mutate(RecordAtts(parentRefBefore, atts))
+                mutateParentRef(parentRefAfter, atts)
+            }
+        } else if (!isMutationFromParent) {
+
+            // changed only parent attribute
+
+            val atts = ObjectData.create()
+            if (parentAttBefore.isNotEmpty()) {
+                atts[OperationType.ATT_REMOVE.prefix + parentAttBefore] = currentRef
+            }
+            if (parentAttAfter.isNotEmpty()) {
+                atts[OperationType.ATT_ADD.prefix + parentAttAfter] = currentRef
+            }
+            if (atts.isNotEmpty()) {
+                atts[MUTATION_FROM_CHILD_FLAG] = true
+                if (disableEvents) {
+                    atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
                 }
+                mutateParentRef(parentRefAfter, atts)
             }
         }
-
-        if (parentRefAfter.getAppName() == AppName.ALFRESCO) {
-            return
-        }
-
-        if (parentRefIdBefore == parentRefIdAfter || EntityRef.isEmpty(parentRefAfter) || parentAttAfter.isEmpty()) {
-            return
-        }
-
-        val atts = ObjectData.create()
-        atts[OperationType.ATT_ADD.prefix + parentAttAfter] = currentRef
-        atts[MUTATION_FROM_CHILD_FLAG] = true
-        if (disableEvents) {
-            atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
-        }
-        ctx.recordsService.mutate(RecordAtts(parentRefAfter, atts))
     }
 
     fun processChildrenAfterMutation(

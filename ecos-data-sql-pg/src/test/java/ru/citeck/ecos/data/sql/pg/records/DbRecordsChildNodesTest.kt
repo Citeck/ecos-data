@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
@@ -16,6 +17,44 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.lang.RuntimeException
 
 class DbRecordsChildNodesTest : DbRecordsTestBase() {
+
+    @Test
+    fun testWithParentChange() {
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("strField")
+                },
+                AttributeDef.create {
+                    withId("childAssoc")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                    withConfig(ObjectData.create("""{"child":true}"""))
+                }
+            )
+        )
+
+        fun assertAtt(ref: EntityRef, att: String, expected: Any?) {
+            val res = records.getAtt(ref, att)
+            assertThat(res).isEqualTo(DataValue.of(expected))
+        }
+
+        val childRef = createRecord("id" to "child-local-id", "strField" to "child-value")
+        assertAtt(childRef, "_parent?id", null)
+        assertAtt(childRef, "_parentAtt", null)
+
+        val parent0Ref = createRecord("id" to "parent-0-id", "childAssoc" to childRef)
+        assertAtt(childRef, "_parent?id", parent0Ref)
+        assertAtt(childRef, "_parentAtt", "childAssoc")
+        assertAtt(parent0Ref, "childAssoc[]?id", listOf(childRef))
+
+        val parent1Ref = createRecord("id" to "parent-1-id", "childAssoc" to childRef)
+        assertAtt(childRef, "_parent?id", parent1Ref)
+        assertAtt(childRef, "_parentAtt", "childAssoc")
+
+        assertAtt(parent0Ref, "childAssoc[]?id", emptyList<Any>())
+        assertAtt(parent1Ref, "childAssoc[]?id", listOf(childRef))
+    }
 
     @Test
     fun createWithChildrenTest() {
