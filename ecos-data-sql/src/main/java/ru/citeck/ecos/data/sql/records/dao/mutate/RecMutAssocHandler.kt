@@ -229,22 +229,12 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         if (!hasParent && !hasParentAtt) {
             // parent reference doesn't changed
             return
-        } else if (hasParent && !hasParentAtt) {
-            error(
-                "You should supply parent attribute (_parentAtt) for parent ref (_parent). " +
-                    "RecordRef: '${ctx.getGlobalRef(recAfterSave.extId)}' " +
-                    "ParentRef: '${attributes[RecordConstants.ATT_PARENT].asText()}'"
-            )
-        } else if (!hasParent) {
+        } else if (hasParentAtt && !hasParent) {
             error(
                 "You should supply parent ref (_parent) for parent attribute (_parentAtt). " +
                     "RecordRef: '${ctx.getGlobalRef(recAfterSave.extId)}' " +
                     "ParentAtt: '${attributes[RecordConstants.ATT_PARENT_ATT].asText()}'"
             )
-        }
-        val currentRef = ctx.recordRefService.getEntityRefById(recAfterSave.refId)
-        if (EntityRef.isEmpty(currentRef)) {
-            error("Current ref is empty. RecordRef: ${ctx.getGlobalRef(recAfterSave.extId)}")
         }
 
         val parentAttBeforeId = recBeforeSave.attributes[RecordConstants.ATT_PARENT_ATT] as? Long ?: -1L
@@ -253,8 +243,24 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         val parentRefIdAfter = recAfterSave.attributes[RecordConstants.ATT_PARENT] as? Long
 
         if (parentRefIdBefore == parentRefIdAfter && parentAttBeforeId == parentAttAfterId) {
+            // parent reference doesn't changed
             return
         }
+        val isNewParentNotEmpty = parentRefIdAfter != null && parentRefIdAfter != -1L
+
+        // hasParent always true here
+        if (!hasParentAtt && isNewParentNotEmpty) {
+            error(
+                "You should supply parent attribute (_parentAtt) for parent ref (_parent). " +
+                    "RecordRef: '${ctx.getGlobalRef(recAfterSave.extId)}' " +
+                    "ParentRef: '${attributes[RecordConstants.ATT_PARENT].asText()}'"
+            )
+        }
+        val currentRef = ctx.recordRefService.getEntityRefById(recAfterSave.refId)
+        if (EntityRef.isEmpty(currentRef)) {
+            error("Current ref is empty. RecordRef: ${ctx.getGlobalRef(recAfterSave.extId)}")
+        }
+
         val parentAttBefore = ctx.assocsService.getAttById(parentAttBeforeId)
         val parentAttAfter = ctx.assocsService.getAttById(parentAttAfterId)
 
@@ -296,16 +302,21 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
 
         if (parentRefIdBefore != parentRefIdAfter) {
 
-            // child was moved from one parent to another
+            // child was moved from one parent to another or parent was removed
 
             if (parentRefBefore.isNotEmpty() && parentAttBefore.isNotEmpty()) {
-                val atts = ObjectData.create()
-                atts[OperationType.ATT_REMOVE.prefix + parentAttBefore] = currentRef
-                atts[MUTATION_FROM_CHILD_FLAG] = true
-                if (disableEvents) {
-                    atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
+                // update previous parent only when _parent was changed to non-empty value
+                // because _parent == null with MUTATION_FROM_PARENT_FLAG performed only by previous parent
+                // and mutation of previous parent is not required from child
+                if (!isMutationFromParent || isNewParentNotEmpty) {
+                    val atts = ObjectData.create()
+                    atts[OperationType.ATT_REMOVE.prefix + parentAttBefore] = currentRef
+                    atts[MUTATION_FROM_CHILD_FLAG] = true
+                    if (disableEvents) {
+                        atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
+                    }
+                    mutateParentRef(parentRefBefore, atts)
                 }
-                mutateParentRef(parentRefBefore, atts)
             }
 
             if (parentRefAfter.isNotEmpty() && !isMutationFromParent) {

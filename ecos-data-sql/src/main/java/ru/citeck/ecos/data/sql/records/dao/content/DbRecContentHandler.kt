@@ -76,7 +76,7 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         return entityRef
     }
 
-    //todo: compare with getRefFromContentUrl and replace with single method or rename any function
+    // todo: compare with getRefFromContentUrl and replace with single method or rename any function
     private fun getRecordRefFromContentUrl(url: String): EntityRef {
         if (url.isBlank()) {
             return EntityRef.EMPTY
