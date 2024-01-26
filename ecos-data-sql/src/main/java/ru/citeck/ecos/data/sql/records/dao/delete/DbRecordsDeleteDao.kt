@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao.delete
 
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
@@ -91,21 +92,24 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
             }
         }
 
-        var page = 0
-        var sourceAssocs = findSrcAssocs(page)
-        while (sourceAssocs.isNotEmpty()) {
-            sourceAssocs.forEach {
-                if (!txnRecordsInDeletion.contains(it.first)) {
-                    ctx.recordsService.mutate(
-                        it.first,
-                        mapOf(
-                            "${OperationType.ATT_REMOVE.prefix}${it.second}" to entityGlobalRef,
-                            ASSOC_FORCE_DELETION_FLAG to isForceDeletion
+        // if user has permissions to delete node, then source assocs may be deleted in system context
+        AuthContext.runAsSystem {
+            var page = 0
+            var sourceAssocs = findSrcAssocs(page)
+            while (sourceAssocs.isNotEmpty()) {
+                sourceAssocs.forEach {
+                    if (!txnRecordsInDeletion.contains(it.first)) {
+                        ctx.recordsService.mutate(
+                            it.first,
+                            mapOf(
+                                "${OperationType.ATT_REMOVE.prefix}${it.second}" to entityGlobalRef,
+                                ASSOC_FORCE_DELETION_FLAG to isForceDeletion
+                            )
                         )
-                    )
+                    }
                 }
+                sourceAssocs = findSrcAssocs(++page)
             }
-            sourceAssocs = findSrcAssocs(++page)
         }
 
         val meta = ctx.getEntityMeta(entity)
