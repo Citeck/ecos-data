@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.perms
 
+import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
@@ -14,8 +15,13 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.txn.lib.TxnContext
 import java.util.HashSet
+import kotlin.system.measureTimeMillis
 
 class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntityPermsService {
+
+    companion object {
+        private val log = KotlinLogging.logger {}
+    }
 
     private val dataSource = schemaCtx.dataSourceCtx.dataSource
     private val dataService: DbDataService<DbPermsEntity>
@@ -56,9 +62,13 @@ class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntit
     }
 
     override fun setReadPerms(permissions: List<DbEntityPermsDto>) {
-        dataSource.withTransaction(false) {
-            setReadPermsImpl(permissions)
+        val time = measureTimeMillis {
+            dataSource.withTransaction(false) {
+                setReadPermsImpl(permissions)
+            }
         }
+
+        log.trace { "Set read permissions for <$permissions> in $time ms" }
     }
 
     private fun setReadPermsImpl(permissions: List<DbEntityPermsDto>) {

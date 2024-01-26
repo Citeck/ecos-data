@@ -78,6 +78,7 @@ import kotlin.collections.ArrayList
 import kotlin.collections.HashSet
 import kotlin.collections.LinkedHashMap
 import kotlin.collections.LinkedHashSet
+import kotlin.system.measureTimeMillis
 
 class DbRecordsDao(
     private val config: DbRecordsDaoConfig,
@@ -239,10 +240,14 @@ class DbRecordsDao(
     }
 
     fun updatePermissions(records: List<String>) {
-        TxnContext.doInTxn {
-            val perms = AuthContext.runAsSystem { getEntitiesPerms(records) }
-            entityPermsService.setReadPerms(perms)
+        val time = measureTimeMillis {
+            TxnContext.doInTxn {
+                val perms = AuthContext.runAsSystem { getEntitiesPerms(records) }
+                entityPermsService.setReadPerms(perms)
+            }
         }
+
+        log.trace { "Update permissions for <$records> in $time ms" }
     }
 
     fun getRecordsDaoCtx(): DbRecordsDaoCtx {
