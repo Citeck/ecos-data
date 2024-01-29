@@ -417,7 +417,13 @@ class DbRecordsDao(
                     }
                     if (prepareToCommitEntities.isEmpty()) {
                         TxnContext.doBeforeCommit(0f) {
-                            entityPermsService.setReadPerms(getEntitiesPerms(prepareToCommitEntities))
+                            val time = measureTimeMillis {
+                                entityPermsService.setReadPerms(getEntitiesPerms(prepareToCommitEntities))
+                            }
+                            log.trace {
+                                "[${getId()}] Update permissions before " +
+                                    "commit for <$prepareToCommitEntities> in $time ms"
+                            }
                         }
                     }
                     prepareToCommitEntities.add(resultRecId)

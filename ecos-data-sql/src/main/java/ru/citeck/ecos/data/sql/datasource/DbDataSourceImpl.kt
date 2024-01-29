@@ -1,14 +1,35 @@
 package ru.citeck.ecos.data.sql.datasource
 
 import mu.KotlinLogging
+import ru.citeck.ecos.commons.task.SystemScheduler
+import ru.citeck.ecos.commons.task.schedule.Schedules
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.txn.lib.transaction.Transaction
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import java.sql.*
+import java.time.Duration
+import java.util.*
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
 
     companion object {
         private val log = KotlinLogging.logger {}
+
+        private val activeQueries = Collections.newSetFromMap(ConcurrentHashMap<ActiveQueryData, Boolean>())
+
+        init {
+            SystemScheduler.schedule(
+                "ecos-dbds-active-query-checker",
+                Schedules.fixedDelay(Duration.ofSeconds(10))
+            ) {
+                val currentTime = System.currentTimeMillis()
+                for (queryData in activeQueries) {
+                    queryData.reportInProgressIfRequired(currentTime)
+                }
+            }
+        }
     }
 
     private val currentThreadTxn = ThreadLocal<TxnState>()
@@ -21,8 +42,9 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
         withConnection { connection ->
             thSchemaCommands.get()?.add(query)
             if (!thSchemaMock.get()) {
-                log.info { "[${getCurrentTxn()}] Schema update: $query" }
-                connection.createStatement().executeUpdate(query)
+                execSqlQuery(query, true) { query ->
+                    connection.createStatement().executeUpdate(query)
+                }
             }
         }
     }
@@ -35,14 +57,11 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
 
     override fun <T> query(query: String, params: List<Any?>, action: (ResultSet) -> T): T {
         return withConnection { connection ->
-            val queryStart = System.currentTimeMillis()
-            val result = try {
+            val result = execSqlQuery(query, false) { query ->
                 connection.prepareStatement(query).use { statement ->
                     setParams(connection, statement, params)
                     statement.executeQuery().use { action.invoke(it) }
                 }
-            } finally {
-                logQuery(System.currentTimeMillis() - queryStart, query)
             }
             result
         }
@@ -50,8 +69,7 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
 
     override fun update(query: String, params: List<Any?>): List<Long> {
         return withConnection { connection ->
-            val queryStart = System.currentTimeMillis()
-            val result = try {
+            execSqlQuery(query, false) { query ->
                 connection.prepareStatement(query).use { statement ->
                     setParams(connection, statement, params)
                     if (query.contains("RETURNING id")) {
@@ -66,25 +84,48 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
                         listOf(statement.executeUpdate().toLong())
                     }
                 }
-            } finally {
-                logQuery(System.currentTimeMillis() - queryStart, query)
             }
-            result
         }
     }
 
-    private fun logQuery(time: Long, query: String) {
-        if (time < 10_000) {
-            log.debug { "[SQL][${getCurrentTxn()}][$time] $query" }
-        } else if (time < 30_000) {
-            log.info { "[SQL][${getCurrentTxn()}][$time] $query" }
-        } else {
-            log.warn { "[SQL][${getCurrentTxn()}][$time] $query" }
-        }
-    }
+    private inline fun <T> execSqlQuery(query: String, schemaUpdate: Boolean, impl: (String) -> T): T {
 
-    private fun getCurrentTxn(): String {
-        return TxnContext.getTxnOrNull()?.getId()?.toString() ?: "no-txn"
+        val transaction = TxnContext.getTxnOrNull()
+        val activeQueryData = ActiveQueryData(transaction, Thread.currentThread(), query)
+
+        activeQueries.add(activeQueryData)
+
+        try {
+            val res = impl.invoke(query)
+            activeQueryData.status = QueryStatus.COMPLETED
+            return res
+        } catch (e: Throwable) {
+            activeQueryData.status = QueryStatus.ERROR
+            if (e is InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            throw e
+        } finally {
+            activeQueries.remove(activeQueryData)
+            val time = System.currentTimeMillis() - activeQueryData.startTime
+            if (activeQueryData.status == QueryStatus.ERROR) {
+                log.error { activeQueryData.getMessage(time) }
+            } else if (schemaUpdate) {
+                if (time < 30_000) {
+                    log.info { activeQueryData.getMessage(time) }
+                } else {
+                    log.warn { activeQueryData.getMessage(time) }
+                }
+            } else {
+                if (time < 10_000) {
+                    log.debug { activeQueryData.getMessage(time) }
+                } else if (time < 30_000) {
+                    log.info { activeQueryData.getMessage(time) }
+                } else {
+                    log.warn { activeQueryData.getMessage(time) }
+                }
+            }
+        }
     }
 
     private fun setParams(connection: Connection, statement: PreparedStatement, params: List<Any?>) {
@@ -204,4 +245,51 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
         val readOnly: Boolean,
         val connection: Connection
     )
+
+    private class ActiveQueryData(
+        val transaction: Transaction?,
+        val thread: Thread,
+        val query: String
+    ) {
+        companion object {
+            const val IN_PROGRESS_REPORT_TIME = 60_000
+            val MAX_IN_PROGRESS_REPORT_DELAY = Duration.ofMinutes(10).toMillis()
+        }
+
+        val startTime = System.currentTimeMillis()
+        var nextInProgressReportTime = AtomicLong(startTime + IN_PROGRESS_REPORT_TIME)
+        var inProgressReportCounter = 0
+        var status = QueryStatus.IN_PROGRESS
+
+        fun reportInProgressIfRequired(currentTime: Long) {
+            if (status != QueryStatus.IN_PROGRESS || nextInProgressReportTime.get() > currentTime) {
+                return
+            }
+            log.warn { getMessage(currentTime - startTime) }
+            inProgressReportCounter++
+            var nextReportDelay = (inProgressReportCounter + 1L) * IN_PROGRESS_REPORT_TIME
+            if (nextReportDelay > MAX_IN_PROGRESS_REPORT_DELAY) {
+                nextReportDelay = MAX_IN_PROGRESS_REPORT_DELAY
+            }
+            nextInProgressReportTime.set(System.currentTimeMillis() + nextReportDelay)
+        }
+
+        fun getMessage(time: Long): String {
+            return "[SQL][${thread.name}][${transaction?.getId()?.toString() ?: "no-txn"}][$status][$time] $query"
+        }
+
+        override fun equals(other: Any?): Boolean {
+            return this === other
+        }
+
+        override fun hashCode(): Int {
+            return System.identityHashCode(this)
+        }
+    }
+
+    private enum class QueryStatus {
+        IN_PROGRESS,
+        COMPLETED,
+        ERROR
+    }
 }
