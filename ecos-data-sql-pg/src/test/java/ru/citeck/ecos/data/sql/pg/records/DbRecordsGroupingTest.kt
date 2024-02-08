@@ -26,6 +26,81 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
     }
 
     @Test
+    fun testGroupingWithInvalidAttsToLoad() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("text0")
+                },
+                AttributeDef.create {
+                    withId("text1")
+                },
+                AttributeDef.create {
+                    withId("num0")
+                    withType(AttributeType.NUMBER)
+                },
+                AttributeDef.create {
+                    withId("num1")
+                    withType(AttributeType.NUMBER)
+                }
+            )
+        )
+
+        createRecord("text0" to "abc", "text1" to "qwe", "num0" to 10, "num1" to 20)
+        createRecord("text0" to "abc", "text1" to "ert", "num0" to 5, "num1" to 30)
+        createRecord("text0" to "def", "text1" to "tyu", "num0" to 2, "num1" to 15)
+
+        val query = baseQuery.copy()
+            .withSortBy(emptyList())
+            .withGroupBy(listOf("text0"))
+            .withSortBy(listOf(SortBy("text0", true)))
+            .build()
+
+        val res = records.query(query, listOf("text0", "text1", "num0", "sum(num0)", "(num0 - 10)")).getRecords()
+
+        assertThat(res).hasSize(2)
+        assertThat(res[0]["text0"].asText()).isEqualTo("abc")
+        assertThat(res[0]["text1"].asText()).isEqualTo("")
+        assertThat(res[0]["num0"].asInt()).isEqualTo(0)
+        assertThat(res[0]["sum(num0)"].asInt()).isEqualTo(15)
+        assertThat(res[0]["(num0 - 10)"].asInt()).isEqualTo(0)
+        assertThat(res[1]["text0"].asText()).isEqualTo("def")
+        assertThat(res[1]["text1"].asText()).isEqualTo("")
+        assertThat(res[1]["num0"].asInt()).isEqualTo(0)
+        assertThat(res[1]["sum(num0)"].asInt()).isEqualTo(2)
+        assertThat(res[1]["(num0 - 10)"].asInt()).isEqualTo(0)
+
+        val query2 = baseQuery.copy()
+            .withSortBy(emptyList())
+            .withGroupBy(listOf("(num0 -   10)"))
+            .withSortBy(listOf(SortBy("(num0   - 10)", true)))
+            .build()
+
+        val res2 = records.query(
+            query2,
+            listOf(
+                "text1",
+                "sum(num0)",
+                "(num0 - 10)"
+            )
+        ).getRecords()
+
+        assertThat(res2).hasSize(3)
+        assertThat(res2[0]["text1"].asText()).isEqualTo("")
+        assertThat(res2[0]["sum(num0)"].asInt()).isEqualTo(2)
+        assertThat(res2[0]["(num0 - 10)"].asInt()).isEqualTo(-8)
+
+        assertThat(res2[1]["text1"].asText()).isEqualTo("")
+        assertThat(res2[1]["sum(num0)"].asInt()).isEqualTo(5)
+        assertThat(res2[1]["(num0 - 10)"].asInt()).isEqualTo(-5)
+
+        assertThat(res2[2]["text1"].asText()).isEqualTo("")
+        assertThat(res2[2]["sum(num0)"].asInt()).isEqualTo(10)
+        assertThat(res2[2]["(num0 - 10)"].asInt()).isEqualTo(0)
+    }
+
+    @Test
     fun testGroupAndSortByMultipleAtts() {
 
         registerAtts(

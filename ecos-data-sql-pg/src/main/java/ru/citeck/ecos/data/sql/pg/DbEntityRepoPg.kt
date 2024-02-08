@@ -487,7 +487,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                                 token.name.split(".").joinToString(".") { "\"$it\"" }
                             }
                         } else {
-                            "\"${token.name}\""
+                            "\"$table\".\"${token.name}\""
                         }
                     } else {
                         token.toString()
@@ -1417,6 +1417,14 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                                     queryParams.add(offsetDateTime.toLocalDate())
                                 } else {
                                     queryParams.add(offsetDateTime)
+                                }
+                            } else if (value.isTextual()) {
+                                when (columnDef.type) {
+                                    DbColumnType.DOUBLE -> value.asDouble()
+                                    DbColumnType.INT -> value.asLong()
+                                    DbColumnType.LONG -> value.asLong()
+                                    DbColumnType.BIGSERIAL -> value.asLong()
+                                    else -> queryParams.add(value.asJavaObj())
                                 }
                             } else {
                                 queryParams.add(value.asJavaObj())

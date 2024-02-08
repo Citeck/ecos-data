@@ -63,6 +63,10 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
         )
     }
 
+    fun isAggregationFunc(): Boolean {
+        return AGG_FUNCTIONS.contains(name)
+    }
+
     override fun <T : ExpressionToken> visit(type: Class<T>, visitor: (T) -> Unit) {
         if (type.isInstance(this)) {
             visitor.invoke(type.cast(this))
