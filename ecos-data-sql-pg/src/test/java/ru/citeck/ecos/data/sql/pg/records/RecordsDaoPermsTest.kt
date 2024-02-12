@@ -11,9 +11,9 @@ import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.util.UUID
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -67,13 +67,13 @@ class RecordsDaoPermsTest : DbRecordsTestBase() {
         )
         setQueryPermsPolicy(QueryPermsPolicy.OWN)
 
-        val ref = RecordRef.create(recordsDao.getId(), "test")
+        val ref = EntityRef.create(recordsDao.getId(), "test")
         setAuthoritiesWithWritePerms(ref, "user0")
 
         AuthContext.runAs("user1") {
             TxnContext.doInTxn {
                 createRecord(
-                    "id" to ref.id,
+                    "id" to ref.getLocalId(),
                     "test" to "abc"
                 )
                 assertThat(records.getAtt(ref, "test").asText()).isEqualTo("abc")
@@ -99,12 +99,12 @@ class RecordsDaoPermsTest : DbRecordsTestBase() {
         )
         setQueryPermsPolicy(QueryPermsPolicy.OWN)
 
-        val ref = RecordRef.create(recordsDao.getId(), "test-rec")
+        val ref = EntityRef.create(recordsDao.getId(), "test-rec")
         setAuthoritiesWithWritePerms(ref, listOf("user0"))
         addAuthoritiesWithReadPerms(ref, listOf("user1"))
 
         AuthContext.runAs("user3") {
-            createRecord("id" to ref.id)
+            createRecord("id" to ref.getLocalId())
         }
         AuthContext.runAs(EmptyAuth) {
             assertThat(records.getAtt(ref, "permissions._has.Write?bool!false").asText()).isEqualTo("false")
@@ -156,9 +156,9 @@ class RecordsDaoPermsTest : DbRecordsTestBase() {
         val user = "user0"
         val permission = "createProcessInstance"
 
-        val ref = RecordRef.create(recordsDao.getId(), "test-rec")
+        val ref = EntityRef.create(recordsDao.getId(), "test-rec")
         AuthContext.runAs(user) {
-            createRecord("id" to ref.id)
+            createRecord("id" to ref.getLocalId())
         }
         addAdditionalPermission(ref, user, permission)
 
@@ -183,9 +183,9 @@ class RecordsDaoPermsTest : DbRecordsTestBase() {
         val user = "user0"
         val permission = "createProcessInstance"
 
-        val ref = RecordRef.create(recordsDao.getId(), "test-rec")
+        val ref = EntityRef.create(recordsDao.getId(), "test-rec")
         AuthContext.runAs(user) {
-            createRecord("id" to ref.id)
+            createRecord("id" to ref.getLocalId())
         }
 
         val createProcessInstancePermsValue = AuthContext.runAs(user) {

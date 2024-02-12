@@ -65,7 +65,7 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
 
         val checkContent = { contentAttName: String, contentName: String ->
 
-            val contentData = recordsDao.getContent(ref.id, contentAttName)
+            val contentData = recordsDao.getContent(ref.getLocalId(), contentAttName)
             val utf8String = contentData?.readContent { IOUtils.readAsString(it) }
             val mimeType = records.getAtt(ref, "$contentAttName.mimeType").asText()
 
@@ -151,7 +151,7 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
 
         val ref = createRecord(contentAttName0 to contentAttValue)
 
-        val contentData = recordsDao.getContent(ref.id, contentAttName0)
+        val contentData = recordsDao.getContent(ref.getLocalId(), contentAttName0)
         val utf8String = contentData?.readContent { IOUtils.readAsString(it) }
 
         val contentName = records.getAtt(ref, "$contentAttName0.name").asText()
@@ -251,7 +251,7 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
             )
 
             val bytesFromAtt = Base64.getDecoder().decode(records.getAtt(newFile, "content.bytes").asText())
-            val bytesFromRead = recordsDao.getContent(newFile.id, "_content")?.readContentAsBytes()
+            val bytesFromRead = recordsDao.getContent(newFile.getLocalId(), "_content")?.readContentAsBytes()
 
             assertThat(bytesFromRead).isEqualTo(bytesFromAtt).isEqualTo(contentSrc)
         }

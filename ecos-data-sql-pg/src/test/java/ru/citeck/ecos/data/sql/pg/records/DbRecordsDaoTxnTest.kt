@@ -8,8 +8,8 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsDaoTxnTest : DbRecordsTestBase() {
 
@@ -43,7 +43,7 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
             ).map { it.build() }
         )
 
-        var newRecRef = RecordRef.EMPTY
+        var newRecRef = EntityRef.EMPTY
         TxnContext.doInTxn(false) {
             newRecRef = createRecord("textAtt" to "Value")
             assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value")
@@ -72,7 +72,7 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
             ).map { it.build() }
         )
 
-        var newRecRef = RecordRef.EMPTY
+        var newRecRef = EntityRef.EMPTY
         TxnContext.doInTxn(false) {
             newRecRef = createRecord("textAtt" to "Value")
             assertThat(records.getAtt(newRecRef, "textAtt").asText()).isEqualTo("Value")
@@ -132,7 +132,7 @@ class DbRecordsDaoTxnTest : DbRecordsTestBase() {
             }
         )
 
-        var newRecRef: RecordRef = RecordRef.EMPTY
+        var newRecRef: EntityRef = EntityRef.EMPTY
         TxnContext.doInTxn(false) {
             newRecRef = records.create(
                 RECS_DAO_ID,

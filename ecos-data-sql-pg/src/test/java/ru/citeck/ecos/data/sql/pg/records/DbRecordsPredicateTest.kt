@@ -5,9 +5,9 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.Instant
 
 class DbRecordsPredicateTest : DbRecordsTestBase() {
@@ -35,7 +35,7 @@ class DbRecordsPredicateTest : DbRecordsTestBase() {
             nullRef to null
         )
 
-        val queryTest = { predicate: Predicate, expected: List<RecordRef> ->
+        val queryTest = { predicate: Predicate, expected: List<EntityRef> ->
             val queryRes = records.query(
                 baseQuery.withQuery(DataValue.create(predicate)),
             )

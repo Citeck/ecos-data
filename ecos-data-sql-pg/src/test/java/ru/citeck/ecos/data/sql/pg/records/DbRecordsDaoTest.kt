@@ -13,12 +13,12 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import ru.citeck.ecos.records3.record.dao.impl.proxy.RecordsDaoProxy
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -95,7 +95,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
     @Test
     fun testWithChangedSchema() {
 
-        val ref = RecordRef.create(RECS_DAO_ID, "test")
+        val ref = EntityRef.create(RECS_DAO_ID, "test")
 
         val firstTableRef = DbTableRef("ecos-data", "test-data")
         mainCtx = createRecordsDao(tableRef = firstTableRef)
@@ -360,8 +360,8 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             }
         )
         assertThat(res.getRecords()).hasSize(1)
-        assertThat(res.getRecords()[0].sourceId).isEqualTo("test")
-        assertThat(res.getRecords()[0].id).isEqualTo(newRecId.id)
+        assertThat(res.getRecords()[0].getSourceId()).isEqualTo("test")
+        assertThat(res.getRecords()[0].getLocalId()).isEqualTo(newRecId.getLocalId())
         assertThat(res.getTotalCount()).isEqualTo(1)
 
         val fullResWithUnknownFieldPred = records.query(
@@ -479,7 +479,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         val record = records.create("proxy-dao", atts)
         val refId = selectRecFromDb(record, "\"__ref_id\"") as Long
 
-        val recordRef = RecordRef.valueOf(
+        val recordRef = EntityRef.valueOf(
             selectFieldFromDbTable(
                 "__ext_id",
                 tableRef.withTable("ecos_record_ref").fullName,
@@ -487,6 +487,6 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
             ) as String
         )
 
-        assertThat(recordRef.sourceId).isEqualTo("proxy-dao")
+        assertThat(recordRef.getSourceId()).isEqualTo("proxy-dao")
     }
 }

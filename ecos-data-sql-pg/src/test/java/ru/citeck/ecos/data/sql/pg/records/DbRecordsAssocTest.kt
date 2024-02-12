@@ -7,7 +7,6 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
@@ -216,7 +215,7 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
             "multiAssocAtt" to refs.toList().takeLast(3)
         )
 
-        val queryTest = { query: Predicate, expected: List<RecordRef> ->
+        val queryTest = { query: Predicate, expected: List<EntityRef> ->
             val result = records.query(
                 RecordsQuery.create {
                     withSourceId(mainCtx.dao.getId())

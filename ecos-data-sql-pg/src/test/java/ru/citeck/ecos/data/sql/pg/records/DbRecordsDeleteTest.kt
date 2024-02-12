@@ -9,7 +9,6 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.utils.ModelUtils
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.dao.delete.DelStatus
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -133,7 +132,7 @@ class DbRecordsDeleteTest : DbRecordsTestBase() {
             "id" to customId,
             "textAtt" to "value"
         )
-        assertThat(recRef.id).isEqualTo(customId)
+        assertThat(recRef.getLocalId()).isEqualTo(customId)
 
         val delRes = records.delete(recRef)
 
@@ -143,13 +142,13 @@ class DbRecordsDeleteTest : DbRecordsTestBase() {
             "id" to customId,
             "textAtt" to "value2"
         )
-        assertThat(recRef2.id).isEqualTo(customId)
+        assertThat(recRef2.getLocalId()).isEqualTo(customId)
         assertThat(records.getAtt(recRef2, "textAtt").asText()).isEqualTo("value2")
     }
 
-    private fun createElements(): List<RecordRef> {
+    private fun createElements(): List<EntityRef> {
 
-        val recordsList = ArrayList<RecordRef>()
+        val recordsList = ArrayList<EntityRef>()
         for (i in 0..5) {
             recordsList.add(createRecord("textAtt" to "idx-$i"))
         }

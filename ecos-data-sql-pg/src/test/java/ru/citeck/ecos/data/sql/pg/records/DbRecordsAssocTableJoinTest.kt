@@ -12,7 +12,6 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.utils.ModelUtils
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
@@ -217,7 +216,7 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
                 }
             ).getRecords()
             assertThat(result).describedAs("Predicate: $predicate")
-                .containsExactlyInAnyOrderElementsOf(expected.map { RecordRef.valueOf(it) })
+                .containsExactlyInAnyOrderElementsOf(expected.map { EntityRef.valueOf(it) })
         }
 
         queryTest(Predicates.eq("assocAtt.targetText", "abc"), listOf(srcRec0))
@@ -239,7 +238,7 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
                 listOf(srcRec1, srcRec0)
             }
             assertThat(result).describedAs("Ascending: $ascending")
-                .containsExactlyElementsOf(expected.map { RecordRef.valueOf(it) })
+                .containsExactlyElementsOf(expected.map { EntityRef.valueOf(it) })
         }
         sortByTest(true)
         sortByTest(false)

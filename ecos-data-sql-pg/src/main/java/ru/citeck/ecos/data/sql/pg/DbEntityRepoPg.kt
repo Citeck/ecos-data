@@ -47,7 +47,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         private const val RECORD_TABLE_ALIAS = "r"
         private const val PERMS_TABLE_ALIAS = "p"
-        private const val ASSOCS_TABLE_ALIAS_PREFIX = "a"
 
         private const val IS_TRUE = "IS TRUE"
         private const val IS_FALSE = "IS FALSE"

@@ -11,8 +11,6 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
-import ru.citeck.ecos.records2.QueryContext.withAttributes
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.util.*
@@ -34,7 +32,7 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
         )
         setQueryPermsPolicy(QueryPermsPolicy.OWN)
 
-        val checkReadPerms = { ref: RecordRef, isReadPermsExpected: Boolean ->
+        val checkReadPerms = { ref: EntityRef, isReadPermsExpected: Boolean ->
             if (isReadPermsExpected) {
                 assertThat(records.getAtt(ref, "_notExists?bool").asBoolean()).isFalse
             } else {
@@ -74,7 +72,7 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
 
         checkReadPermsForAll()
 
-        val additionalChildren = RecordAtts(RecordRef.create(RECS_DAO_ID, ""))
+        val additionalChildren = RecordAtts(EntityRef.create(RECS_DAO_ID, ""))
         additionalChildren.setAtt("_alias", "alias-1")
         additionalChildren.setAtt("_type", REC_TEST_TYPE_REF)
 

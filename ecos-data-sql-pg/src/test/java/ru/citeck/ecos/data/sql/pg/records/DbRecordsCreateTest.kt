@@ -13,7 +13,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.RecordConstants
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -30,7 +30,7 @@ class DbRecordsCreateTest : DbRecordsTestBase() {
             )
         )
 
-        val ref = RecordRef.create(recordsDao.getId(), "unknown-id")
+        val ref = EntityRef.create(recordsDao.getId(), "unknown-id")
         val exception = assertThrows<Exception> {
             val data = ObjectData.create()
             data[RecordConstants.ATT_TYPE] = REC_TEST_TYPE_REF
@@ -73,7 +73,7 @@ class DbRecordsCreateTest : DbRecordsTestBase() {
             .set("json", DataValue.createObj().set("abc", "def"))
             .set("binary", Base64.getEncoder().encodeToString(bytes))
 
-        fun checkAtts(ref: RecordRef, expectedTextAtt: String) {
+        fun checkAtts(ref: EntityRef, expectedTextAtt: String) {
             val atts = records.getAtts(
                 ref,
                 mapOf(
@@ -118,7 +118,7 @@ class DbRecordsCreateTest : DbRecordsTestBase() {
             "id" to "copy-test",
             "text" to "copy-text"
         )
-        assertThat(copyRec.id).isEqualTo("copy-test")
+        assertThat(copyRec.getLocalId()).isEqualTo("copy-test")
         checkAtts(srcRec, "text")
         checkAtts(copyRec, "copy-text")
 

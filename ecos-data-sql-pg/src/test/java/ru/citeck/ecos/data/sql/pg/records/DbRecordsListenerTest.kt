@@ -9,7 +9,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsListenerTest : DbRecordsTestBase() {
 
@@ -49,9 +49,9 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
         val mutationEvents = mutableListOf<DbRecordChangedEvent>()
         val mutationBeforeAtts = mutableListOf<ObjectData>()
         val mutationAfterAtts = mutableListOf<ObjectData>()
-        val mutationRefs = mutableListOf<RecordRef>()
+        val mutationRefs = mutableListOf<EntityRef>()
 
-        val createdEvents = mutableListOf<RecordRef>()
+        val createdEvents = mutableListOf<EntityRef>()
 
         val mutationLists = listOf(
             mutationEvents,
@@ -76,7 +76,7 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
                 val beforeAtts = records.getAtts(event.before, attsToReq)
                 val afterAtts = records.getAtts(event.after, attsToReq)
                 mutationBeforeAtts.add(beforeAtts.getAtts())
-                mutationRefs.add(records.getAtt(event.record, "?id").getAs(RecordRef::class.java)!!)
+                mutationRefs.add(records.getAtt(event.record, "?id").getAs(EntityRef::class.java)!!)
                 mutationAfterAtts.add(afterAtts.getAtts())
             }
             override fun onDeleted(event: DbRecordDeletedEvent) {
@@ -84,7 +84,7 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
                 deletionAtts.add(records.getAtts(event.record, attsToReq).getAtts())
             }
             override fun onCreated(event: DbRecordCreatedEvent) {
-                createdEvents.add(records.getAtt(event.record, "?id").getAs(RecordRef::class.java)!!)
+                createdEvents.add(records.getAtt(event.record, "?id").getAs(EntityRef::class.java)!!)
             }
             override fun onStatusChanged(event: DbRecordStatusChangedEvent) {
                 val beforeStr = event.before.id

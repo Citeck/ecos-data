@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsDaoAttsPermsTest : DbRecordsTestBase() {
 
@@ -22,10 +22,10 @@ class DbRecordsDaoAttsPermsTest : DbRecordsTestBase() {
         )
         setQueryPermsPolicy(QueryPermsPolicy.OWN)
 
-        val ref = RecordRef.create(recordsDao.getId(), "test")
+        val ref = EntityRef.create(recordsDao.getId(), "test")
 
         AuthContext.runAs("admin") {
-            createRecord("id" to ref.id, "test" to "abc")
+            createRecord("id" to ref.getLocalId(), "test" to "abc")
         }
 
         val allUsers = setOf("user0", "user1", "user2")

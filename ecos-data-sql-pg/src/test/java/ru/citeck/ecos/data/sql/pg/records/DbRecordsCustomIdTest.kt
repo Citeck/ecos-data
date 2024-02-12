@@ -4,9 +4,9 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsCustomIdTest : DbRecordsTestBase() {
 
@@ -31,7 +31,7 @@ class DbRecordsCustomIdTest : DbRecordsTestBase() {
             attName to attValue
         )
 
-        assertThat(newRecId.id).isEqualTo(customId1)
+        assertThat(newRecId.getLocalId()).isEqualTo(customId1)
 
         val customId2 = "custom-id-2"
 
@@ -41,7 +41,7 @@ class DbRecordsCustomIdTest : DbRecordsTestBase() {
             attName to attValue
         )
 
-        assertThat(newRecLocalId.id).isEqualTo(customId2)
+        assertThat(newRecLocalId.getLocalId()).isEqualTo(customId2)
 
         val queryResult = records.query(baseQuery, TestDto::class.java)
 
@@ -87,7 +87,7 @@ class DbRecordsCustomIdTest : DbRecordsTestBase() {
         testQueryWithSort(true)
         testQueryWithSort(false)
 
-        val recRef = RecordRef.create(recordsDao.getId(), customId2)
+        val recRef = EntityRef.create(recordsDao.getId(), customId2)
         val atts = records.getAtts(recRef, TestDto::class.java)
         assertThat(atts.id).isEqualTo(customId2)
         assertThat(atts.textAtt).isEqualTo(attValue)
@@ -102,10 +102,10 @@ class DbRecordsCustomIdTest : DbRecordsTestBase() {
         assertThat(atts2.textAtt).isEqualTo("new value after mutation")
 
         assertThrows<Exception> {
-            updateRecord(RecordRef.create(recordsDao.getId(), "unknown-id"), attName to attValue)
+            updateRecord(EntityRef.create(recordsDao.getId(), "unknown-id"), attName to attValue)
         }
 
-        updateRecord(RecordRef.create(recordsDao.getId(), ""), "id" to customId1, attName to "newValue1")
+        updateRecord(EntityRef.create(recordsDao.getId(), ""), "id" to customId1, attName to "newValue1")
         assertThat(records.getAtt(newRecId, attName).asText()).isEqualTo("newValue1")
     }
 

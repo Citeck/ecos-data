@@ -48,7 +48,6 @@ import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
-import ru.citeck.ecos.records2.RecordRef
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import ru.citeck.ecos.records3.RecordsService
@@ -482,19 +481,19 @@ abstract class DbRecordsTestBase {
         return mainCtx.createQuery(action)
     }
 
-    fun createRef(id: String): RecordRef {
+    fun createRef(id: String): EntityRef {
         return mainCtx.createRef(id)
     }
 
-    fun updateRecord(rec: EntityRef, vararg atts: Pair<String, Any?>): RecordRef {
+    fun updateRecord(rec: EntityRef, vararg atts: Pair<String, Any?>): EntityRef {
         return mainCtx.updateRecord(rec, *atts)
     }
 
-    fun createRecord(atts: ObjectData): RecordRef {
+    fun createRecord(atts: ObjectData): EntityRef {
         return mainCtx.createRecord(atts)
     }
 
-    fun createRecord(vararg atts: Pair<String, Any?>): RecordRef {
+    fun createRecord(vararg atts: Pair<String, Any?>): EntityRef {
         return mainCtx.createRecord(*atts)
     }
 
@@ -712,15 +711,15 @@ abstract class DbRecordsTestBase {
             return builder.build()
         }
 
-        fun createRef(id: String): RecordRef {
-            return RecordRef.create(APP_NAME, dao.getId(), id)
+        fun createRef(id: String): EntityRef {
+            return EntityRef.create(APP_NAME, dao.getId(), id)
         }
 
-        fun updateRecord(rec: EntityRef, vararg atts: Pair<String, Any?>): RecordRef {
+        fun updateRecord(rec: EntityRef, vararg atts: Pair<String, Any?>): EntityRef {
             return records.mutate(rec, mapOf(*atts))
         }
 
-        fun createRecord(atts: ObjectData): RecordRef {
+        fun createRecord(atts: ObjectData): EntityRef {
             if (!atts.has(RecordConstants.ATT_TYPE)) {
                 atts[RecordConstants.ATT_TYPE] = REC_TEST_TYPE_REF
             }
@@ -729,7 +728,7 @@ abstract class DbRecordsTestBase {
             return rec
         }
 
-        fun createRecord(vararg atts: Pair<String, Any?>): RecordRef {
+        fun createRecord(vararg atts: Pair<String, Any?>): EntityRef {
             val map = linkedMapOf(*atts)
             if (!map.containsKey(RecordConstants.ATT_TYPE)) {
                 map[RecordConstants.ATT_TYPE] = typeRef

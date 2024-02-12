@@ -7,7 +7,7 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.records2.RecordRef
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsSystemAttsTest : DbRecordsTestBase() {
 
@@ -54,12 +54,12 @@ class DbRecordsSystemAttsTest : DbRecordsTestBase() {
             )
         )
 
-        val ref = RecordRef.valueOf("aa/bb@cc")
+        val ref = EntityRef.valueOf("aa/bb@cc")
         val record = AuthContext.runAsSystem {
             createRecord("att-0" to ref)
         }
 
-        val refFromRecord = records.getAtt(record, "att-0?id").getAs(RecordRef::class.java)
+        val refFromRecord = records.getAtt(record, "att-0?id").getAs(EntityRef::class.java)
         assertThat(refFromRecord).isEqualTo(ref)
     }
 }
