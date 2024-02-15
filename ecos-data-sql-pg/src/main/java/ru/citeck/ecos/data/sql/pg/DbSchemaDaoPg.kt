@@ -73,8 +73,13 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
         }
     }
 
-    @Synchronized
     override fun createTable(dataSource: DbDataSource, tableRef: DbTableRef, columns: List<DbColumnDef>) {
+        synchronized(tableRef) {
+            createTableInSync(dataSource, tableRef, columns)
+        }
+    }
+
+    private fun createTableInSync(dataSource: DbDataSource, tableRef: DbTableRef, columns: List<DbColumnDef>) {
 
         if (tableRef.schema.isNotBlank()) {
             dataSource.query(
@@ -107,8 +112,13 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
         }
     }
 
-    @Synchronized
     override fun addColumns(dataSource: DbDataSource, tableRef: DbTableRef, columns: List<DbColumnDef>) {
+        synchronized(tableRef) {
+            addColumnsInSync(dataSource, tableRef, columns)
+        }
+    }
+
+    private fun addColumnsInSync(dataSource: DbDataSource, tableRef: DbTableRef, columns: List<DbColumnDef>) {
 
         if (columns.isEmpty()) {
             return
@@ -142,8 +152,19 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
         dataSource.updateSchema(query)
     }
 
-    @Synchronized
     override fun setColumnType(
+        dataSource: DbDataSource,
+        tableRef: DbTableRef,
+        name: String,
+        multiple: Boolean,
+        newType: DbColumnType
+    ) {
+        synchronized(tableRef) {
+            setColumnTypeInSync(dataSource, tableRef, name, multiple, newType)
+        }
+    }
+
+    private fun setColumnTypeInSync(
         dataSource: DbDataSource,
         tableRef: DbTableRef,
         name: String,
