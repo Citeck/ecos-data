@@ -31,10 +31,7 @@ import java.sql.Timestamp
 import java.time.*
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.collections.ArrayList
-import kotlin.collections.HashMap
-import kotlin.collections.LinkedHashMap
-import kotlin.collections.LinkedHashSet
+import java.util.regex.Pattern
 import kotlin.reflect.KClass
 
 open class DbEntityRepoPg internal constructor() : DbEntityRepo {
@@ -809,6 +806,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         assocSelectJoins: Map<String, DbTableContext>,
         rawTableJoins: Map<String, RawTableJoin>
     ): String {
+        val processedCondition = processNotEquals(condition)
 
         val delCondition = if (context.hasDeleteFlag() && !withDeleted) {
             "\"$table\".\"${DbEntity.DELETED}\"!=true"
@@ -817,7 +815,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
 
         val permsCondition = getPermsCondition(context, permsColumn)
-        val fullCondition = joinConditionsByAnd(delCondition, condition, permsCondition)
+        val fullCondition = joinConditionsByAnd(delCondition, processedCondition, permsCondition)
 
         val query = StringBuilder()
         query.append("SELECT ")
@@ -1509,4 +1507,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val resIdIdx: Int,
         val data: Map<String, Any?>
     )
+
+    private fun processNotEquals(condition: String): String {
+        val pattern = Pattern.compile("NOT\\s+\"r\"\\.\"(\\w+)\"\\s*=\\s*\\?")
+        val matcher = pattern.matcher(condition)
+        val stringBuffer = StringBuffer()
+        while (matcher.find()) {
+            matcher.appendReplacement(stringBuffer, "\"r\".\"$1\" IS DISTINCT FROM ?")
+        }
+        matcher.appendTail(stringBuffer)
+        return stringBuffer.toString()
+    }
 }
