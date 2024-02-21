@@ -578,6 +578,7 @@ class DbRecordsDao(
         val currentUser = AuthContext.getCurrentUser()
         val currentUserRefId = daoCtx.getOrCreateUserRefId(currentUser)
 
+        val nowInstant = Instant.now()
         if (disableAudit) {
             fun getUserId(user: String): Long {
                 val userName = if (user.contains('@')) {
@@ -599,6 +600,11 @@ class DbRecordsDao(
             if (record.hasAtt(RecordConstants.ATT_CREATED)) {
                 record.getAtt(RecordConstants.ATT_CREATED).getAsInstant()?.let { entityToMutate.created = it }
             }
+            if (record.hasAtt(DbRecord.ATT_STATUS_MODIFIED)) {
+                record.getAtt(DbRecord.ATT_STATUS_MODIFIED).getAsInstant()?.let {
+                    entityToMutate.attributes[DbRecord.ATT_STATUS_MODIFIED] = it
+                }
+            }
             if (entityToMutate.creator == -1L) {
                 entityToMutate.creator = getUserId(AuthUser.ANONYMOUS)
             }
@@ -606,7 +612,6 @@ class DbRecordsDao(
                 entityToMutate.modifier = getUserId(AuthUser.ANONYMOUS)
             }
         } else {
-            val nowInstant = Instant.now()
             if (isNewEntity) {
                 entityToMutate.created = nowInstant
                 entityToMutate.creator = currentUserRefId
@@ -649,6 +654,12 @@ class DbRecordsDao(
             recAttributes[StatusConstants.ATT_STATUS].isEmpty()
         ) {
             recAttributes[StatusConstants.ATT_STATUS] = typeInfo.defaultStatus
+        }
+
+        if (recAttributes[StatusConstants.ATT_STATUS].isNotEmpty() && !disableAudit &&
+            entityToMutate.status != recAttributes[StatusConstants.ATT_STATUS].asText()
+        ) {
+            recAttributes.add(DbRecord.ATT_STATUS_MODIFIED, nowInstant)
         }
 
         val mainContentAtt = DbRecord.getDefaultContentAtt(typeInfo)
