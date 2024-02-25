@@ -9,6 +9,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.Instant
+import java.time.LocalDate
 
 class DbRecordsPredicateTest : DbRecordsTestBase() {
 
@@ -56,6 +57,140 @@ class DbRecordsPredicateTest : DbRecordsTestBase() {
         queryTest(Predicates.not(Predicates.eq(att0, null)), listOf(falseRef, trueRef))
         queryTest(Predicates.empty(att0), listOf(nullRef))
         queryTest(Predicates.not(Predicates.empty(att0)), listOf(falseRef, trueRef))
+    }
+
+    @Test
+    fun testWithText() {
+
+        val att0 = "attText0"
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId(att0)
+                    withType(AttributeType.TEXT)
+                }
+            )
+        )
+
+        val textRef = createRecord(att0 to "someText")
+        val nullRef = createRecord(att0 to null)
+        val emptyRef = createRecord(att0 to "")
+        val refToValue = mapOf(
+            textRef to "someText",
+            nullRef to null,
+            emptyRef to ""
+        )
+
+        val queryTest = { predicate: Predicate, expected: List<EntityRef> ->
+            val queryRes = records.query(
+                baseQuery.withQuery(DataValue.create(predicate)),
+            )
+            val expectedValues = expected.map { refToValue[it] }
+            val actualValues = queryRes.getRecords().map { refToValue[it] }
+            assertThat(queryRes.getRecords())
+                .describedAs("predicate: $predicate expected: $expectedValues actual: $actualValues")
+                .containsExactlyInAnyOrderElementsOf(expected)
+        }
+
+        queryTest(Predicates.not(Predicates.eq(att0, "someText")), listOf(nullRef, emptyRef))
+        queryTest(Predicates.eq(att0, null), listOf(nullRef))
+        queryTest(Predicates.eq(att0, "someText"), listOf(textRef))
+        queryTest(Predicates.eq(att0, ""), listOf(emptyRef))
+        queryTest(Predicates.empty(att0), listOf(nullRef, emptyRef))
+        queryTest(Predicates.notEmpty(att0), listOf(textRef))
+        queryTest(Predicates.not(Predicates.eq(att0, "")), listOf(textRef, nullRef))
+        queryTest(Predicates.not(Predicates.eq(att0, null)), listOf(textRef, emptyRef))
+        queryTest(Predicates.empty(att0), listOf(nullRef, emptyRef))
+        queryTest(Predicates.not(Predicates.empty(att0)), listOf(textRef))
+    }
+
+    @Test
+    fun testWithNumber() {
+
+        val att0 = "attNumber0"
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId(att0)
+                    withType(AttributeType.NUMBER)
+                }
+            )
+        )
+
+        val doubleRef = createRecord(att0 to 10.5)
+        val nullRef = createRecord(att0 to null)
+        val zeroRef = createRecord(att0 to 0)
+        val refToValue = mapOf(
+            doubleRef to 10.5,
+            nullRef to null,
+            zeroRef to 0
+        )
+
+        val queryTest = { predicate: Predicate, expected: List<EntityRef> ->
+            val queryRes = records.query(
+                baseQuery.withQuery(DataValue.create(predicate)),
+            )
+            val expectedValues = expected.map { refToValue[it] }
+            val actualValues = queryRes.getRecords().map { refToValue[it] }
+            assertThat(queryRes.getRecords())
+                .describedAs("predicate: $predicate expected: $expectedValues actual: $actualValues")
+                .containsExactlyInAnyOrderElementsOf(expected)
+        }
+
+        queryTest(Predicates.not(Predicates.eq(att0, 10.5)), listOf(nullRef, zeroRef))
+        queryTest(Predicates.eq(att0, null), listOf(nullRef))
+        queryTest(Predicates.eq(att0, 10.5), listOf(doubleRef))
+        queryTest(Predicates.eq(att0, 0), listOf(zeroRef))
+        queryTest(Predicates.empty(att0), listOf(nullRef))
+        queryTest(Predicates.notEmpty(att0), listOf(doubleRef, zeroRef))
+        queryTest(Predicates.not(Predicates.eq(att0, 0)), listOf(doubleRef, nullRef))
+        queryTest(Predicates.not(Predicates.eq(att0, null)), listOf(doubleRef, zeroRef))
+        queryTest(Predicates.empty(att0), listOf(nullRef))
+        queryTest(Predicates.not(Predicates.empty(att0)), listOf(doubleRef, zeroRef))
+    }
+
+    @Test
+    fun testWithDate() {
+
+        val att0 = "attDate0"
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId(att0)
+                    withType(AttributeType.DATE)
+                }
+            )
+        )
+
+        val dateRef = createRecord(att0 to LocalDate.parse("2024-02-23"))
+        val nullRef = createRecord(att0 to null)
+        val refToValue = mapOf(
+            dateRef to LocalDate.parse("2024-02-23"),
+            nullRef to null
+        )
+
+        val queryTest = { predicate: Predicate, expected: List<EntityRef> ->
+            val queryRes = records.query(
+                baseQuery.withQuery(DataValue.create(predicate)),
+            )
+            val expectedValues = expected.map { refToValue[it] }
+            val actualValues = queryRes.getRecords().map { refToValue[it] }
+            assertThat(queryRes.getRecords())
+                .describedAs("predicate: $predicate expected: $expectedValues actual: $actualValues")
+                .containsExactlyInAnyOrderElementsOf(expected)
+        }
+
+        queryTest(Predicates.not(Predicates.eq(att0, LocalDate.parse("2024-02-23"))), listOf(nullRef))
+        queryTest(Predicates.eq(att0, null), listOf(nullRef))
+        queryTest(Predicates.eq(att0, LocalDate.parse("2024-02-23")), listOf(dateRef))
+        queryTest(Predicates.empty(att0), listOf(nullRef))
+        queryTest(Predicates.notEmpty(att0), listOf(dateRef))
+        queryTest(Predicates.not(Predicates.eq(att0, null)), listOf(dateRef))
+        queryTest(Predicates.empty(att0), listOf(nullRef))
+        queryTest(Predicates.not(Predicates.empty(att0)), listOf(dateRef))
     }
 
     @Test

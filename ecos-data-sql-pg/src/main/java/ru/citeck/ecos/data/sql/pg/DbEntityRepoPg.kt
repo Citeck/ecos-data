@@ -31,7 +31,6 @@ import java.sql.Timestamp
 import java.time.*
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.regex.Pattern
 import kotlin.reflect.KClass
 
 open class DbEntityRepoPg internal constructor() : DbEntityRepo {
@@ -806,7 +805,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         assocSelectJoins: Map<String, DbTableContext>,
         rawTableJoins: Map<String, RawTableJoin>
     ): String {
-        val processedCondition = processNotEquals(condition)
 
         val delCondition = if (context.hasDeleteFlag() && !withDeleted) {
             "\"$table\".\"${DbEntity.DELETED}\"!=true"
@@ -815,7 +813,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
 
         val permsCondition = getPermsCondition(context, permsColumn)
-        val fullCondition = joinConditionsByAnd(delCondition, processedCondition, permsCondition)
+        val fullCondition = joinConditionsByAnd(delCondition, condition, permsCondition)
 
         val query = StringBuilder()
         query.append("SELECT ")
@@ -1433,24 +1431,48 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             }
 
             is NotPredicate -> {
-                query.append("NOT ")
-                return if (toSqlCondition(
-                        context,
-                        query,
-                        table,
-                        predicate.getPredicate(),
-                        assocTableJoins,
-                        assocTargetJoinsWithPredicate,
-                        rawTableJoins,
-                        expressions,
-                        sqlExpressionsByAlias,
-                        queryParams
-                    )
-                ) {
-                    true
+                val innerPredicate = predicate.getPredicate()
+
+                if (isNeedToReplaceEqOperatorWithDistinctFrom(innerPredicate, context, assocTargetJoinsWithPredicate)) {
+                    return if (toSqlCondition(
+                            context,
+                            query,
+                            table,
+                            innerPredicate,
+                            assocTableJoins,
+                            assocTargetJoinsWithPredicate,
+                            rawTableJoins,
+                            expressions,
+                            sqlExpressionsByAlias,
+                            queryParams
+                        )
+                    ) {
+                        query.setLength(query.length - 3)
+                        query.append("IS DISTINCT FROM ?")
+                        true
+                    } else {
+                        false
+                    }
                 } else {
-                    query.setLength(query.length - 4)
-                    false
+                    query.append("NOT ")
+                    return if (toSqlCondition(
+                            context,
+                            query,
+                            table,
+                            innerPredicate,
+                            assocTableJoins,
+                            assocTargetJoinsWithPredicate,
+                            rawTableJoins,
+                            expressions,
+                            sqlExpressionsByAlias,
+                            queryParams
+                        )
+                    ) {
+                        true
+                    } else {
+                        query.setLength(query.length - 4)
+                        false
+                    }
                 }
             }
 
@@ -1492,6 +1514,36 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             .append("\"")
     }
 
+    private fun isNeedToReplaceEqOperatorWithDistinctFrom(
+        innerPredicate: Predicate,
+        context: DbTableContext,
+        assocTargetJoinsWithPredicate: Map<String, AssocJoinWithPredicate>
+    ): Boolean {
+        return if (innerPredicate is ValuePredicate) {
+            val predicateAtt = innerPredicate.getAttribute()
+            val columnDef = context.getColumnByName(predicateAtt)
+            val predicateValue = innerPredicate.getValue()
+
+            val isEqualsTypePredicate = innerPredicate.getType() == ValuePredicate.Type.EQ
+            val isPredicateFromAssocTable = assocTargetJoinsWithPredicate.containsKey(predicateAtt)
+
+            isEqualsTypePredicate && !isPredicateFromAssocTable && predicateValue.isNotNull() && isColumnTypeMatchWithDistinctFromOperator(columnDef)
+        } else {
+            false
+        }
+    }
+
+    private fun isColumnTypeMatchWithDistinctFromOperator(columnDef: DbColumnDef?): Boolean {
+        return columnDef != null &&
+            (
+                columnDef.type == DbColumnType.TEXT ||
+                    columnDef.type == DbColumnType.INT ||
+                    columnDef.type == DbColumnType.DOUBLE ||
+                    columnDef.type == DbColumnType.LONG ||
+                    columnDef.type == DbColumnType.DATE
+                )
+    }
+
     private data class ValueForDb(
         val name: String,
         val placeholder: String,
@@ -1507,15 +1559,4 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val resIdIdx: Int,
         val data: Map<String, Any?>
     )
-
-    private fun processNotEquals(condition: String): String {
-        val pattern = Pattern.compile("NOT\\s+\"r\"\\.\"(\\w+)\"\\s*=\\s*\\?")
-        val matcher = pattern.matcher(condition)
-        val stringBuffer = StringBuffer()
-        while (matcher.find()) {
-            matcher.appendReplacement(stringBuffer, "\"r\".\"$1\" IS DISTINCT FROM ?")
-        }
-        matcher.appendTail(stringBuffer)
-        return stringBuffer.toString()
-    }
 }
