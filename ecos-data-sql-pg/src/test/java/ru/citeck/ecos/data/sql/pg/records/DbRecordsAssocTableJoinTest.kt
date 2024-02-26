@@ -262,6 +262,32 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
     }
 
     @Test
+    fun testNotEqPredicateForNullValues() {
+
+        val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 10, "targetDate" to "2024-02-26")
+        val targetRec1 = targetDao.createRecord("targetText" to "def", "targetNum" to 100, "targetDate" to "2023-03-27")
+        val targetRecWithNullValues = targetDao.createRecord("targetText" to null, "targetNum" to null, "targetDate" to null)
+
+        val srcRec0 = createRecord("assocAtt" to targetRec0)
+        val srcRec1 = createRecord("assocAtt" to targetRec1)
+        val srcRec2 = createRecord("assocAtt" to targetRecWithNullValues)
+
+        fun queryTest(predicate: Predicate, expected: List<EntityRef>) {
+            val result = records.query(
+                baseQuery.copy {
+                    withQuery(predicate)
+                }
+            ).getRecords()
+            assertThat(result).describedAs("Predicate: $predicate")
+                .containsExactlyInAnyOrderElementsOf(expected.map { EntityRef.valueOf(it) })
+        }
+
+        queryTest(Predicates.not(Predicates.eq("assocAtt.targetText", "abc")), listOf(srcRec1, srcRec2))
+        queryTest(Predicates.not(Predicates.eq("assocAtt.targetNum", 100)), listOf(srcRec0, srcRec2))
+        queryTest(Predicates.not(Predicates.eq("assocAtt.targetDate", "2024-02-26")), listOf(srcRec1, srcRec2))
+    }
+
+    @Test
     fun joinInFunctionTest() {
 
         val target10 = targetDao.createRecord("targetNum" to 10)
@@ -415,6 +441,10 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
                                 AttributeDef.create()
                                     .withId("targetNum")
                                     .withType(AttributeType.NUMBER)
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("targetDate")
+                                    .withType(AttributeType.DATE)
                                     .build()
                             )
                         )

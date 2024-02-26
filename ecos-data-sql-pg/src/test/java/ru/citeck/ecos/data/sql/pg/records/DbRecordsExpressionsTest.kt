@@ -5,7 +5,10 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.records2.predicate.model.Predicate
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.Instant
 import java.time.ZoneId
 import java.util.*
@@ -267,6 +270,41 @@ class DbRecordsExpressionsTest : DbRecordsTestBase() {
         assertThat(res["1"]!!["count(text)"].asInt()).isEqualTo(0)
         assertThat(res["2"]!!["count(text)"].asInt()).isEqualTo(1)
         assertThat(res["3"]!!["count(text)"].asInt()).isEqualTo(1)
+    }
+
+    @Test
+    fun testNotEqPredicate() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("num")
+                    withType(AttributeType.NUMBER)
+                },
+                AttributeDef.create {
+                    withId("txt")
+                }
+            )
+        )
+
+        val rec1 = createRecord("num" to 1.5, "txt" to "text")
+        val rec2 = createRecord("num" to 2.5, "txt" to "text2")
+        val rec3 = createRecord("num" to 3.5, "txt" to "text3")
+        val rec4 = createRecord("num" to 4.5, "txt" to "text4")
+        val recNullValues = createRecord("num" to null, "txt" to null)
+
+        fun queryTest(predicate: Predicate, expected: List<EntityRef>) {
+            val result = records.query(
+                baseQuery.copy {
+                    withQuery(predicate)
+                }
+            ).getRecords()
+            assertThat(result).describedAs("Predicate: $predicate")
+                .containsExactlyInAnyOrderElementsOf(expected.map { EntityRef.valueOf(it) })
+        }
+
+        queryTest(Predicates.not(Predicates.eq("floor(num)", 1)), listOf(rec2, rec3, rec4))
+        queryTest(Predicates.not(Predicates.eq("length(txt)", 5)), listOf(rec1))
     }
 
     class RecordData(

@@ -1447,7 +1447,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                             queryParams
                         )
                     ) {
-                        query.setLength(query.length - 3)
+                        query.setLength(query.length - 3) // remove "= ?" after Value-predicate processing
                         query.append("IS DISTINCT FROM ?")
                         true
                     } else {
@@ -1519,18 +1519,18 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         context: DbTableContext,
         assocTargetJoinsWithPredicate: Map<String, AssocJoinWithPredicate>
     ): Boolean {
-        return if (innerPredicate is ValuePredicate) {
-            val predicateAtt = innerPredicate.getAttribute()
-            val columnDef = context.getColumnByName(predicateAtt)
-            val predicateValue = innerPredicate.getValue()
-
-            val isEqualsTypePredicate = innerPredicate.getType() == ValuePredicate.Type.EQ
-            val isPredicateFromAssocTable = assocTargetJoinsWithPredicate.containsKey(predicateAtt)
-
-            isEqualsTypePredicate && !isPredicateFromAssocTable && predicateValue.isNotNull() && isColumnTypeMatchWithDistinctFromOperator(columnDef)
-        } else {
-            false
+        if (innerPredicate !is ValuePredicate) {
+            return false
         }
+
+        val predicateAtt = innerPredicate.getAttribute()
+        val columnDef = context.getColumnByName(predicateAtt)
+        val predicateValue = innerPredicate.getValue()
+
+        val isEqualsTypePredicate = innerPredicate.getType() == ValuePredicate.Type.EQ
+        val isPredicateFromAssocTable = assocTargetJoinsWithPredicate.containsKey(predicateAtt)
+
+        return isEqualsTypePredicate && !isPredicateFromAssocTable && predicateValue.isNotNull() && isColumnTypeMatchWithDistinctFromOperator(columnDef)
     }
 
     private fun isColumnTypeMatchWithDistinctFromOperator(columnDef: DbColumnDef?): Boolean {
