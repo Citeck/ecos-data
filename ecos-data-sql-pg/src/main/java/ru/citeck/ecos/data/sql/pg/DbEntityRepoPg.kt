@@ -1541,10 +1541,10 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val isEqualsTypePredicate = innerPredicate.getType() == ValuePredicate.Type.EQ
         val isPredicateFromAssocTable = assocTargetJoinsWithPredicate.containsKey(predicateAtt)
 
-        return isEqualsTypePredicate
-            && !isPredicateFromAssocTable
-            && predicateValue.isNotNull()
-            && isColumnTypeMatchWithDistinctFromOperator(columnDef)
+        return isEqualsTypePredicate &&
+            !isPredicateFromAssocTable &&
+            predicateValue.isNotNull() &&
+            isColumnTypeMatchWithDistinctFromOperator(columnDef)
     }
 
     private fun isColumnTypeMatchWithDistinctFromOperator(columnDef: DbColumnDef?): Boolean {
