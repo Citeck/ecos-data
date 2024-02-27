@@ -53,6 +53,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         private const val SEARCH_DISABLED_COLUMN = "__search__disabled__"
 
         private const val VIRTUAL_COLUMN_PREFIX = "v__"
+
+        // 'IS DISTINCT FROM' works as '<>' (not-eq) except it include records with null values
+        private val COLUMN_TYPES_FOR_IS_DISTINCT_FROM_OPERATOR = setOf(
+            DbColumnType.TEXT,
+            DbColumnType.INT,
+            DbColumnType.DOUBLE,
+            DbColumnType.LONG,
+            DbColumnType.DATE
+        )
     }
 
     private val disableQueryPermsCheck = ThreadLocal.withInitial { false }
@@ -1447,7 +1456,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                             queryParams
                         )
                     ) {
-                        query.setLength(query.length - 3) // remove "= ?" after Value-predicate processing
+                        // remove "= ?" after ValuePredicate processing
+                        // todo: this doesn't work for conditions on joined tables
+                        query.setLength(query.length - 3)
                         query.append("IS DISTINCT FROM ?")
                         true
                     } else {
@@ -1530,18 +1541,14 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val isEqualsTypePredicate = innerPredicate.getType() == ValuePredicate.Type.EQ
         val isPredicateFromAssocTable = assocTargetJoinsWithPredicate.containsKey(predicateAtt)
 
-        return isEqualsTypePredicate && !isPredicateFromAssocTable && predicateValue.isNotNull() && isColumnTypeMatchWithDistinctFromOperator(columnDef)
+        return isEqualsTypePredicate
+            && !isPredicateFromAssocTable
+            && predicateValue.isNotNull()
+            && isColumnTypeMatchWithDistinctFromOperator(columnDef)
     }
 
     private fun isColumnTypeMatchWithDistinctFromOperator(columnDef: DbColumnDef?): Boolean {
-        return columnDef != null &&
-            (
-                columnDef.type == DbColumnType.TEXT ||
-                    columnDef.type == DbColumnType.INT ||
-                    columnDef.type == DbColumnType.DOUBLE ||
-                    columnDef.type == DbColumnType.LONG ||
-                    columnDef.type == DbColumnType.DATE
-                )
+        return columnDef != null && COLUMN_TYPES_FOR_IS_DISTINCT_FROM_OPERATOR.contains(columnDef.type)
     }
 
     private data class ValueForDb(
