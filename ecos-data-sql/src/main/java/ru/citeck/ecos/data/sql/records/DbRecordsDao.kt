@@ -659,7 +659,7 @@ class DbRecordsDao(
         if (recAttributes[StatusConstants.ATT_STATUS].isNotEmpty() && !disableAudit &&
             entityToMutate.status != recAttributes[StatusConstants.ATT_STATUS].asText()
         ) {
-            recAttributes.add(DbRecord.ATT_STATUS_MODIFIED, nowInstant)
+            recAttributes[DbRecord.ATT_STATUS_MODIFIED] = nowInstant
         }
 
         val mainContentAtt = DbRecord.getDefaultContentAtt(typeInfo)

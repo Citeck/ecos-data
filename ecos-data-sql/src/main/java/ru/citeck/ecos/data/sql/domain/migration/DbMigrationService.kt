@@ -22,6 +22,7 @@ class DbMigrationService {
         domainMigrations.add(MoveAssocsToAssocsTable())
         domainMigrations.add(MigrateMetaFieldsToRefs())
         domainMigrations.add(MigrateParentAttFieldToAttId())
+        domainMigrations.add(AddStatusModifiedAttField())
 
         schemaMigrations.add(ChangeContentCreatorType())
         schemaMigrations.add(RemoveAllowedFlagFromPerms())
