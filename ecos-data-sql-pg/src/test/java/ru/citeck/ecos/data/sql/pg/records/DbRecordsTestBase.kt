@@ -59,6 +59,7 @@ import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.test.commons.EcosWebAppApiMock
 import ru.citeck.ecos.test.commons.containers.TestContainers
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.txn.lib.manager.EcosTxnProps
 import ru.citeck.ecos.txn.lib.manager.TransactionManagerImpl
 import ru.citeck.ecos.txn.lib.resource.type.xa.JavaXaTxnManagerAdapter
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
@@ -224,7 +225,7 @@ abstract class DbRecordsTestBase {
             )
 
             val txnManager = TransactionManagerImpl()
-            txnManager.init(webAppApi)
+            txnManager.init(webAppApi, EcosTxnProps())
             TxnContext.setManager(txnManager)
 
             recordsServiceFactory = object : RecordsServiceFactory() {
