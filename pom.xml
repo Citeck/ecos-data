@@ -12,7 +12,7 @@
 
     <properties>
 
-        <revision>1.48.0</revision>
+        <revision>1.48.1</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
@@ -33,7 +33,7 @@
         <ecos.snakeyaml.version>2.2.0</ecos.snakeyaml.version>
         <ecos.guava.version>30.0.0-jre</ecos.guava.version>
         <ecos.webapp-api.version>1.9.0</ecos.webapp-api.version>
-        <ecos.txn-lib.version>1.2.0</ecos.txn-lib.version>
+        <ecos.txn-lib.version>1.2.1</ecos.txn-lib.version>
         <ecos.micrometer.version>1.1.0</ecos.micrometer.version>
 
         <ecos.test-commons.version>1.4.0</ecos.test-commons.version>
