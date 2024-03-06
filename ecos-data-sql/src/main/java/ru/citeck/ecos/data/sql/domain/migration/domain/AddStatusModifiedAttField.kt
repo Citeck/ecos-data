@@ -35,8 +35,8 @@ class AddStatusModifiedAttField : DbDomainMigration {
             }
         }
 
-        val currentParentAttColumn = currentColumns[DbEntity.STATUS]
-        if (currentParentAttColumn == null || currentParentAttColumn.type != DbColumnType.TEXT) {
+        val currentStatusColumn = currentColumns[DbEntity.STATUS]
+        if (currentStatusColumn == null || currentStatusColumn.type != DbColumnType.TEXT) {
             // nothing to migrate
             return
         }
