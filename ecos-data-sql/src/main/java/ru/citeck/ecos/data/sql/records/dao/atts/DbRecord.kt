@@ -52,6 +52,7 @@ class DbRecord(
         const val ATT_CONTENT_VERSION = "version:version"
         const val ATT_CONTENT_VERSION_COMMENT = "version:comment"
         const val ATT_IS_DRAFT = "_isDraft"
+        const val ATT_STATUS_MODIFIED = "_statusModified"
         const val ASSOC_SRC_ATT_PREFIX = "assoc_src_"
 
         const val ASPECT_VERSIONABLE = "versionable"
@@ -100,6 +101,10 @@ class DbRecord(
                 withType(DbColumnType.LONG)
                 withMultiple(true)
                 withIndex(DbColumnIndexDef(true))
+            },
+            DbColumnDef.create {
+                withName(ATT_STATUS_MODIFIED)
+                withType(DbColumnType.DATETIME)
             }
         )
 
