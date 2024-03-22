@@ -138,10 +138,26 @@ class DbRecord(
         }
     }
 
-    private val permsValue by lazy { DbRecPermsValue(ctx, this) }
-    private val additionalAtts: Map<String, Any?>
+    private val permsValue by lazy(LazyThreadSafetyMode.NONE) { DbRecPermsValue(ctx, this) }
+    private val additionalAtts: Map<String, Any?> by lazy(LazyThreadSafetyMode.NONE) {
+        val resAtts = LinkedHashMap<String, Any?>(additionalRawAtts)
+        attTypes.forEach { (attId, attType) ->
+            resAtts[attId] = convertValue(attId, attType, resAtts[attId])
+        }
+        resAtts
+    }
+    private val additionalRawAtts: Map<String, Any?>
     private val assocsInnerAdditionalAtts: Map<String, Any?>
-    private val assocMapping: Map<Long, EntityRef>
+
+    private val assocMapping: Map<Long, EntityRef> by lazy(LazyThreadSafetyMode.NONE) {
+        if (assocIdValues.isNotEmpty()) {
+            val assocRefValues = ctx.recordRefService.getEntityRefsByIds(assocIdValues)
+            assocIdValues.mapIndexed { idx, id -> id to assocRefValues[idx] }.toMap()
+        } else {
+            emptyMap()
+        }
+    }
+    private val assocIdValues: List<Long>
 
     private val typeInfo: TypeInfo
     private val attTypes: Map<String, AttributeType>
@@ -266,30 +282,22 @@ class DbRecord(
             }
         }
 
-        assocMapping = if (assocIdValues.isNotEmpty()) {
-            val assocIdValuesList = assocIdValues.toList()
-            val assocRefValues = ctx.recordRefService.getEntityRefsByIds(assocIdValuesList)
-            assocIdValuesList.mapIndexed { idx, id -> id to assocRefValues[idx] }.toMap()
-        } else {
-            emptyMap()
-        }
+        this.assocIdValues = assocIdValues.toList()
+        this.additionalRawAtts = recData
 
         defaultContentAtt = getDefaultContentAtt()
 
-        attTypes.forEach { (attId, attType) ->
-            recData[attId] = convertValue(attId, attType, recData[attId])
-        }
-        val assocInnerKeys = recData.keys.filter { it.contains('.') }
+        val assocInnerKeys = additionalRawAtts.keys.filter { it.contains('.') }
         if (assocInnerKeys.isEmpty() || assocsTypes.isEmpty()) {
             assocsInnerAdditionalAtts = emptyMap()
         } else {
             val complexAtts = LinkedHashMap<String, MutableMap<String, Any?>>()
 
             for (key in assocInnerKeys) {
-                val data = recData[key]
+                val data = additionalAtts[key]
                 val dotIdx = key.indexOf('.')
                 val keyFirst = key.substring(0, dotIdx)
-                if (recData[keyFirst] is EntityRef) {
+                if (additionalAtts[keyFirst] is EntityRef) {
                     continue
                 }
                 val keySecond = key.substring(dotIdx + 1)
@@ -303,7 +311,6 @@ class DbRecord(
             }
             assocsInnerAdditionalAtts = complexAtts
         }
-        this.additionalAtts = recData
     }
 
     private fun convertValue(attId: String, attType: AttributeType, value: Any?): Any? {
@@ -656,7 +663,7 @@ class DbRecord(
     }
 
     fun isCurrentUserHasReadPerms(): Boolean {
-        if (AuthContext.isRunAsSystem()) {
+        if (AuthContext.isRunAsSystem() || ctx.getUpdatedInTxnIds().contains(extId)) {
             return true
         }
         return permsValue.getRecordPerms().hasReadPerms()

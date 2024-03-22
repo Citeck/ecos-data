@@ -120,7 +120,6 @@ class DbRecordsDao(
     private val entityPermsService: DbEntityPermsService = tableContext.getPermsService()
 
     private val listeners: MutableList<DbRecordsListener> = CopyOnWriteArrayList()
-    private val recsUpdatedInThisTxnKey = IdentityKey()
 
     private val recsPrepareToCommitTxnKey = IdentityKey()
 
@@ -297,9 +296,17 @@ class DbRecordsDao(
                 if (id.isEmpty()) {
                     DbEmptyRecord(daoCtx)
                 } else {
-                    findDbEntityByExtId(id, queryCtx.expressionsCtx.getExpressions())?.let {
+
+                    val record = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
+                        dataService.findByExtId(id, queryCtx.expressionsCtx.getExpressions())
+                    }?.let {
                         DbRecord(daoCtx, queryCtx.expressionsCtx.mapEntityAtts(it), queryCtx)
-                    } ?: EmptyAttValue.INSTANCE
+                    }
+                    if (record == null || !record.isCurrentUserHasReadPerms()) {
+                        EmptyAttValue.INSTANCE
+                    } else {
+                        record
+                    }
                 }
             }
         }
@@ -311,10 +318,7 @@ class DbRecordsDao(
             dataService.findByExtId(extId, expressions)
         } ?: return null
 
-        if (getUpdatedInTxnIds().contains(extId) || AuthContext.isRunAsSystem()) {
-            return entity
-        }
-        if (getRecordPerms(extId).hasReadPerms()) {
+        if (DbRecord(daoCtx, entity).isCurrentUserHasReadPerms()) {
             return entity
         }
         return null
@@ -428,7 +432,7 @@ class DbRecordsDao(
                     }
                     prepareToCommitEntities.add(resultRecId)
                 }
-                getUpdatedInTxnIds(txn).add(resultRecId)
+                daoCtx.getUpdatedInTxnIds(txn).add(resultRecId)
 
                 resultRecId
             }
@@ -622,7 +626,7 @@ class DbRecordsDao(
 
         var recordPerms = DbRecordPermsContext(DbRecordAllowedAllPerms)
         if (!isNewEntity && !isRunAsSystem) {
-            if (!getUpdatedInTxnIds().contains(entityToMutate.extId)) {
+            if (!daoCtx.getUpdatedInTxnIds().contains(entityToMutate.extId)) {
                 recordPerms = getRecordPerms(entityToMutate.extId, currentRunAsUser, currentRunAsAuthorities)
                 if (!recordPerms.hasWritePerms()) {
                     error("Permissions Denied. You can't change record '${daoCtx.getGlobalRef(record.id)}'")
@@ -1253,12 +1257,6 @@ class DbRecordsDao(
         } else {
             EcosContentStorageConfig(storageRef, typeInfo.contentConfig.storageConfig)
         }
-    }
-
-    private fun getUpdatedInTxnIds(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<String> {
-        // If user has already modified a record in this transaction,
-        // he can modify it again until commit without checking permissions.
-        return txn?.getData(AuthContext.getCurrentRunAsUser() to recsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
     }
 
     /**

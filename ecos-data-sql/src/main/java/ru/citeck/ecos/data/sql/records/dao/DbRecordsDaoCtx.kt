@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao
 
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.context.DbTableContext
@@ -28,6 +29,8 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.value.AttValuesConverter
+import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.txn.lib.transaction.Transaction
 import ru.citeck.ecos.webapp.api.content.EcosContentApi
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.web.client.EcosWebClientApi
@@ -61,6 +64,8 @@ class DbRecordsDaoCtx(
     val deleteDao: DbRecordsDeleteDao by lazy { DbRecordsDeleteDao(this) }
     val queryDao: DbRecordsQueryDao by lazy { DbRecordsQueryDao(this) }
     val authoritiesApi = dataService.getTableContext().getAuthoritiesApi()
+
+    private val recsUpdatedInThisTxnKey = IdentityKey()
 
     fun getLocalRef(extId: String): EntityRef {
         return EntityRef.create(appName, sourceId, extId)
@@ -142,4 +147,12 @@ class DbRecordsDaoCtx(
         val nonEmptyUserName = userName.ifBlank { AuthUser.ANONYMOUS }
         return authoritiesApi.getPersonRef(nonEmptyUserName)
     }
+
+    fun getUpdatedInTxnIds(txn: Transaction? = TxnContext.getTxnOrNull()): MutableSet<String> {
+        // If user has already modified a record in this transaction,
+        // he can modify it again until commit without checking permissions.
+        return txn?.getData(AuthContext.getCurrentRunAsUser() to recsUpdatedInThisTxnKey) { HashSet() } ?: HashSet()
+    }
+
+    private class IdentityKey
 }
