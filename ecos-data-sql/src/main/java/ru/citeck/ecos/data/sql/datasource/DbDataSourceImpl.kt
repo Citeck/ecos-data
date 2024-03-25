@@ -203,17 +203,17 @@ class DbDataSourceImpl(
                 error("Write transaction can't be started from readOnly context")
             }
             return if (currentTxn.readOnly == readOnly) {
-                action.invoke()
+                doAndLogTime("action with existing same ro connection") { action.invoke() }
             } else {
                 currentThreadTxn.set(TxnState(readOnly, currentTxn.connection))
                 try {
-                    action.invoke()
+                    doAndLogTime("action with existing different ro connection") { action.invoke() }
                 } finally {
                     currentThreadTxn.set(currentTxn)
                 }
             }
         } else {
-            return javaDataSource.connection.use { connection ->
+            return doAndLogTime("get connection") { javaDataSource.connection }.use { connection ->
                 val autoCommitBefore = connection.autoCommit
                 val readOnlyBefore = connection.isReadOnly
                 if (!dataSource.isManaged()) {
@@ -226,7 +226,7 @@ class DbDataSourceImpl(
                 }
                 try {
                     currentThreadTxn.set(TxnState(readOnly, connection))
-                    val actionRes = action.invoke()
+                    val actionRes = doAndLogTime("action with new connection") { action.invoke() }
                     if (!dataSource.isManaged()) {
                         connection.commit()
                     }
@@ -257,6 +257,16 @@ class DbDataSourceImpl(
                 }
             }
         }
+    }
+
+    private inline fun <T> doAndLogTime(description: String, crossinline action: () -> T): T {
+        val started = System.currentTimeMillis()
+        val result = action.invoke()
+        val elapsedTime = System.currentTimeMillis() - started
+        if (elapsedTime > 100) {
+            log.trace { "$description elapsed time: $elapsedTime" }
+        }
+        return result
     }
 
     class TxnState(
