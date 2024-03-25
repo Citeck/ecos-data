@@ -9,6 +9,10 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.records2.predicate.model.Predicate
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.dao.impl.proxy.RecordsDaoProxy
 import ru.citeck.ecos.records3.record.request.RequestContext
@@ -17,6 +21,76 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.lang.RuntimeException
 
 class DbRecordsChildNodesTest : DbRecordsTestBase() {
+
+    @Test
+    fun testQueryByChildAssoc() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("strField")
+                },
+                AttributeDef.create {
+                    withId("targetSingleAssoc")
+                    withType(AttributeType.ASSOC)
+                },
+                AttributeDef.create {
+                    withId("childAssoc")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                    withConfig(ObjectData.create("""{"child":true}"""))
+                }
+            )
+        )
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
+
+        registerType(
+            TypeInfo.create()
+                .withId("child-type")
+                .withParentRef(REC_TEST_TYPE_REF)
+                .withQueryPermsPolicy(QueryPermsPolicy.OWN)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create {
+                                    withId("childTypeAssoc")
+                                    withType(AttributeType.ASSOC)
+                                }
+                            )
+                        ).build()
+                )
+                .build()
+        )
+
+        val rec0 = createRecord()
+        val rec1 = createRecord(
+            "childAssoc" to rec0,
+            "targetSingleAssoc" to rec0
+        )
+        val rec2 = createRecord(
+            "childTypeAssoc" to rec0,
+            "_type" to "emodel/type@child-type"
+        )
+
+        setAuthoritiesWithReadPerms(rec1, setOf("admin"))
+        setAuthoritiesWithReadPerms(rec2, setOf("admin"))
+
+        fun queryTest(predicate: Predicate, vararg expected: EntityRef) {
+            val queryRes = AuthContext.runAs("admin") {
+                records.query(
+                    baseQuery.copy()
+                        .withQuery(predicate)
+                        .build()
+                )
+            }
+            assertThat(queryRes.getRecords()).containsExactly(*expected)
+        }
+
+        queryTest(Predicates.eq("childAssoc", rec0), rec1)
+        queryTest(Predicates.eq("targetSingleAssoc", rec0), rec1)
+        queryTest(Predicates.eq("childTypeAssoc", rec0), rec2)
+    }
 
     @Test
     fun testWithParentChange() {

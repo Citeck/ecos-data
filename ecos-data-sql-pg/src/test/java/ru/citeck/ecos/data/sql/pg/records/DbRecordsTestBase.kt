@@ -254,7 +254,13 @@ abstract class DbRecordsTestBase {
 
                 override fun createTypesRepo(): TypesRepo {
                     return object : TypesRepo {
-                        override fun getChildren(typeRef: EntityRef) = emptyList<EntityRef>()
+                        override fun getChildren(typeRef: EntityRef): List<EntityRef> {
+                            return typesInfo.values.filter {
+                                it.parentRef == typeRef
+                            }.map {
+                                ModelUtils.getTypeRef(it.id)
+                            }
+                        }
                         override fun getTypeInfo(typeRef: EntityRef): TypeInfo? {
                             return typesInfo[typeRef.getLocalId()]
                         }

@@ -62,6 +62,27 @@ class DbEcosModelService(
         }
     }
 
+    fun getAttDefFromChildrenTypes(typeId: String, attId: String): AttributeDef? {
+        if (typeId.isBlank()) {
+            return null
+        }
+        val children = typesRepo.getChildren(ModelUtils.getTypeRef(typeId))
+        for (childRef in children) {
+            val info = typesRepo.getTypeInfo(childRef) ?: continue
+            val attDef = info.model.attributes.find { it.id == attId }
+            if (attDef != null) {
+                return attDef
+            }
+        }
+        for (childRef in children) {
+            val attDef = getAttDefFromChildrenTypes(childRef.getLocalId(), attId)
+            if (attDef != null) {
+                return attDef
+            }
+        }
+        return null
+    }
+
     fun getTypeInfoNotNull(typeId: String): TypeInfo {
         return getTypeInfo(typeId) ?: error("TypeInfo is not found for id '$typeId'")
     }

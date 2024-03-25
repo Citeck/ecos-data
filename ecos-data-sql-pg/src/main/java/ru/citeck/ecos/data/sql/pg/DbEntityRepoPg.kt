@@ -1423,13 +1423,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                                     queryParams.add(offsetDateTime)
                                 }
                             } else if (value.isTextual()) {
-                                when (columnDef.type) {
-                                    DbColumnType.DOUBLE -> value.asDouble()
-                                    DbColumnType.INT -> value.asLong()
-                                    DbColumnType.LONG -> value.asLong()
-                                    DbColumnType.BIGSERIAL -> value.asLong()
-                                    else -> queryParams.add(value.asJavaObj())
-                                }
+                                queryParams.add(
+                                    when (columnDef.type) {
+                                        DbColumnType.DOUBLE -> value.asDouble()
+                                        DbColumnType.INT -> value.asLong()
+                                        DbColumnType.LONG -> value.asLong()
+                                        DbColumnType.BIGSERIAL -> value.asLong()
+                                        else -> value.asJavaObj()
+                                    }
+                                )
                             } else {
                                 queryParams.add(value.asJavaObj())
                             }
