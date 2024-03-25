@@ -155,6 +155,8 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         }
         val resultMaxItems = if (page.maxItems == -1) {
             config.queryMaxItems
+        } else if (config.queryMaxItems == -1) {
+            page.maxItems
         } else {
             min(page.maxItems, config.queryMaxItems)
         }

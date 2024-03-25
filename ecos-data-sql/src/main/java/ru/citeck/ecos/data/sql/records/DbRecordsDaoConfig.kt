@@ -40,7 +40,7 @@ data class DbRecordsDaoConfig(
         var insertable: Boolean = true
         var updatable: Boolean = true
         var deletable: Boolean = true
-        var queryMaxItems: Int = 5000
+        var queryMaxItems: Int = 10000
         var authEnabled: Boolean = false
 
         constructor(base: DbRecordsDaoConfig) : this() {
@@ -79,7 +79,7 @@ data class DbRecordsDaoConfig(
         }
 
         fun withQueryMaxItems(queryMaxItems: Int?): Builder {
-            this.queryMaxItems = queryMaxItems ?: 5000
+            this.queryMaxItems = queryMaxItems ?: 10000
             return this
         }
 
