@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.datasource
 import mu.KotlinLogging
 import ru.citeck.ecos.commons.task.SystemScheduler
 import ru.citeck.ecos.commons.task.schedule.Schedules
+import ru.citeck.ecos.micrometer.EcosMicrometerContext
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.txn.lib.transaction.Transaction
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
@@ -12,7 +13,10 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
+class DbDataSourceImpl(
+    private val dataSource: JdbcDataSource,
+    private val micrometerContext: EcosMicrometerContext = EcosMicrometerContext.NOOP
+) : DbDataSource {
 
     companion object {
         private val log = KotlinLogging.logger {}
@@ -42,7 +46,7 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
         withConnection { connection ->
             thSchemaCommands.get()?.add(query)
             if (!thSchemaMock.get()) {
-                execSqlQuery(query, true) { query ->
+                execSqlQuery(query, DbDsQueryType.SCHEMA_UPDATE, emptyList()) { query ->
                     connection.createStatement().executeUpdate(query)
                 }
             }
@@ -57,7 +61,7 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
 
     override fun <T> query(query: String, params: List<Any?>, action: (ResultSet) -> T): T {
         return withConnection { connection ->
-            val result = execSqlQuery(query, false) { query ->
+            val result = execSqlQuery(query, DbDsQueryType.SELECT, params) { query ->
                 connection.prepareStatement(query).use { statement ->
                     setParams(connection, statement, params)
                     statement.executeQuery().use { action.invoke(it) }
@@ -69,7 +73,7 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
 
     override fun update(query: String, params: List<Any?>): List<Long> {
         return withConnection { connection ->
-            execSqlQuery(query, false) { query ->
+            execSqlQuery(query, DbDsQueryType.UPDATE, params) { query ->
                 connection.prepareStatement(query).use { statement ->
                     setParams(connection, statement, params)
                     if (query.contains("RETURNING id")) {
@@ -88,7 +92,12 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
         }
     }
 
-    private inline fun <T> execSqlQuery(query: String, schemaUpdate: Boolean, impl: (String) -> T): T {
+    private inline fun <T> execSqlQuery(
+        query: String,
+        type: DbDsQueryType,
+        params: List<Any?>,
+        crossinline impl: (String) -> T
+    ): T {
 
         val transaction = TxnContext.getTxnOrNull()
         val activeQueryData = ActiveQueryData(transaction, Thread.currentThread(), query)
@@ -96,7 +105,16 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
         activeQueries.add(activeQueryData)
 
         try {
-            val res = impl.invoke(query)
+            val res = micrometerContext.createObs(
+                DbDsQueryObsCtx(
+                    dataSource,
+                    query,
+                    type,
+                    params
+                )
+            ).observe {
+                impl.invoke(query)
+            }
             activeQueryData.status = QueryStatus.COMPLETED
             return res
         } catch (e: Throwable) {
@@ -110,7 +128,7 @@ class DbDataSourceImpl(private val dataSource: JdbcDataSource) : DbDataSource {
             val time = System.currentTimeMillis() - activeQueryData.startTime
             if (activeQueryData.status == QueryStatus.ERROR) {
                 log.error { activeQueryData.getMessage(time) }
-            } else if (schemaUpdate) {
+            } else if (type == DbDsQueryType.SCHEMA_UPDATE) {
                 if (time < 30_000) {
                     log.info { activeQueryData.getMessage(time) }
                 } else {
