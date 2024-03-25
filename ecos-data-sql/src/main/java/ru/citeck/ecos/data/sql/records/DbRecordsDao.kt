@@ -280,6 +280,8 @@ class DbRecordsDao(
 
     override fun getRecordsAtts(recordIds: List<String>): List<AttValue> {
 
+        log.trace { "[Get record atts] Called for records $recordIds" }
+
         val queryCtx = DbFindQueryContext(
             daoCtx,
             config.typeRef.getLocalId(),
@@ -291,20 +293,29 @@ class DbRecordsDao(
             queryCtx.registerSelectAtt(it.name, false)
         }
 
+        log.trace { "[Get record atts] Context prepared for records $recordIds" }
+
         return TxnContext.doInTxn(readOnly = true) {
             recordIds.map { id ->
                 if (id.isEmpty()) {
                     DbEmptyRecord(daoCtx)
                 } else {
 
+                    log.trace { "[Get record atts] Process $id inside transaction" }
+
                     val record = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
                         dataService.findByExtId(id, queryCtx.expressionsCtx.getExpressions())
                     }?.let {
+                        log.trace { "[Get record atts] Entity was found for id $id" }
                         DbRecord(daoCtx, queryCtx.expressionsCtx.mapEntityAtts(it), queryCtx)
                     }
+                    log.trace { "[Get record atts] DbRecord was created for id $id" }
+
                     if (record == null || !record.isCurrentUserHasReadPerms()) {
+                        log.trace { "[Get record atts] User doesn't have permissions for $id or record doesn't exists" }
                         EmptyAttValue.INSTANCE
                     } else {
+                        log.trace { "[Get record atts] Record $id available and will be returned from getRecordAtts" }
                         record
                     }
                 }
