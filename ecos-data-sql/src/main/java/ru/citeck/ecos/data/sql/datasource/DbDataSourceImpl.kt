@@ -203,17 +203,17 @@ class DbDataSourceImpl(
                 error("Write transaction can't be started from readOnly context")
             }
             return if (currentTxn.readOnly == readOnly) {
-                doAndLogTime("action with existing same ro connection") { action.invoke() }
+                doAndLogSlowProcessing("action with existing same ro connection") { action.invoke() }
             } else {
                 currentThreadTxn.set(TxnState(readOnly, currentTxn.connection))
                 try {
-                    doAndLogTime("action with existing different ro connection") { action.invoke() }
+                    doAndLogSlowProcessing("action with existing different ro connection") { action.invoke() }
                 } finally {
                     currentThreadTxn.set(currentTxn)
                 }
             }
         } else {
-            return doAndLogTime("get connection") { javaDataSource.connection }.use { connection ->
+            return doAndLogSlowProcessing("get connection") { javaDataSource.connection }.use { connection ->
                 val autoCommitBefore = connection.autoCommit
                 val readOnlyBefore = connection.isReadOnly
                 if (!dataSource.isManaged()) {
@@ -226,7 +226,7 @@ class DbDataSourceImpl(
                 }
                 try {
                     currentThreadTxn.set(TxnState(readOnly, connection))
-                    val actionRes = doAndLogTime("action with new connection") { action.invoke() }
+                    val actionRes = doAndLogSlowProcessing("action with new connection") { action.invoke() }
                     if (!dataSource.isManaged()) {
                         connection.commit()
                     }
@@ -259,13 +259,22 @@ class DbDataSourceImpl(
         }
     }
 
-    private inline fun <T> doAndLogTime(description: String, crossinline action: () -> T): T {
+    private inline fun <T> doAndLogSlowProcessing(description: String, crossinline action: () -> T): T {
         val started = System.currentTimeMillis()
         val result = action.invoke()
         val elapsedTime = System.currentTimeMillis() - started
-        if (elapsedTime > 100) {
-            log.trace { "$description elapsed time: $elapsedTime" }
+
+        if (elapsedTime < 100) {
+            return result
         }
+
+        when (elapsedTime) {
+            in 100..500 -> log.trace { "$description elapsed time: $elapsedTime ms" }
+            in 500..2000 -> log.info { "$description elapsed time: $elapsedTime ms" }
+            in 2000..10000 -> log.warn { "$description elapsed time: $elapsedTime ms" }
+            else -> log.error { "$description elapsed time: $elapsedTime ms" }
+        }
+
         return result
     }
 
