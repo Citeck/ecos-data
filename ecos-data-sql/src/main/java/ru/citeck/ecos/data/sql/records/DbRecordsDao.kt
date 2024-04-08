@@ -406,11 +406,21 @@ class DbRecordsDao(
         if (!config.updatable) {
             error("Records DAO is not mutable. Record can't be mutated: '${record.id}'")
         }
-        if (dataService.getSchemaVersion() != DbDataService.NEW_TABLE_SCHEMA_VERSION) {
+        val currentSchemaVer = dataService.getSchemaVersion()
+        if (currentSchemaVer < DbDataService.NEW_TABLE_SCHEMA_VERSION) {
             error(
-                "Records can't be mutated until schema version will be fully migrated. " +
-                    "Current schema version: ${dataService.getSchemaVersion()} " +
+                "Records can't be mutated until current schema version will be fully migrated. " +
+                    "Current schema version: $currentSchemaVer " +
                     "Expected schema version: ${DbDataService.NEW_TABLE_SCHEMA_VERSION}"
+            )
+        } else if (currentSchemaVer > DbDataService.NEW_TABLE_SCHEMA_VERSION) {
+            error(
+                "Records can't be mutated because the current schema version ($currentSchemaVer) is greater " +
+                    "than the expected schema version (${DbDataService.NEW_TABLE_SCHEMA_VERSION}). " +
+                    "This likely means that the ecos-data library was downgraded after executing migrations from a newer version. " +
+                    "To resolve this issue:\n" +
+                    "    |- Update the ecos-data library to the latest version that supports the current schema, or\n" +
+                    "    |- Downgrade the database schema to match the expected schema version (${DbDataService.NEW_TABLE_SCHEMA_VERSION})."
             )
         }
         return TxnContext.doInTxn {
