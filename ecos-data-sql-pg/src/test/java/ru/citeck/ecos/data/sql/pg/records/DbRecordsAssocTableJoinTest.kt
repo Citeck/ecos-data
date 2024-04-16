@@ -27,6 +27,38 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
     private lateinit var childDao: RecordsDaoTestCtx
 
     @Test
+    fun testExpressionWithJoin() {
+
+        val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 10)
+        val targetRec1 = targetDao.createRecord("targetText" to "def", "targetNum" to 100)
+
+        val rec0 = createRecord("assocAtt" to targetRec0, "numAtt" to 22)
+        val rec1 = createRecord("assocAtt" to targetRec0, "numAtt" to 23)
+        createRecord("assocAtt" to targetRec0, "numAtt" to 24)
+        createRecord("assocAtt" to targetRec0, "numAtt" to 25)
+        createRecord("assocAtt" to targetRec1, "numAtt" to 44)
+        createRecord("assocAtt" to targetRec1, "numAtt" to 44)
+        createRecord("assocAtt" to targetRec1, "numAtt" to 44)
+        val rec4 = createRecord("assocAtt" to targetRec1, "numAtt" to 100)
+
+        val res = records.query(
+            baseQuery.copy()
+                .withQuery(Predicates.ge("(numAtt - assocAtt.targetNum)", 0))
+                .withSortBy(SortBy("(numAtt - assocAtt.targetNum)", true))
+                // Test COUNT(*) query. If maxItems > (result records).size, then COUNT(*) won't be executed
+                .withMaxItems(3)
+                .build(),
+            listOf(
+                "assocAtt._name?disp",
+                "assocAtt.targetNum",
+                "(numAtt - assocAtt.targetNum)"
+            )
+        )
+
+        assertThat(res.getRecords().map { it.getId() }).containsExactly(rec4, rec0, rec1)
+    }
+
+    @Test
     fun testWithNonExistentColumn() {
 
         val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 1)
