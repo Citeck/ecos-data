@@ -527,8 +527,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         rawTableJoins: Map<String, RawTableJoin>
     ): Long {
 
-        val groupHasDotAtts = groupBy.any { it.contains('.') }
-
         val selectQuery = createSelectQuery(
             context,
             table,
@@ -540,16 +538,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             DbFindPage.ALL,
             emptyMap(),
             groupBy,
-            if (groupHasDotAtts) {
-                assocSelectJoins
-            } else {
-                emptyMap()
-            },
-            if (groupHasDotAtts) {
-                rawTableJoins
-            } else {
-                emptyMap()
-            }
+            assocSelectJoins,
+            rawTableJoins
         )
         if (selectQuery.contains(WHERE_ALWAYS_FALSE)) {
             return 0
