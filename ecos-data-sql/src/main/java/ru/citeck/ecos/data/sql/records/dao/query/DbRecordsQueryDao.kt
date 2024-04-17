@@ -35,6 +35,13 @@ import kotlin.math.min
 class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
 
     companion object {
+        private const val ATT_DBID = "dbid"
+        private const val COMPLEX_TYPE_CONDITION_PREFIX = "_type."
+        private const val TYPE_ATT_ID = "id"
+        private const val TYPE_ATT_NAME = "name"
+        private const val TYPE_SRC_ID = "emodel/type"
+        private const val TYPE_REF_ID_PREFIX = "$TYPE_SRC_ID@"
+
         private val log = KotlinLogging.logger {}
     }
 
@@ -138,11 +145,15 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                     if (groupBy.isNotEmpty() && !groupBy.contains(sortAtt) && !sortAtt.contains("(")) {
                         null
                     } else {
-                        val newAtt = queryCtx.registerSelectAtt(sortBy.attribute, false)
-                        if (newAtt.isNotEmpty()) {
-                            DbFindSort(newAtt, sortBy.ascending)
+                        if (sortAtt == ATT_DBID) {
+                            DbFindSort(DbEntity.ID, sortBy.ascending)
                         } else {
-                            null
+                            val newAtt = queryCtx.registerSelectAtt(sortBy.attribute, false)
+                            if (newAtt.isNotEmpty()) {
+                                DbFindSort(newAtt, sortBy.ascending)
+                            } else {
+                                null
+                            }
                         }
                     }
                 }
@@ -277,7 +288,10 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             typeData.getQueryPermsPolicy()
         }
 
-        val predicateWithConvertedAssocs = replaceAssocRefsToIds(predicate, typeData)
+        val predicateWithConvertedAssocs = replaceComplexTypePredicate(
+            replaceAssocRefsToIdsAndMergeOrPredicates(predicate, typeData),
+            queryCtx
+        )
 
         val processedPredicate = DbRecordsQueryUtils.mapAttributePredicates(
             predicateWithConvertedAssocs,
@@ -288,7 +302,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                 when (attribute) {
                     RecordConstants.ATT_TYPE -> {
                         typePredicateExists = true
-                        processTypePredicate(currentPred)
+                        processTypePredicate(currentPred, queryCtx)
                     }
 
                     RecordConstants.ATT_PARENT_ATT -> {
@@ -341,15 +355,25 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                             currentPred
                         }
 
-                        if (newPred is ValuePredicate && newPred.getType() == ValuePredicate.Type.EQ) {
-                            if (newPred.getAttribute() == DbEntity.NAME || attDef?.type == AttributeType.MLTEXT) {
-                                // MLText fields stored as json text like '{"en":"value"}'
-                                // and for equals predicate we should use '"value"' instead of 'value' to search
-                                // and replace "EQ" to "CONTAINS"
+                        if (newPred is ValuePredicate && (newPred.getAttribute() == DbEntity.NAME || attDef?.type == AttributeType.MLTEXT)) {
+                            // MLText fields stored as json text like '{"en":"value"}'
+                            // and we should pre-process predicate in some cases
+                            if (newPred.getType() == ValuePredicate.Type.EQ) {
+                                // For equals predicate we should use '"value"'
+                                // instead of 'value' to search and replace "EQ" to "CONTAINS"
                                 newPred = ValuePredicate(
                                     newPred.getAttribute(),
                                     ValuePredicate.Type.CONTAINS,
                                     DataValue.createStr(newPred.getValue().toString())
+                                )
+                            } else if (newPred.getType() == ValuePredicate.Type.LIKE) {
+                                newPred = ValuePredicate(
+                                    newPred.getAttribute(),
+                                    ValuePredicate.Type.LIKE,
+                                    // Warning: getValue().toString() return escaped value in quotes
+                                    // getValue().asText() return unescaped value without quotes
+                                    // and should not be used here
+                                    DataValue.createStr("%" + newPred.getValue() + "%")
                                 )
                             }
                         }
@@ -503,7 +527,47 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         )
     }
 
-    private fun replaceAssocRefsToIds(predicate: Predicate, typeData: DbQueryTypeInfoData): Predicate {
+    private fun replaceComplexTypePredicate(predicate: Predicate, queryCtx: DbFindQueryContext): Predicate {
+
+        val typePredicates = AndPredicate()
+        val predicateWithoutComplexTypeConditions = PredicateUtils.mapValuePredicates(predicate, { pred ->
+            val attribute = pred.getAttribute()
+            if (attribute.startsWith(COMPLEX_TYPE_CONDITION_PREFIX)) {
+                typePredicates.addPredicate(
+                    ValuePredicate(
+                        attribute.substring(COMPLEX_TYPE_CONDITION_PREFIX.length),
+                        pred.getType(),
+                        pred.getValue()
+                    )
+                )
+                null
+            } else {
+                pred
+            }
+        }, onlyAnd = true, optimize = false)
+
+        if (typePredicates.getPredicates().isEmpty()) {
+            return predicate
+        }
+
+        val typeRefsInTable = queryCtx.getTypeRefsInTable()
+        if (typeRefsInTable.isEmpty()) {
+            return Predicates.alwaysFalse()
+        }
+        val typesRefs = queryTypes(typePredicates, queryCtx)
+        if (typesRefs.isEmpty()) {
+            return Predicates.alwaysFalse()
+        }
+        return Predicates.and(
+            predicateWithoutComplexTypeConditions,
+            Predicates.inVals(RecordConstants.ATT_TYPE, typesRefs.map { it.toString() })
+        )
+    }
+
+    private fun replaceAssocRefsToIdsAndMergeOrPredicates(
+        predicate: Predicate,
+        typeData: DbQueryTypeInfoData
+    ): Predicate {
 
         return DbRecordsQueryUtils.mapAttributePredicates(predicate, true) {
             val attId = it.getAttribute()
@@ -554,9 +618,71 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         return value
     }
 
-    private fun processTypePredicate(predicate: ValuePredicate): Predicate {
-        val value = predicate.getValue()
-        return when (predicate.getType()) {
+    private fun resolveTypeByNonId(
+        value: DataValue,
+        predType: ValuePredicate.Type,
+        queryCtx: DbFindQueryContext
+    ): Pair<DataValue, ValuePredicate.Type>? {
+
+        if (!value.isTextual()) {
+            return value to predType
+        }
+
+        val typeStr = value.asText()
+
+        if (typeStr.startsWith(TYPE_REF_ID_PREFIX) ||
+            ecosTypeService.getTypeInfo(typeStr) != null ||
+            daoCtx.recordsService.getRecordsDao(TYPE_SRC_ID) == null
+        ) {
+            return value to predType
+        }
+        val typeRefsInTable = queryCtx.getTypeRefsInTable().map { it.getLocalId() }
+        if (typeRefsInTable.isEmpty()) {
+            return null
+        }
+        val typesRefs = queryTypes(ValuePredicate(TYPE_ATT_NAME, predType, typeStr), queryCtx)
+        if (typesRefs.isEmpty()) {
+            return null
+        }
+        return DataValue.create(typesRefs) to ValuePredicate.Type.EQ
+    }
+
+    private fun queryTypes(predicate: Predicate, queryCtx: DbFindQueryContext): List<EntityRef> {
+
+        val typeRefsInTable = queryCtx.getTypeRefsInTable().map { it.getLocalId() }
+        if (typeRefsInTable.isEmpty()) {
+            return emptyList()
+        }
+
+        return daoCtx.recordsService.query(
+            RecordsQuery.create()
+                .withSourceId(TYPE_SRC_ID)
+                .withQuery(
+                    Predicates.and(
+                        Predicates.inVals(TYPE_ATT_ID, typeRefsInTable),
+                        predicate
+                    )
+                )
+                .build()
+        ).getRecords()
+    }
+
+    private fun processTypePredicate(predicate: ValuePredicate, queryCtx: DbFindQueryContext): Predicate {
+        var value = predicate.getValue()
+        var predType: ValuePredicate.Type = predicate.getType()
+        when (predicate.getType()) {
+            ValuePredicate.Type.EQ,
+            ValuePredicate.Type.CONTAINS,
+            ValuePredicate.Type.LIKE -> {
+                val valueWithType = resolveTypeByNonId(value, predType, queryCtx)
+                    ?: return Predicates.alwaysFalse()
+                value = valueWithType.first
+                predType = valueWithType.second
+            }
+
+            else -> {}
+        }
+        return when (predType) {
             ValuePredicate.Type.EQ,
             ValuePredicate.Type.CONTAINS,
             ValuePredicate.Type.IN -> {
@@ -577,16 +703,16 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                         ModelUtils.getTypeRef(it)
                     }
                 )
-                if (predicate.getType() != ValuePredicate.Type.IN) {
+                if (predType != ValuePredicate.Type.IN) {
                     if (expandedValueIds.size > 1) {
                         ValuePredicate(DbEntity.TYPE, ValuePredicate.Type.IN, expandedValueIds)
                     } else if (expandedValueIds.size == 1) {
-                        ValuePredicate(DbEntity.TYPE, predicate.getType(), expandedValueIds.first())
+                        ValuePredicate(DbEntity.TYPE, predType, expandedValueIds.first())
                     } else {
                         Predicates.alwaysTrue()
                     }
                 } else {
-                    ValuePredicate(DbEntity.TYPE, predicate.getType(), expandedValueIds)
+                    ValuePredicate(DbEntity.TYPE, predType, expandedValueIds)
                 }
             }
 
