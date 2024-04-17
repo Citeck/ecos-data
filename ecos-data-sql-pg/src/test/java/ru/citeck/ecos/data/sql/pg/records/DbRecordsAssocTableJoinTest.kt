@@ -56,6 +56,19 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         )
 
         assertThat(res.getRecords().map { it.getId() }).containsExactly(rec4, rec0, rec1)
+
+        val res1 = records.query(
+            baseQuery.copy()
+                // test with expression which is not part of groupBy
+                .withQuery(Predicates.gt("(numAtt - assocAtt.targetNum)", 0))
+                .withGroupBy(listOf("assocAtt.targetText"))
+                .build(),
+            mapOf("text" to "assocAtt.targetText", "count" to "count(*)")
+        ).getRecords()
+
+        assertThat(res1).hasSize(1)
+        assertThat(res1[0]["text"].asText()).isEqualTo("abc")
+        assertThat(res1[0]["count"].asInt()).isEqualTo(4)
     }
 
     @Test

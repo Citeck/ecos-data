@@ -8,6 +8,9 @@ import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
+import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.data.sql.repo.find.DbFindPage
+import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
@@ -46,6 +49,8 @@ class DbFindQueryContext(
 
     private val assocsTypes: MutableMap<String, String> = HashMap()
 
+    private var typeRefsInTable: List<EntityRef>? = null
+
     init {
         mainTypeInfo.getAttributesById().values.forEach {
             if (DbRecordsUtils.isAssocLikeAttribute(it)) {
@@ -55,6 +60,27 @@ class DbFindQueryContext(
                 }
             }
         }
+    }
+
+    fun getTypeRefsInTable(): List<EntityRef> {
+        var typeRefs = typeRefsInTable
+        if (typeRefs == null) {
+            val typesInTable = ctx.dataService.find(
+                DbFindQuery.create()
+                    .withGroupBy(listOf(DbEntity.TYPE))
+                    .build(),
+                DbFindPage.ALL,
+                false
+            ).entities.map { it.type }
+
+            typeRefs = if (typesInTable.isEmpty()) {
+                emptyList()
+            } else {
+                ctx.recordRefService.getEntityRefsByIds(typesInTable)
+            }
+            typeRefsInTable = typeRefs
+        }
+        return typeRefs
     }
 
     fun registerSelectAtt(attribute: String, strict: Boolean): String {

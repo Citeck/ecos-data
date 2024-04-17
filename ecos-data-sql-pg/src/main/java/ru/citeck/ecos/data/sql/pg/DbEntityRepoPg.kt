@@ -18,8 +18,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.RawTableJoin
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
-import ru.citeck.ecos.data.sql.service.expression.token.ColumnToken
-import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
+import ru.citeck.ecos.data.sql.service.expression.token.*
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
@@ -31,6 +30,7 @@ import java.sql.Timestamp
 import java.time.*
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.collections.HashSet
 import kotlin.reflect.KClass
 
 open class DbEntityRepoPg internal constructor() : DbEntityRepo {
@@ -101,7 +101,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         row: ResultSet,
         columns: List<DbColumnDef>,
         groupBy: List<String> = emptyList(),
-        expressions: Map<String, ExpressionToken> = emptyMap(),
+        selectExpressions: Set<String>,
         asjAliases: Map<String, String>
     ): Map<String, Any?> {
         val result = LinkedHashMap<String, Any?>()
@@ -118,13 +118,13 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                     null
                 }
             }
-            expressions.forEach {
-                result[it.key] = row.getObject(it.key)
+            selectExpressions.forEach {
+                result[it] = row.getObject(it)
             }
         } else {
             val columnByName = columns.associateBy { it.name }
             groupBy.forEach {
-                if (it != "*" && !expressions.containsKey(it)) {
+                if (it != "*" && !selectExpressions.contains(it)) {
                     val alias = asjAliases[it]
                     if (alias != null) {
                         result[it] = row.getObject(alias)
@@ -139,8 +139,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                     }
                 }
             }
-            expressions.forEach {
-                result[it.key] = row.getObject(it.key)
+            selectExpressions.forEach {
+                result[it] = row.getObject(it)
             }
         }
         return result
@@ -647,6 +647,20 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 params
             )
 
+        val selectExpressions = HashSet<String>(sqlExpressionsByAlias.keys)
+        if (queryGroupBy.isNotEmpty()) {
+            val groupByExpressions = queryGroupBy.mapTo(HashSet()) {
+                query.expressions[it] ?: ColumnToken(it)
+            }
+            query.expressions.forEach {
+                if (!queryGroupBy.contains(it.key) &&
+                    !isValidExpressionForQuerySelectAttWithGrouping(groupByExpressions, it.value)
+                ) {
+                    selectExpressions.remove(it.key)
+                }
+            }
+        }
+
         val asjAliases = HashMap<String, String>()
         val selectQuery = createSelectQuery(
             context,
@@ -662,7 +676,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             sqlExpressionsByAlias,
             query.assocSelectJoins,
             query.rawTableJoins,
-            asjAliases
+            asjAliases,
+            selectExpressions
         )
 
         val resultEntities = context.getDataSource().query(selectQuery, params) { resultSet ->
@@ -674,7 +689,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         resultSet,
                         columns,
                         queryGroupBy,
-                        query.expressions,
+                        selectExpressions,
                         asjAliases
                     )
                 )
@@ -713,7 +728,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         sqlExpressionsByAlias: Map<String, String>,
         assocSelectJoins: Map<String, DbTableContext>,
         rawTableJoins: Map<String, RawTableJoin>,
-        asjAliases: MutableMap<String, String>
+        asjAliases: MutableMap<String, String>,
+        selectExpressions: Set<String>
     ): String {
 
         val selectColumnsStr = StringBuilder()
@@ -768,7 +784,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             }
         }
 
-        for ((alias, expression) in sqlExpressionsByAlias) {
+        for (alias in selectExpressions) {
+            val expression = sqlExpressionsByAlias[alias] ?: continue
             selectColumnsStr.append(expression).append(" AS ").append(alias).append(",")
         }
 
@@ -788,6 +805,38 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             assocSelectJoins,
             rawTableJoins
         )
+    }
+
+    private fun isValidExpressionForQuerySelectAttWithGrouping(
+        groupBy: Set<ExpressionToken>,
+        expression: ExpressionToken?
+    ): Boolean {
+        expression ?: return true
+        if (groupBy.contains(expression)) {
+            return true
+        }
+        return if (expression is ColumnToken) {
+            groupBy.contains(expression)
+        } else if (expression is FunctionToken) {
+            if (expression.isAggregationFunc()) {
+                true
+            } else {
+                expression.args.all {
+                    isValidExpressionForQuerySelectAttWithGrouping(groupBy, it)
+                }
+            }
+        } else if (expression is GroupToken) {
+            expression.tokens.all {
+                isValidExpressionForQuerySelectAttWithGrouping(groupBy, it)
+            }
+        } else if (expression is CaseToken) {
+            expression.branches.all {
+                isValidExpressionForQuerySelectAttWithGrouping(groupBy, it.condition) &&
+                    isValidExpressionForQuerySelectAttWithGrouping(groupBy, it.thenResult)
+            } && isValidExpressionForQuerySelectAttWithGrouping(groupBy, expression.orElse)
+        } else {
+            true
+        }
     }
 
     private fun createSelectQuery(

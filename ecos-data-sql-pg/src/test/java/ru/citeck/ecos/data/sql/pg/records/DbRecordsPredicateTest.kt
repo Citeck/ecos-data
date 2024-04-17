@@ -3,15 +3,108 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.DataValue
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.records3.record.dao.impl.mem.InMemDataRecordsDao
+import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.Instant
 import java.time.LocalDate
 
 class DbRecordsPredicateTest : DbRecordsTestBase() {
+
+    @Test
+    fun testWithType() {
+        records.register(InMemDataRecordsDao("emodel/type"))
+        records.mutate(
+            "emodel/type@",
+            mapOf(
+                "id" to REC_TEST_TYPE_ID,
+                "name" to ObjectData.create().set("ru", "Русский").set("en", "English"),
+                "config" to ObjectData.create()
+                    .set("key", "value")
+                    .set("inner", ObjectData.create().set("innerKey", "innerValue"))
+            )
+        )
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("text")
+                    withType(AttributeType.TEXT)
+                }
+            )
+        )
+        val rec0 = createRecord("text" to "abc")
+
+        fun queryTest(condition: Predicate, vararg expected: EntityRef) {
+            val recs = records.query(
+                baseQuery.copy()
+                    .withQuery(condition)
+                    .withSortBy(SortBy("dbid", true))
+                    .build()
+            ).getRecords()
+            assertThat(recs).containsExactlyElementsOf(expected.toList())
+        }
+
+        queryTest(Predicates.contains("_type", "Русс"), rec0)
+        queryTest(Predicates.contains("_type", "Русс1"))
+        queryTest(Predicates.contains("_type", "emodel/type@$REC_TEST_TYPE_ID"), rec0)
+        queryTest(Predicates.contains("_type", REC_TEST_TYPE_ID), rec0)
+        queryTest(Predicates.eq("_type.config.key", "value"), rec0)
+        queryTest(Predicates.eq("_type.config.key", "value1"))
+    }
+
+    @Test
+    fun testWithText2() {
+
+        val textAtt = "textAtt"
+        val mlTextAtt = "mlTextAtt"
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId(textAtt)
+                    withType(AttributeType.TEXT)
+                },
+                AttributeDef.create {
+                    withId(mlTextAtt)
+                    withType(AttributeType.MLTEXT)
+                }
+            )
+        )
+
+        val rec0 = createRecord(
+            textAtt to "text0",
+            mlTextAtt to mapOf("ru" to "mltext_ru0", "en" to "mltext_en0")
+        )
+        val rec1 = createRecord(
+            textAtt to "text1",
+            mlTextAtt to mapOf("ru" to "mltext_ru1", "en" to "mltext_en1")
+        )
+
+        fun queryTest(condition: Predicate, vararg expected: EntityRef) {
+            val recs = records.query(
+                baseQuery.copy()
+                    .withQuery(condition)
+                    .withSortBy(SortBy("dbid", true))
+                    .build()
+            ).getRecords()
+            assertThat(recs).containsExactlyElementsOf(expected.toList())
+        }
+
+        queryTest(Predicates.eq(textAtt, "text0"), rec0)
+        queryTest(Predicates.like(textAtt, "%xt0"), rec0)
+        queryTest(Predicates.eq(mlTextAtt, "mltext_ru0"), rec0)
+        queryTest(Predicates.eq(mlTextAtt, "mltext_en0"), rec0)
+        queryTest(Predicates.like(mlTextAtt, "mltext_%"), rec0, rec1)
+        queryTest(Predicates.like(mlTextAtt, "%mlTex%"), rec0, rec1)
+        queryTest(Predicates.like(mlTextAtt, "%mlQTex%"))
+
+        queryTest(Predicates.eq(textAtt, "text1"), rec1)
+    }
 
     @Test
     fun testWithBoolean() {
