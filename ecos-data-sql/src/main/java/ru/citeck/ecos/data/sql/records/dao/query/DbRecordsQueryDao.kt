@@ -121,21 +121,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         val page = recsQuery.page
 
         val groupByForQuery = groupBy.map { queryCtx.registerSelectAtt(it, true) }
-        val expressionsToQuery = if (groupByForQuery.isEmpty()) {
-            queryCtx.expressionsCtx.getExpressions()
-        } else {
-            val expressions = queryCtx.expressionsCtx.getExpressions()
-            val groupByExpressions = groupByForQuery.mapTo(HashSet()) {
-                expressions[it] ?: ColumnToken(it)
-            }
-            expressions.filter {
-                if (groupByForQuery.contains(it.key)) {
-                    true
-                } else {
-                    isValidExpressionForQueryWithGrouping(groupByExpressions, it.value)
-                }
-            }
-        }
+        val expressionsToQuery = queryCtx.expressionsCtx.getExpressions()
 
         val dbQuery = DbFindQuery.create {
             withPredicate(predicate)
@@ -236,38 +222,6 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         queryRes.setHasMore(totalCount > records.size + skipCount)
 
         return queryRes
-    }
-
-    private fun isValidExpressionForQueryWithGrouping(
-        groupBy: Set<ExpressionToken>,
-        expression: ExpressionToken?
-    ): Boolean {
-        expression ?: return true
-        if (groupBy.contains(expression)) {
-            return true
-        }
-        return if (expression is ColumnToken) {
-            groupBy.contains(expression)
-        } else if (expression is FunctionToken) {
-            if (expression.isAggregationFunc()) {
-                true
-            } else {
-                expression.args.all {
-                    isValidExpressionForQueryWithGrouping(groupBy, it)
-                }
-            }
-        } else if (expression is GroupToken) {
-            expression.tokens.all {
-                isValidExpressionForQueryWithGrouping(groupBy, it)
-            }
-        } else if (expression is CaseToken) {
-            expression.branches.all {
-                isValidExpressionForQueryWithGrouping(groupBy, it.condition) &&
-                    isValidExpressionForQueryWithGrouping(groupBy, it.thenResult)
-            } && isValidExpressionForQueryWithGrouping(groupBy, expression.orElse)
-        } else {
-            true
-        }
     }
 
     private fun processPredicate(
