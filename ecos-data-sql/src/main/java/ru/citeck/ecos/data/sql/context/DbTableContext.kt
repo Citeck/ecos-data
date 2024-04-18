@@ -10,6 +10,7 @@ import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
+import kotlin.reflect.KClass
 
 interface DbTableContext {
 
@@ -26,6 +27,8 @@ interface DbTableContext {
     fun getColumns(): List<DbColumnDef>
 
     fun getTableRef(): DbTableRef
+
+    fun getEntityValueTypeForColumn(name: String?): KClass<*>
 
     fun getColumnByName(name: String?): DbColumnDef?
 

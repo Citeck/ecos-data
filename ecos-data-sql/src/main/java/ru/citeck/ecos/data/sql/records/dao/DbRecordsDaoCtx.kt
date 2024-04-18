@@ -25,6 +25,7 @@ import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.remote.DbRecordsRemoteActionsClient
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataService
+import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.records3.RecordsService
@@ -54,6 +55,7 @@ class DbRecordsDaoCtx(
     val delegationService: DelegationService,
     val assocsService: DbAssocsService,
     val globalRefCalculator: DbGlobalRefCalculator,
+    val typesConverter: DbTypesConverter,
     val remoteActionsClient: DbRecordsRemoteActionsClient?
 ) {
     val recContentHandler: DbRecContentHandler by lazy { DbRecContentHandler(this) }

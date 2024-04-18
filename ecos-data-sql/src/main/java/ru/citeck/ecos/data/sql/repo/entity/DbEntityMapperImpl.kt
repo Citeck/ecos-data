@@ -36,6 +36,7 @@ class DbEntityMapperImpl<T : Any>(
     }
 
     private val columns: List<DbEntityColumn> = getColumnsImpl(entityType)
+    private val columnsByColumnName: Map<String, DbEntityColumn> = columns.associateBy { it.columnDef.name }
     private val indexes: List<DbIndexDef> = getIndexesImpl(entityType)
     private val legacyConverters: List<Pair<Int, DbEntityMapper<DbLegacyEntity<T>>>> = getLegacyConverters(entityType)
 
@@ -43,6 +44,11 @@ class DbEntityMapperImpl<T : Any>(
 
     override fun getEntityIndexes(): List<DbIndexDef> {
         return indexes
+    }
+
+    override fun getEntityColumnByColumnName(name: String?): DbEntityColumn? {
+        name ?: return null
+        return columnsByColumnName[name]
     }
 
     override fun getEntityColumns(): List<DbEntityColumn> {

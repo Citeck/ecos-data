@@ -1234,10 +1234,8 @@ class DbRecordsDao(
     override fun setRecordsServiceFactory(serviceFactory: RecordsServiceFactory) {
         super.setRecordsServiceFactory(serviceFactory)
 
-        val remoteActionsClient: DbRecordsRemoteActionsClient? = dataService.getTableContext()
-            .getSchemaCtx()
-            .dataSourceCtx
-            .remoteActionsClient
+        val dataSourceCtx = dataService.getTableContext().getSchemaCtx().dataSourceCtx
+        val remoteActionsClient: DbRecordsRemoteActionsClient? = dataSourceCtx.remoteActionsClient
 
         ecosTypeService = DbEcosModelService(modelServices)
         val appName = serviceFactory.webappProps.appName
@@ -1260,6 +1258,7 @@ class DbRecordsDao(
             modelServices.delegationService,
             assocsService,
             globalRefCalculator ?: DefaultDbGlobalRefCalculator(),
+            dataSourceCtx.converter,
             remoteActionsClient
         )
         daoCtxInitialized.set(true)

@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.collections.HashMap
 import kotlin.collections.HashSet
 import kotlin.collections.LinkedHashMap
+import kotlin.reflect.KClass
 
 class DbFindQueryContext(
     private val ctx: DbRecordsDaoCtx,
@@ -44,6 +45,8 @@ class DbFindQueryContext(
 
     val assocRecordsCtxByAttribute = HashMap<String, Optional<DbRecordsDaoCtx>>()
     val assocSelectJoins = HashMap<String, DbTableContext>()
+    val assocSelectJoinsInvMapping = HashMap<String, String>()
+    val assocSelectJoinsValueTypes = HashMap<String, KClass<*>>()
     val expressionsCtx = DbExpressionAttsContext(this, withGrouping)
 
     val assocJoinsCounter = AtomicInteger(0)
@@ -99,6 +102,23 @@ class DbFindQueryContext(
             return expressionsCtx.register(attribute)
         }
         return DbRecord.ATTS_MAPPING.getOrDefault(attribute, attribute)
+    }
+
+    fun mapResultEntitiesAtts(entities: List<DbEntity>): List<DbEntity> {
+        var result = expressionsCtx.mapEntitiesAtts(entities)
+        if (assocSelectJoinsValueTypes.isNotEmpty() || assocSelectJoinsInvMapping.isNotEmpty()) {
+            result = result.map {
+                val mappedEntity = it.copy()
+                assocSelectJoinsValueTypes.forEach { (k, v) ->
+                    mappedEntity.attributes[k] = ctx.typesConverter.convert(mappedEntity.attributes[k], v)
+                }
+                assocSelectJoinsInvMapping.forEach { (k, v) ->
+                    mappedEntity.attributes[v] = mappedEntity.attributes.remove(k)
+                }
+                mappedEntity
+            }
+        }
+        return result
     }
 
     fun registerAssocsTypesHints(predicate: Predicate) {
@@ -209,9 +229,20 @@ class DbFindQueryContext(
             }
             return null
         }
+
         val mappedSrcAtt = DbRecord.ATTS_MAPPING.getOrDefault(srcAttName, srcAttName)
         assocSelectJoins[mappedSrcAtt] = tableCtx
-        return "$mappedSrcAtt.$mappedTargetColumnName"
+
+        val result = "$mappedSrcAtt.$mappedTargetColumnName"
+        if (result != att) {
+            assocSelectJoinsInvMapping[result] = att
+        }
+        val valueType = tableCtx.getEntityValueTypeForColumn(mappedTargetColumnName)
+        if (valueType != Any::class) {
+            assocSelectJoinsValueTypes[result] = valueType
+        }
+
+        return result
     }
 
     fun getTypeInfoData(typeId: String): DbQueryTypeInfoData {

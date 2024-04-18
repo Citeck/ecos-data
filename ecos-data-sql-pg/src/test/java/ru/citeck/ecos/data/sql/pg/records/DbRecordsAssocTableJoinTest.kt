@@ -29,8 +29,8 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
     @Test
     fun testExpressionWithJoin() {
 
-        val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 10)
-        val targetRec1 = targetDao.createRecord("targetText" to "def", "targetNum" to 100)
+        val targetRec0 = targetDao.createRecord("_name" to "first", "targetText" to "abc", "targetNum" to 10)
+        val targetRec1 = targetDao.createRecord("_name" to "second", "targetText" to "def", "targetNum" to 100)
 
         val rec0 = createRecord("assocAtt" to targetRec0, "numAtt" to 22)
         val rec1 = createRecord("assocAtt" to targetRec0, "numAtt" to 23)
@@ -39,6 +39,7 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         createRecord("assocAtt" to targetRec1, "numAtt" to 44)
         createRecord("assocAtt" to targetRec1, "numAtt" to 44)
         createRecord("assocAtt" to targetRec1, "numAtt" to 44)
+        createRecord("assocAtt" to targetRec1, "numAtt" to 45)
         val rec4 = createRecord("assocAtt" to targetRec1, "numAtt" to 100)
 
         val res = records.query(
@@ -69,6 +70,20 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         assertThat(res1).hasSize(1)
         assertThat(res1[0]["text"].asText()).isEqualTo("abc")
         assertThat(res1[0]["count"].asInt()).isEqualTo(4)
+
+        val res2 = records.query(
+            baseQuery.copy()
+                .withGroupBy(listOf("assocAtt._name"))
+                .withSortBy(SortBy("assocAtt._name", true))
+                .build(),
+            mapOf("name" to "assocAtt._name", "count" to "count(*)")
+        ).getRecords()
+
+        assertThat(res2).hasSize(2)
+        assertThat(res2[0]["name"].asText()).isEqualTo("first")
+        assertThat(res2[0]["count"].asInt()).isEqualTo(4)
+        assertThat(res2[1]["name"].asText()).isEqualTo("second")
+        assertThat(res2[1]["count"].asInt()).isEqualTo(5)
     }
 
     @Test
@@ -480,6 +495,10 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
                     TypeModelDef.create()
                         .withAttributes(
                             listOf(
+                                AttributeDef.create()
+                                    .withId("name")
+                                    .withType(AttributeType.MLTEXT)
+                                    .build(),
                                 AttributeDef.create()
                                     .withId("targetText")
                                     .build(),

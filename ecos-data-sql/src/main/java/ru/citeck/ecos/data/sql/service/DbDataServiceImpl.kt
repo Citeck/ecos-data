@@ -46,6 +46,7 @@ import java.time.Instant
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.collections.HashMap
+import kotlin.reflect.KClass
 
 class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
@@ -924,6 +925,28 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
         override fun getColumns(): List<DbColumnDef> {
             return columns
+        }
+
+        override fun getEntityValueTypeForColumn(name: String?): KClass<*> {
+            name ?: return Any::class
+            val entityColumn = entityMapper.getEntityColumnByColumnName(name)
+            if (entityColumn != null) {
+                return entityColumn.fieldType
+            }
+            val columnType = columnsByName[name]?.type ?: return Any::class
+            return when (columnType) {
+                DbColumnType.BIGSERIAL -> Long::class
+                DbColumnType.TEXT -> String::class
+                DbColumnType.DOUBLE -> Double::class
+                DbColumnType.INT -> Int::class
+                DbColumnType.LONG -> Long::class
+                DbColumnType.BOOLEAN -> Boolean::class
+                DbColumnType.DATETIME -> Instant::class
+                DbColumnType.DATE -> Instant::class
+                DbColumnType.JSON -> DataValue::class
+                DbColumnType.BINARY -> ByteArray::class
+                DbColumnType.UUID -> String::class
+            }
         }
 
         override fun getColumnByName(name: String?): DbColumnDef? {
