@@ -167,7 +167,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
                 true
             )
             totalCount = findRes.totalCount
-            var mappedEntities = queryCtx.expressionsCtx.mapEntitiesAtts(findRes.entities)
+            var mappedEntities = queryCtx.mapResultEntitiesAtts(findRes.entities)
             if (predicateData.queryPermsPolicy == QueryPermsPolicy.PUBLIC ||
                 AuthContext.isRunAsSystem() ||
                 groupBy.isNotEmpty()

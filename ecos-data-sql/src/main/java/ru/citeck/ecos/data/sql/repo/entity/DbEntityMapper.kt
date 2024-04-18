@@ -6,6 +6,8 @@ interface DbEntityMapper<T> {
 
     fun getEntityIndexes(): List<DbIndexDef>
 
+    fun getEntityColumnByColumnName(name: String?): DbEntityColumn?
+
     fun getEntityColumns(): List<DbEntityColumn>
 
     fun convertToEntity(data: Map<String, Any?>): T
