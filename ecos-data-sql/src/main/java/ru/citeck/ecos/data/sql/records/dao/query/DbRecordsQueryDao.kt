@@ -13,7 +13,6 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
-import ru.citeck.ecos.data.sql.service.expression.token.*
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
@@ -52,6 +51,19 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
     private val dataService = daoCtx.dataService
 
     fun queryRecords(recsQuery: RecordsQuery): RecsQueryRes<DbRecord> {
+
+        if (!dataService.isTableExists()) {
+            return RecsQueryRes()
+        }
+        return try {
+            queryRecordsImpl(recsQuery)
+        } catch (e: DbQueryPreparingException) {
+            log.debug(e) { "Query can't be executed: $recsQuery" }
+            RecsQueryRes()
+        }
+    }
+
+    private fun queryRecordsImpl(recsQuery: RecordsQuery): RecsQueryRes<DbRecord> {
 
         val language = recsQuery.language
         if (language.isNotEmpty() && language != PredicateService.LANGUAGE_PREDICATE) {

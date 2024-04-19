@@ -202,7 +202,7 @@ class DbFindQueryContext(
         }
         fun printError(msg: () -> String) {
             if (strict) {
-                error(msg())
+                throw DbQueryPreparingException(msg())
             } else {
                 log.debug(msg)
             }
