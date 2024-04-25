@@ -413,18 +413,23 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return entityRepo.find(context, query, page, withTotalCount)
     }
 
-    override fun getCount(predicate: Predicate): Long {
-        val srcQuery = DbFindQuery.create()
-            .withPredicate(predicate)
-            .build()
-        return execReadOnlyQueryWithPredicate(srcQuery, 0) { tableCtx, query ->
+    override fun getCount(query: DbFindQuery): Long {
+        return execReadOnlyQueryWithPredicate(query, 0) { tableCtx, preparedQuery ->
             entityRepo.find(
                 tableCtx,
-                query,
+                preparedQuery,
                 DbFindPage.ZERO,
                 true
             ).totalCount
         }
+    }
+
+    override fun getCount(predicate: Predicate): Long {
+        return getCount(
+            DbFindQuery.create()
+                .withPredicate(predicate)
+                .build()
+        )
     }
 
     override fun save(entity: T): T {

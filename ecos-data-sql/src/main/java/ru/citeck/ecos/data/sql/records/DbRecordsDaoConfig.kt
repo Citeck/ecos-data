@@ -9,7 +9,8 @@ data class DbRecordsDaoConfig(
     val updatable: Boolean,
     val deletable: Boolean,
     val queryMaxItems: Int,
-    val authEnabled: Boolean
+    val authEnabled: Boolean,
+    val enableTotalCount: Boolean
 ) {
 
     companion object {
@@ -42,6 +43,7 @@ data class DbRecordsDaoConfig(
         var deletable: Boolean = true
         var queryMaxItems: Int = 10000
         var authEnabled: Boolean = false
+        var enableTotalCount: Boolean = true
 
         constructor(base: DbRecordsDaoConfig) : this() {
             this.id = base.id
@@ -51,6 +53,7 @@ data class DbRecordsDaoConfig(
             this.deletable = base.deletable
             this.queryMaxItems = base.queryMaxItems
             this.authEnabled = base.authEnabled
+            this.enableTotalCount = base.enableTotalCount
         }
 
         fun withId(id: String?): Builder {
@@ -88,6 +91,11 @@ data class DbRecordsDaoConfig(
             return this
         }
 
+        fun withEnableTotalCount(enableTotalCount: Boolean?): Builder {
+            this.enableTotalCount = enableTotalCount ?: true
+            return this
+        }
+
         fun build(): DbRecordsDaoConfig {
             if (!VALID_ID_PATTERN.matches(id)) {
                 error("Invalid records DAO id - '$id'. Valid pattern: $VALID_ID_PATTERN")
@@ -99,7 +107,8 @@ data class DbRecordsDaoConfig(
                 updatable,
                 deletable,
                 queryMaxItems,
-                authEnabled
+                authEnabled,
+                enableTotalCount
             )
         }
     }

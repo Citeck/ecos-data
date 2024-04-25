@@ -76,6 +76,8 @@ interface DbDataService<T : Any> {
 
     fun findRaw(query: DbFindQuery, page: DbFindPage, withTotalCount: Boolean): DbFindRes<Map<String, Any?>>
 
+    fun getCount(query: DbFindQuery): Long
+
     fun getCount(predicate: Predicate): Long
 
     fun save(entity: T): T

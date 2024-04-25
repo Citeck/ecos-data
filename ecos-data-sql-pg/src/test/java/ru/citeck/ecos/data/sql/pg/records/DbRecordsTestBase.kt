@@ -366,7 +366,8 @@ abstract class DbRecordsTestBase {
     fun createRecordsDao(
         tableRef: DbTableRef = DEFAULT_TABLE_REF,
         typeRef: EntityRef = ModelUtils.getTypeRef(REC_TEST_TYPE_ID),
-        sourceId: String = RECS_DAO_ID
+        sourceId: String = RECS_DAO_ID,
+        enableTotalCount: Boolean = true
     ): RecordsDaoTestCtx {
 
         val schemaCtx = getOrCreateSchemaCtx(tableRef.schema)
@@ -456,6 +457,7 @@ abstract class DbRecordsTestBase {
             DbRecordsDaoConfig.create {
                 withId(sourceId)
                 withTypeRef(typeRef)
+                withEnableTotalCount(enableTotalCount)
             },
             modelServiceFactory,
             dataService,
