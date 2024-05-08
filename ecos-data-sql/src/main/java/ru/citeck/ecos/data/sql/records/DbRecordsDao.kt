@@ -564,6 +564,8 @@ class DbRecordsDao(
             }
             entity
         }
+        val entityBeforeMutation = entityToMutate.copy()
+
         var customExtId = record.attributes[ATT_ID].asText()
         if (customExtId.isBlank()) {
             customExtId = record.attributes[ScalarType.LOCAL_ID.mirrorAtt].asText()
@@ -636,13 +638,6 @@ class DbRecordsDao(
             if (entityToMutate.modifier == -1L) {
                 entityToMutate.modifier = getUserId(AuthUser.ANONYMOUS)
             }
-        } else {
-            if (isNewEntity) {
-                entityToMutate.created = nowInstant
-                entityToMutate.creator = currentUserRefId
-            }
-            entityToMutate.modified = nowInstant
-            entityToMutate.modifier = currentUserRefId
         }
 
         var recordPerms = DbRecordPermsContext(DbRecordAllowedAllPerms)
@@ -961,31 +956,57 @@ class DbRecordsDao(
             }
         }
 
-        var recAfterSave = dataService.save(entityToMutate, fullColumns)
-
-        recAfterSave = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
-            val newEntity = if (computedAttsComponent != null) {
-                computeAttsToStore(
-                    computedAttsComponent,
-                    recAfterSave,
-                    isNewEntity,
-                    typeInfo.id,
-                    fullColumns,
-                    currentUserRefId,
-                    typeAttColumns
-                )
-            } else {
-                recAfterSave
+        if (computedAttsComponent != null) {
+            dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
+                AuthContext.runAsSystem {
+                    val fullColumnNames = fullColumns.mapTo(HashSet()) { it.name }
+                    computeAttsToStore(
+                        computedAttsComponent,
+                        entityToMutate,
+                        isNewEntity,
+                        typeInfo.id,
+                        fullColumns,
+                        currentUserRefId,
+                        typeAttColumns
+                    ).forEach {
+                        if (!fullColumnNames.contains(it.name)) {
+                            fullColumns.add(it)
+                        }
+                    }
+                }
             }
-            newEntity
         }
+
+        daoCtx.mutAssocHandler.validateChildAssocs(
+            record.attributes,
+            changedByOperationsAtts,
+            entityToMutate.extId,
+            typeAttColumns
+        )
+
+        if (entityToMutate == entityBeforeMutation) {
+            return entityBeforeMutation
+        }
+
+        if (!disableAudit) {
+            val auditIgnoredAtts = typeInfo.model.systemAttributes.mapTo(HashSet()) { it.id }
+            if (!entityToMutate.equals(entityBeforeMutation, auditIgnoredAtts)) {
+                if (isNewEntity) {
+                    entityToMutate.created = nowInstant
+                    entityToMutate.creator = currentUserRefId
+                }
+                entityToMutate.modified = nowInstant
+                entityToMutate.modifier = currentUserRefId
+            }
+        }
+
+        val recAfterSave = dataService.save(entityToMutate, fullColumns)
 
         daoCtx.mutAssocHandler.processChildrenAfterMutation(
             recordEntityBeforeMutation,
             recAfterSave,
             record.attributes,
             typeAttColumns,
-            changedByOperationsAtts,
             allAssocsValues,
             disableEvents
         )
@@ -1020,7 +1041,7 @@ class DbRecordsDao(
         columns: List<DbColumnDef>,
         currentUserRefId: Long,
         typeAttColumns: List<EcosAttColumnDef>
-    ): DbEntity {
+    ): List<DbColumnDef> {
 
         val typeRef = ModelUtils.getTypeRef(recTypeId)
         val atts = component.computeAttsToStore(DbRecord(daoCtx, entity), isNewRecord, typeRef)
@@ -1033,26 +1054,17 @@ class DbRecordsDao(
                 fullColumns.add(it)
             }
         }
-        var changed = setMutationAtts(
+        val mutatedColumns = setMutationAtts(
             entity,
             atts,
             fullColumns,
             ArrayList(),
             true,
             currentUserRefId
-        ).isNotEmpty()
+        )
+        entity.name = component.computeDisplayName(DbRecord(daoCtx, entity), typeRef)
 
-        val dispName = component.computeDisplayName(DbRecord(daoCtx, entity), typeRef)
-        if (entity.name != dispName) {
-            entity.name = dispName
-            changed = true
-        }
-
-        if (!changed) {
-            return entity
-        }
-
-        return dataService.save(entity, fullColumns)
+        return mutatedColumns
     }
 
     private fun getEntitiesPerms(recordIds: Collection<String>): List<DbEntityPermsDto> {

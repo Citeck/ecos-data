@@ -349,12 +349,38 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         }
     }
 
+    fun validateChildAssocs(
+        attributes: ObjectData,
+        changedByOperationsAtts: Set<String>,
+        recExtId: String,
+        columns: List<EcosAttColumnDef>
+    ) {
+        if (!attributes.get(MUTATION_FROM_CHILD_FLAG, false)) {
+            return
+        }
+        if (changedByOperationsAtts.isEmpty()) {
+            error(
+                "Mutation from child without operations... " +
+                    "RecordRef: '${ctx.getGlobalRef(recExtId)}'"
+            )
+        }
+        val columnsById = columns.associateBy { it.attribute.id }
+        changedByOperationsAtts.forEach {
+            val column = columnsById[it]
+            if (column == null ||
+                column.attribute.type != AttributeType.ASSOC ||
+                !column.attribute.config.get("child", false)
+            ) {
+                error("'$it' is not a child association. RecordRef: '${ctx.getGlobalRef(recExtId)}'")
+            }
+        }
+    }
+
     fun processChildrenAfterMutation(
         recBeforeSave: DbEntity,
         recAfterSave: DbEntity,
         attributes: ObjectData,
         columns: List<EcosAttColumnDef>,
-        changedByOperationsAtts: Set<String>,
         assocsValues: Map<String, DbAssocAttValuesContainer>,
         disableEvents: Boolean
     ) {
@@ -364,23 +390,6 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         }
 
         if (attributes.get(MUTATION_FROM_CHILD_FLAG, false)) {
-            if (changedByOperationsAtts.isEmpty()) {
-                error(
-                    "Mutation from child without operations... " +
-                        "RecordRef: '${ctx.getGlobalRef(recAfterSave.extId)}'"
-                )
-            }
-            val columnsById = columns.associateBy { it.attribute.id }
-            changedByOperationsAtts.forEach {
-                val column = columnsById[it]
-                if (column == null ||
-                    column.attribute.type != AttributeType.ASSOC ||
-                    !column.attribute.config.get("child", false)
-                ) {
-
-                    error("'$it' is not a child association. RecordRef: '${ctx.getGlobalRef(recAfterSave.extId)}'")
-                }
-            }
             return
         }
 

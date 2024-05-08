@@ -95,4 +95,84 @@ class DbEntity {
         newEntity.attributes = LinkedHashMap(attributes)
         return newEntity
     }
+
+    fun equals(other: Any?, ignoredAtts: Set<String>): Boolean {
+        if (this === other) {
+            return true
+        }
+        if (javaClass != other?.javaClass) {
+            return false
+        }
+        other as DbEntity
+        val result = id == other.id &&
+            refId == other.refId &&
+            extId == other.extId &&
+            updVersion == other.updVersion &&
+            modified == other.modified &&
+            modifier == other.modifier &&
+            created == other.created &&
+            creator == other.creator &&
+            deleted == other.deleted &&
+            type == other.type &&
+            status == other.status &&
+            name == other.name
+
+        if (!result) {
+            return false
+        }
+        if (ignoredAtts.isEmpty()) {
+            return attributes == other.attributes
+        }
+        if (attributes.size == other.attributes.size) {
+            for ((k, v) in attributes) {
+                if (ignoredAtts.contains(k)) {
+                    continue
+                }
+                if (v != other.attributes[k]) {
+                    return false
+                }
+            }
+            return true
+        } else {
+            val checkedKeys = HashSet<String>(ignoredAtts)
+            for ((k, v) in attributes) {
+                if (!checkedKeys.add(k)) {
+                    continue
+                }
+                if (v != other.attributes[k]) {
+                    return false
+                }
+            }
+            for ((k, v) in other.attributes) {
+                if (!checkedKeys.add(k)) {
+                    continue
+                }
+                if (v != attributes[k]) {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    override fun equals(other: Any?): Boolean {
+        return equals(other, emptySet())
+    }
+
+    override fun hashCode(): Int {
+        var result = id.hashCode()
+        result = 31 * result + refId.hashCode()
+        result = 31 * result + extId.hashCode()
+        result = 31 * result + updVersion.hashCode()
+        result = 31 * result + modified.hashCode()
+        result = 31 * result + modifier.hashCode()
+        result = 31 * result + created.hashCode()
+        result = 31 * result + creator.hashCode()
+        result = 31 * result + deleted.hashCode()
+        result = 31 * result + type.hashCode()
+        result = 31 * result + status.hashCode()
+        result = 31 * result + name.hashCode()
+        result = 31 * result + attributes.hashCode()
+        return result
+    }
 }

@@ -22,6 +22,11 @@ class DbRecordsAuditTest : DbRecordsTestBase() {
                 AttributeDef.create {
                     withId("text")
                 }
+            ),
+            listOf(
+                AttributeDef.create {
+                    withId("systemText")
+                }
             )
         )
     }
@@ -33,11 +38,24 @@ class DbRecordsAuditTest : DbRecordsTestBase() {
         val ref = AuthContext.runAs("admin") {
             createRecord("text" to "abc")
         }
-        assertThat(getModifier(ref)).isEqualTo("admin")
-        assertThat(getCreator(ref)).isEqualTo("admin")
-        assertThat(getModified(ref)).isAfter(beforeCreation)
-        assertThat(getCreated(ref)).isAfter(beforeCreation)
-        assertThat(getCreated(ref)).isEqualTo(getModified(ref))
+        val modified0 = getModified(ref)
+        val created0 = getCreated(ref)
+        val modifier0 = getModifier(ref)
+        val creator0 = getCreator(ref)
+
+        assertThat(modifier0).isEqualTo("admin")
+        assertThat(creator0).isEqualTo("admin")
+        assertThat(modified0).isAfter(beforeCreation)
+        assertThat(created0).isAfter(beforeCreation)
+        assertThat(created0).isEqualTo(modified0)
+
+        updateRecord(ref, "systemText" to "system-text")
+        assertThat(records.getAtt(ref, "systemText").asText()).isEqualTo("system-text")
+
+        assertThat(getModified(ref)).isEqualTo(modified0)
+        assertThat(getCreated(ref)).isEqualTo(created0)
+        assertThat(getModifier(ref)).isEqualTo(modifier0)
+        assertThat(getCreator(ref)).isEqualTo(creator0)
 
         val customCreator = "custom-creator"
         val customModifier = "custom-modifier"
