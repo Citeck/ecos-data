@@ -28,6 +28,7 @@ import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.atts.content.HasEcosContentDbData
 import ru.citeck.ecos.data.sql.records.dao.delete.DbRecordsDeleteDao
 import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler
+import ru.citeck.ecos.data.sql.records.dao.mutate.operation.OperationType
 import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
@@ -43,6 +44,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.model.lib.ModelServiceFactory
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
@@ -476,8 +478,10 @@ class DbRecordsDao(
         typeAttColumnsArg: List<EcosAttColumnDef>,
     ): DbEntity? {
 
+        val isMutationFromChild = record.getAtt(RecMutAssocHandler.MUTATION_FROM_CHILD_FLAG).asBoolean()
+
         if (record.id.isNotBlank() &&
-            record.getAtt(RecMutAssocHandler.MUTATION_FROM_CHILD_FLAG).asBoolean() &&
+            isMutationFromChild &&
             getRecsCurrentlyInDeletion().contains(daoCtx.getGlobalRef(record.id))
         ) {
             return null
@@ -645,7 +649,31 @@ class DbRecordsDao(
             if (!daoCtx.getUpdatedInTxnIds().contains(entityToMutate.extId)) {
                 recordPerms = getRecordPerms(entityToMutate.extId, currentRunAsUser, currentRunAsAuthorities)
                 if (!recordPerms.hasWritePerms()) {
-                    error("Permissions Denied. You can't change record '${daoCtx.getGlobalRef(record.id)}'")
+                    if (isMutationFromChild && recordPerms.getAdditionalPerms().contains("create-children")) {
+                        val deniedAtts = HashSet<String>()
+                        record.attributes.forEach { k, _ ->
+                            if (k != RecMutAssocHandler.MUTATION_FROM_CHILD_FLAG) {
+                                if (!k.startsWith(OperationType.ATT_ADD.prefix)) {
+                                    deniedAtts.add(k)
+                                } else {
+                                    val assocName = k.substring(OperationType.ATT_ADD.prefix.length)
+                                    val attDef = typeInfo.model.attributes.find { it.id == assocName }
+                                    if (attDef == null || attDef.type != AttributeType.ASSOC || !attDef.config["child"].asBoolean()) {
+                                        deniedAtts.add(k)
+                                    }
+                                }
+                            }
+                        }
+                        if (deniedAtts.isNotEmpty()) {
+                            error(
+                                "Permissions Denied. " +
+                                    "You can't change attributes $deniedAtts " +
+                                    "for record '${daoCtx.getGlobalRef(record.id)}'"
+                            )
+                        }
+                    } else {
+                        error("Permissions Denied. You can't change record '${daoCtx.getGlobalRef(record.id)}'")
+                    }
                 }
             }
         }

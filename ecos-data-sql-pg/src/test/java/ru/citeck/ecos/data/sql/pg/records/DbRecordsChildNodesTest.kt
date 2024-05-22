@@ -23,6 +23,70 @@ import java.lang.RuntimeException
 class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
     @Test
+    fun createChildrenPermsTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("childAssoc")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                    withConfig(ObjectData.create("""{"child":true}"""))
+                }
+            )
+        )
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
+        registerType(
+            TypeInfo.create()
+                .withId("child-type")
+                .withParentRef(REC_TEST_TYPE_REF)
+                .withQueryPermsPolicy(QueryPermsPolicy.OWN)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create {
+                                    withId("text")
+                                }
+                            )
+                        ).build()
+                )
+                .build()
+        )
+        val parent = createRecord()
+
+        setAuthoritiesWithReadPerms(parent, listOf("user"))
+        setAuthoritiesWithWritePerms(parent, listOf("owner"))
+
+        val childrenRefs = ArrayList<EntityRef>()
+        fun createChild(): EntityRef {
+            val ref = createRecord(
+                "_type" to "emodel/type@child-type",
+                "_parent" to parent,
+                "_parentAtt" to "childAssoc"
+            )
+            childrenRefs.add(ref)
+            return ref
+        }
+
+        createChild()
+
+        AuthContext.runAs("user") {
+            assertThrows<RuntimeException> {
+                createChild()
+            }
+        }
+        addAdditionalPermission(parent, "user", "create-children")
+
+        AuthContext.runAs("user") {
+            createChild()
+        }
+
+        assertThat(childrenRefs).hasSize(2)
+        assertThat(records.getAtt(parent, "childAssoc[]?id").asList(EntityRef::class.java)).isEqualTo(childrenRefs)
+    }
+
+    @Test
     fun testQueryByChildAssoc() {
 
         registerAtts(
