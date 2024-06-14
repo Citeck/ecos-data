@@ -4,12 +4,14 @@ import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.*
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
+import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaService
 import ru.citeck.ecos.data.sql.meta.table.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableChangeSet
@@ -40,12 +42,9 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
-import java.lang.IllegalStateException
 import java.sql.SQLException
 import java.time.Instant
-import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.collections.HashMap
 import kotlin.reflect.KClass
 
 class DbDataServiceImpl<T : Any> : DbDataService<T> {
@@ -903,6 +902,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         private val columnsByName = columns.associateBy { it.name }
         private val hasIdColumn = columnsByName.containsKey(DbEntity.ID)
         private val hasDeleteFlag = columnsByName.containsKey(DbEntity.DELETED)
+        private var typeId: String? = null
+        private var ecosTypeService: DbEcosModelService? = null
 
         override fun getRecordRefsService(): DbRecordRefService {
             return schemaCtx.recordRefService
@@ -985,8 +986,43 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
 
         override fun getCurrentUserAuthorityIds(): Set<Long> {
+            val authority = getAuthorityEntitiesIds(DbRecordsUtils.getCurrentAuthorities()).toMutableSet()
+            val delegatedAuthority = getDelegatedUserAuthorityIds()
+            if (delegatedAuthority.isNotEmpty()) {
+                authority.addAll(delegatedAuthority)
+            }
+            return authority
+        }
+
+        private fun getDelegatedUserAuthorityIds(): Set<Long> {
+            val authDelegations = schemaCtx.delegationApi.getAuthDelegations(AuthContext.getCurrentUser(), emptyList())
+            val allDelegatedAuthorities = mutableSetOf<String>()
+            for (authDelegation in authDelegations) {
+                val delegatedTypes = authDelegation.delegatedTypes
+                if (delegatedTypes.isEmpty() || delegatedTypes.contains(typeId)) {
+                    allDelegatedAuthorities.addAll(authDelegation.delegatedAuthorities)
+                } else {
+                    ecosTypeService?.let {
+                        for (delegatedType in delegatedTypes) {
+                            if (it.isSubType(typeId, delegatedType)) {
+                                allDelegatedAuthorities.addAll(authDelegation.delegatedAuthorities)
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+
+            return getAuthorityEntitiesIds(allDelegatedAuthorities)
+        }
+
+        private fun getAuthorityEntitiesIds(authorities: Set<String>): Set<Long> {
+            if (authorities.isEmpty()) {
+                return emptySet()
+            }
+
             val authorityEntities = schemaCtx.authorityDataService.findAll(
-                Predicates.`in`(DbAuthorityEntity.EXT_ID, DbRecordsUtils.getCurrentAuthorities())
+                Predicates.`in`(DbAuthorityEntity.EXT_ID, authorities)
             )
             return authorityEntities.map { it.id }.toSet()
         }
@@ -1009,6 +1045,11 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
         override fun getSchemaCtx(): DbSchemaContext {
             return schemaCtx
+        }
+
+        override fun setTypeData(typeId: String, ecosTypeService: DbEcosModelService) {
+            this.typeId = typeId
+            this.ecosTypeService = ecosTypeService
         }
     }
 }
