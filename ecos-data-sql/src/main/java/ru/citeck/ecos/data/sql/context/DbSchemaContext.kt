@@ -19,6 +19,7 @@ import ru.citeck.ecos.data.sql.schema.DbSchemaListener
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
+import ru.citeck.ecos.model.lib.delegation.api.DelegationWebApi
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
@@ -59,6 +60,7 @@ class DbSchemaContext(
     val contentService: DbContentService = DbContentServiceImpl(contentStorageService, this)
 
     val authoritiesApi: EcosAuthoritiesApi = webAppApi.getAuthoritiesApi()
+    val delegationApi = DelegationWebApi(webAppApi.getWebClientApi())
 
     init {
         dataSourceCtx.schemaDao.addSchemaListener(

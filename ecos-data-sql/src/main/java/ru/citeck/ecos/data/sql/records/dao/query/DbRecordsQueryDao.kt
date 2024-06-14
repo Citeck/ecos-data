@@ -171,11 +171,20 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         }
 
         return dataService.doWithPermsPolicy(predicateData.queryPermsPolicy) {
-            executeFind(dbQuery, queryCtx, predicateData, groupBy, page.skipCount, resultMaxItems)
+            executeFind(
+                ecosTypeRef.getLocalId(),
+                dbQuery,
+                queryCtx,
+                predicateData,
+                groupBy,
+                page.skipCount,
+                resultMaxItems
+            )
         }
     }
 
     private fun executeFind(
+        typeId: String,
         dbQuery: DbFindQuery,
         queryCtx: DbFindQueryContext,
         predicateData: ProcessedPredicateData,
@@ -204,6 +213,8 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             // Increment by 1 to detect if the table contains more records than the defined maximum limit
             maxItems + 1
         }
+
+        dataService.getTableContext().setTypeData(typeId, ecosTypeService)
         val findRes = dataService.find(
             dbQuery,
             DbFindPage(totalSkipCount, queryMaxItems),
