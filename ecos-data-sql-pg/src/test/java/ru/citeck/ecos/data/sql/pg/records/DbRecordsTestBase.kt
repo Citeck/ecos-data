@@ -40,8 +40,12 @@ import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.aspect.repo.AspectsRepo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.delegation.dto.AuthDelegation
+import ru.citeck.ecos.model.lib.delegation.dto.PermissionDelegateData
+import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.model.lib.num.repo.NumTemplatesRepo
+import ru.citeck.ecos.model.lib.permissions.dto.PermissionType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
@@ -67,9 +71,13 @@ import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import ru.citeck.ecos.webapp.api.mime.MimeType
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
+import kotlin.collections.HashSet
 
 abstract class DbRecordsTestBase {
 
@@ -163,6 +171,8 @@ abstract class DbRecordsTestBase {
     lateinit var mainCtx: RecordsDaoTestCtx
     lateinit var tempCtx: RecordsDaoTestCtx
 
+    lateinit var delegationService: CustomDelegationService
+
     private var mainCtxInitialized = false
     private val registeredRecordsDao = ArrayList<RecordsDaoTestCtx>()
 
@@ -233,6 +243,7 @@ abstract class DbRecordsTestBase {
                     return webAppApi
                 }
             }
+            delegationService = CustomDelegationService()
 
             val numCounters = mutableMapOf<EntityRef, AtomicLong>()
             modelServiceFactory = object : ModelServiceFactory() {
@@ -281,6 +292,10 @@ abstract class DbRecordsTestBase {
                             return numCounters.computeIfAbsent(templateRef) { AtomicLong() }.incrementAndGet()
                         }
                     }
+                }
+
+                override fun createDelegationService(): DelegationService {
+                    return delegationService
                 }
 
                 override fun getEcosWebAppApi(): EcosWebAppApi {
@@ -681,6 +696,31 @@ abstract class DbRecordsTestBase {
     fun setQueryPermsPolicy(typeId: String, policy: QueryPermsPolicy) {
         val typeInfo = typesInfo[typeId] ?: error("Type is not found by id $typeId")
         registerType(typeInfo.copy { withQueryPermsPolicy(policy) })
+    }
+
+    inner class CustomDelegationService : DelegationService {
+
+        val activeAuthDelegations = ConcurrentHashMap<String, MutableList<AuthDelegation>>()
+
+        fun addDelegationTo(user: String, delegation: AuthDelegation) {
+            activeAuthDelegations.computeIfAbsent(user) {
+                CopyOnWriteArrayList()
+            }.add(delegation)
+        }
+
+        override fun getActiveAuthDelegations(user: String, types: Collection<String>): List<AuthDelegation> {
+            val delegations = activeAuthDelegations[user] ?: return emptyList()
+            return delegations.filter { delegation ->
+                delegation.delegatedTypes.isEmpty() || delegation.delegatedTypes.any { types.contains(it) }
+            }
+        }
+
+        override fun delegatePermission(record: Any, permission: PermissionType, from: String, to: String) {
+            TODO("Not yet implemented")
+        }
+        override fun getPermissionDelegates(record: Any, permission: PermissionType): List<PermissionDelegateData> {
+            TODO("Not yet implemented")
+        }
     }
 
     inner class RecordsDaoTestCtx(
