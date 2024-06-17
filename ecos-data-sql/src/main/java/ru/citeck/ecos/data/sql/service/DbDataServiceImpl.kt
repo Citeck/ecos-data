@@ -992,24 +992,15 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             return authority
         }
 
-        private fun getDelegatedUserAuthorityIds(): Set<Long> {
-            val authDelegations = schemaCtx.delegationService.getActiveAuthDelegations(AuthContext.getCurrentUser(), emptyList())
-            val allDelegatedAuthorities = mutableSetOf<String>()
-            for (authDelegation in authDelegations) {
-                val delegatedTypes = authDelegation.delegatedTypes
-                if (delegatedTypes.isEmpty() || delegatedTypes.contains(typeId)) {
-                    allDelegatedAuthorities.addAll(authDelegation.delegatedAuthorities)
-                } else {
-                    for (delegatedType in delegatedTypes) {
-                        if (schemaCtx.ecosTypeService.isSubType(typeId, delegatedType)) {
-                            allDelegatedAuthorities.addAll(authDelegation.delegatedAuthorities)
-                            break
-                        }
-                    }
-                }
+        private fun getDelegatedUserAuthorityIds(): List<Long> {
+            typeId?.let { type ->
+                val authDelegations = schemaCtx.delegationService.getActiveAuthDelegations(
+                    AuthContext.getCurrentUser(),
+                    listOf(type)
+                )
+                return authDelegations.flatMap { getAuthorityEntitiesIds(it.delegatedAuthorities) }
             }
-
-            return getAuthorityEntitiesIds(allDelegatedAuthorities)
+            return emptyList()
         }
 
         private fun getAuthorityEntitiesIds(authorities: Set<String>): Set<Long> {

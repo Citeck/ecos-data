@@ -17,6 +17,7 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
+import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
@@ -75,9 +76,6 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
-import kotlin.collections.ArrayList
-import kotlin.collections.HashMap
-import kotlin.collections.HashSet
 
 abstract class DbRecordsTestBase {
 
@@ -295,6 +293,7 @@ abstract class DbRecordsTestBase {
                 }
             }
             modelServiceFactory.setRecordsServices(recordsServiceFactory)
+            delegationService.ecosTypeService = DbEcosModelService(modelServiceFactory)
 
             dbDataSource = DbDataSourceImpl(jdbcDataSource)
             dataSourceCtx = DbDataSourceContext(
@@ -302,7 +301,7 @@ abstract class DbRecordsTestBase {
                 PgDataServiceFactory(),
                 DbMigrationService(),
                 webAppApi,
-                modelServiceFactory
+                delegationService
             )
 
             records = recordsServiceFactory.recordsServiceV1
@@ -434,12 +433,21 @@ abstract class DbRecordsTestBase {
                     }
 
                     override fun hasReadPerms(): Boolean {
-                        return getAuthoritiesWithReadPermission().any { authorities.contains(it) }
+                        val authoritiesWithReadPerms = getAuthoritiesWithReadPermission()
+                        var hasReadPerms = authoritiesWithReadPerms.any { authorities.contains(it) }
+                        if (!hasReadPerms) {
+                            hasReadPerms = hasDelegatedPerms(authoritiesWithReadPerms)
+                        }
+                        return hasReadPerms
                     }
 
                     override fun hasWritePerms(): Boolean {
                         val perms = recWritePerms[globalRef] ?: emptySet()
-                        return perms.isEmpty() || authorities.any { perms.contains(it) }
+                        var hasWritePerms = perms.isEmpty() || authorities.any { perms.contains(it) }
+                        if (!hasWritePerms) {
+                            hasWritePerms = hasDelegatedPerms(perms)
+                        }
+                        return hasWritePerms
                     }
 
                     override fun hasAttWritePerms(name: String): Boolean {
@@ -454,6 +462,17 @@ abstract class DbRecordsTestBase {
                         return readPerms.isNullOrEmpty() || authorities.any {
                             readPerms.contains(it)
                         }
+                    }
+
+                    private fun hasDelegatedPerms(perms: Set<String>): Boolean {
+                        if (record is DbRecord) {
+                            val typeId = record.type.getLocalId()
+                            val delegations = delegationService.getActiveAuthDelegations(user, listOf(typeId))
+                            return delegations.any { delegation ->
+                                perms.any { delegation.delegatedAuthorities.contains(it) }
+                            }
+                        }
+                        return false
                     }
                 }
             }
@@ -703,16 +722,28 @@ abstract class DbRecordsTestBase {
 
         val activeAuthDelegations = ConcurrentHashMap<String, MutableList<AuthDelegation>>()
 
+        lateinit var ecosTypeService: DbEcosModelService
+
         fun addDelegationTo(user: String, delegation: AuthDelegation) {
             activeAuthDelegations.computeIfAbsent(user) {
                 CopyOnWriteArrayList()
             }.add(delegation)
         }
 
+        fun setDelegationTo(user: String, delegation: AuthDelegation) {
+            activeAuthDelegations[user] = mutableListOf(delegation)
+        }
+
         override fun getActiveAuthDelegations(user: String, types: Collection<String>): List<AuthDelegation> {
             val delegations = activeAuthDelegations[user] ?: return emptyList()
             return delegations.filter { delegation ->
-                delegation.delegatedTypes.isEmpty() || delegation.delegatedTypes.any { types.contains(it) }
+                delegation.delegatedTypes.isEmpty() ||
+                    delegation.delegatedTypes.any { delegatedType ->
+                        types.contains(delegatedType) ||
+                            types.any { type ->
+                                ecosTypeService.isSubType(type, delegatedType)
+                            }
+                    }
             }
         }
 
