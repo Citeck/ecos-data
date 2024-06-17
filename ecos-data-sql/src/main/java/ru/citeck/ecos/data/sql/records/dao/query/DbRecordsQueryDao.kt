@@ -214,7 +214,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             maxItems + 1
         }
 
-        dataService.getTableContext().setTypeData(typeId, ecosTypeService)
+        dataService.getTableContext().setTypeId(typeId)
         val findRes = dataService.find(
             dbQuery,
             DbFindPage(totalSkipCount, queryMaxItems),

@@ -43,6 +43,7 @@ class DbDomainFactory(
         dataServiceFactory,
         migrationService,
         webAppApi,
+        modelServices,
         remoteActionsClient
     )
 

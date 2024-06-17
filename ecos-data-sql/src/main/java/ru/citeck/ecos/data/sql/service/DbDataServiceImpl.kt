@@ -11,7 +11,6 @@ import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.*
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
-import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaService
 import ru.citeck.ecos.data.sql.meta.table.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableChangeSet
@@ -903,7 +902,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         private val hasIdColumn = columnsByName.containsKey(DbEntity.ID)
         private val hasDeleteFlag = columnsByName.containsKey(DbEntity.DELETED)
         private var typeId: String? = null
-        private var ecosTypeService: DbEcosModelService? = null
 
         override fun getRecordRefsService(): DbRecordRefService {
             return schemaCtx.recordRefService
@@ -995,19 +993,17 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
 
         private fun getDelegatedUserAuthorityIds(): Set<Long> {
-            val authDelegations = schemaCtx.delegationApi.getAuthDelegations(AuthContext.getCurrentUser(), emptyList())
+            val authDelegations = schemaCtx.delegationService.getActiveAuthDelegations(AuthContext.getCurrentUser(), emptyList())
             val allDelegatedAuthorities = mutableSetOf<String>()
             for (authDelegation in authDelegations) {
                 val delegatedTypes = authDelegation.delegatedTypes
                 if (delegatedTypes.isEmpty() || delegatedTypes.contains(typeId)) {
                     allDelegatedAuthorities.addAll(authDelegation.delegatedAuthorities)
                 } else {
-                    ecosTypeService?.let {
-                        for (delegatedType in delegatedTypes) {
-                            if (it.isSubType(typeId, delegatedType)) {
-                                allDelegatedAuthorities.addAll(authDelegation.delegatedAuthorities)
-                                break
-                            }
+                    for (delegatedType in delegatedTypes) {
+                        if (schemaCtx.ecosTypeService.isSubType(typeId, delegatedType)) {
+                            allDelegatedAuthorities.addAll(authDelegation.delegatedAuthorities)
+                            break
                         }
                     }
                 }
@@ -1047,9 +1043,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             return schemaCtx
         }
 
-        override fun setTypeData(typeId: String, ecosTypeService: DbEcosModelService) {
+        override fun setTypeId(typeId: String) {
             this.typeId = typeId
-            this.ecosTypeService = ecosTypeService
         }
     }
 }

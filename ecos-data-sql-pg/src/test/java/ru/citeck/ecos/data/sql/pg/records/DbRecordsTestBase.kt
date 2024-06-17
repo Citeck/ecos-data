@@ -226,14 +226,6 @@ abstract class DbRecordsTestBase {
 
             val remoteActions = DbRecordsRemoteActionsServiceImpl()
 
-            dbDataSource = DbDataSourceImpl(jdbcDataSource)
-            dataSourceCtx = DbDataSourceContext(
-                dbDataSource,
-                PgDataServiceFactory(),
-                DbMigrationService(),
-                webAppApi
-            )
-
             val txnManager = TransactionManagerImpl()
             txnManager.init(webAppApi, EcosTxnProps())
             TxnContext.setManager(txnManager)
@@ -295,7 +287,7 @@ abstract class DbRecordsTestBase {
                 }
 
                 override fun createDelegationService(): DelegationService {
-                    return delegationService
+                    return this@DbRecordsTestBase.delegationService
                 }
 
                 override fun getEcosWebAppApi(): EcosWebAppApi {
@@ -303,6 +295,15 @@ abstract class DbRecordsTestBase {
                 }
             }
             modelServiceFactory.setRecordsServices(recordsServiceFactory)
+
+            dbDataSource = DbDataSourceImpl(jdbcDataSource)
+            dataSourceCtx = DbDataSourceContext(
+                dbDataSource,
+                PgDataServiceFactory(),
+                DbMigrationService(),
+                webAppApi,
+                modelServiceFactory
+            )
 
             records = recordsServiceFactory.recordsServiceV1
             RequestContext.setDefaultServices(recordsServiceFactory)
@@ -698,7 +699,7 @@ abstract class DbRecordsTestBase {
         registerType(typeInfo.copy { withQueryPermsPolicy(policy) })
     }
 
-    inner class CustomDelegationService : DelegationService {
+    class CustomDelegationService : DelegationService {
 
         val activeAuthDelegations = ConcurrentHashMap<String, MutableList<AuthDelegation>>()
 
