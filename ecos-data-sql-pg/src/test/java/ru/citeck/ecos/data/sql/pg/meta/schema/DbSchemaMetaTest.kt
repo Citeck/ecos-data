@@ -10,9 +10,12 @@ import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaEntity
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaService
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaServiceImpl
 import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
+import ru.citeck.ecos.data.sql.pg.records.DbRecordsTestBase
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
+import ru.citeck.ecos.model.lib.ModelServiceFactory
+import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.test.commons.EcosWebAppApiMock
 import ru.citeck.ecos.test.commons.containers.TestContainers
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
@@ -45,11 +48,18 @@ class DbSchemaMetaTest {
         }
         val dataSource = DbDataSourceImpl(jdbcDataSource)
 
+        val modelServiceFactory = object : ModelServiceFactory() {
+            override fun createDelegationService(): DelegationService {
+                return DbRecordsTestBase.CustomDelegationService()
+            }
+        }
+
         val dsCtx = DbDataSourceContext(
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test")
+            EcosWebAppApiMock("test"),
+            modelServiceFactory
         )
         val schemaCtx = dsCtx.getSchemaContext("")
         val dbSchemaDao = dsCtx.schemaDao

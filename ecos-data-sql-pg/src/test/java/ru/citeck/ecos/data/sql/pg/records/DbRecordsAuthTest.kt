@@ -10,6 +10,7 @@ import ru.citeck.ecos.context.lib.auth.AuthGroup
 import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.delegation.dto.AuthDelegation
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
@@ -360,6 +361,45 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         }
         AuthContext.runAs("user0") {
             testPermissions("as-user-0", true)
+        }
+    }
+
+    @Test
+    fun queryTestWithDelegationPerms() {
+
+        var rec: EntityRef = EntityRef.EMPTY
+
+        AuthContext.runAs("user0") {
+            TxnContext.doInTxn {
+                rec = createRecord("textAtt" to "value")
+                assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
+            }
+            setAuthoritiesWithReadPerms(rec, "user0")
+            assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
+        }
+
+        val baseQuery = createQuery()
+
+        val emptyQueryResAssert = {
+            val queryRes = records.query(baseQuery)
+            assertThat(queryRes.getTotalCount()).isEqualTo(0L)
+            assertThat(queryRes.getRecords()).isEmpty()
+        }
+
+        AuthContext.runAs("user1") {
+            emptyQueryResAssert()
+            assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("")
+        }
+
+        AuthContext.runAs("user0") {
+            delegationService.addDelegationTo("user1", AuthDelegation("user0", emptySet(), setOf("user0")))
+        }
+
+        AuthContext.runAs("user1") {
+            val queryRes = records.query(baseQuery)
+            assertThat(queryRes.getTotalCount()).isEqualTo(1L)
+            assertThat(queryRes.getRecords()).hasSize(1)
+            assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
         }
     }
 }

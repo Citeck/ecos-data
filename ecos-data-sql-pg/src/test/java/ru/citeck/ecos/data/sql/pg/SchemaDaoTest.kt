@@ -9,6 +9,9 @@ import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbTableRef
+import ru.citeck.ecos.data.sql.pg.records.DbRecordsTestBase
+import ru.citeck.ecos.model.lib.ModelServiceFactory
+import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.test.commons.EcosWebAppApiMock
 
 class SchemaDaoTest {
@@ -21,11 +24,18 @@ class SchemaDaoTest {
 
     private fun testImpl(dataSource: DbDataSource) {
 
+        val modelServiceFactory = object : ModelServiceFactory() {
+            override fun createDelegationService(): DelegationService {
+                return DbRecordsTestBase.CustomDelegationService()
+            }
+        }
+
         val dsCtx = DbDataSourceContext(
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test")
+            EcosWebAppApiMock("test"),
+            modelServiceFactory
         )
         val tableRef = DbTableRef("some-schema", "test-table")
 
@@ -94,11 +104,18 @@ class SchemaDaoTest {
 
     private fun typeUpdateTestImpl(dataSource: DbDataSource) {
 
+        val modelServiceFactory = object : ModelServiceFactory() {
+            override fun createDelegationService(): DelegationService {
+                return DbRecordsTestBase.CustomDelegationService()
+            }
+        }
+
         val dsCtx = DbDataSourceContext(
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test")
+            EcosWebAppApiMock("test"),
+            modelServiceFactory
         )
         val tableRef = DbTableRef("some-schema", "test-table")
 

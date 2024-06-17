@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
+import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaService
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaServiceImpl
 import ru.citeck.ecos.data.sql.meta.table.DbTableMetaEntity
@@ -19,7 +20,7 @@ import ru.citeck.ecos.data.sql.schema.DbSchemaListener
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
-import ru.citeck.ecos.model.lib.delegation.api.DelegationWebApi
+import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
@@ -54,13 +55,15 @@ class DbSchemaContext(
     val recordRefService: DbRecordRefService = DbRecordRefService(dataSourceCtx.appName, this)
     val assocsService: DbAssocsService = DbAssocsService(this)
 
+    val delegationService: DelegationService = dataSourceCtx.modelServices.delegationService
+    val ecosTypeService: DbEcosModelService = DbEcosModelService(dataSourceCtx.modelServices)
+
     private val metaSchemaVersionKey = listOf("schema-version")
 
     val contentStorageService: EcosContentStorageService = EcosContentStorageServiceImpl(webAppApi, this)
     val contentService: DbContentService = DbContentServiceImpl(contentStorageService, this)
 
     val authoritiesApi: EcosAuthoritiesApi = webAppApi.getAuthoritiesApi()
-    val delegationApi = DelegationWebApi(webAppApi.getWebClientApi())
 
     init {
         dataSourceCtx.schemaDao.addSchemaListener(
