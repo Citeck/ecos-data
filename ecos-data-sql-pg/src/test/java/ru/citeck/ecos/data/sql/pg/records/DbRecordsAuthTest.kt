@@ -366,6 +366,23 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
 
     @Test
     fun queryTestWithDelegationPerms() {
+        registerType(
+            TypeInfo.create()
+                .withId(REC_TEST_TYPE_ID)
+                .withParentRef(ModelUtils.getTypeRef("base"))
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create {
+                                    withId("textAtt")
+                                    withType(AttributeType.TEXT)
+                                }
+                            )
+                        )
+                        .build()
+                ).build()
+        )
 
         var rec: EntityRef = EntityRef.EMPTY
 
@@ -386,6 +403,12 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
             assertThat(queryRes.getRecords()).isEmpty()
         }
 
+        val notEmptyQueryResAssert = {
+            val queryRes = records.query(baseQuery)
+            assertThat(queryRes.getTotalCount()).isEqualTo(1L)
+            assertThat(queryRes.getRecords()).hasSize(1)
+        }
+
         AuthContext.runAs("user1") {
             emptyQueryResAssert()
             assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("")
@@ -396,9 +419,25 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         }
 
         AuthContext.runAs("user1") {
-            val queryRes = records.query(baseQuery)
-            assertThat(queryRes.getTotalCount()).isEqualTo(1L)
-            assertThat(queryRes.getRecords()).hasSize(1)
+            notEmptyQueryResAssert()
+            assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
+        }
+
+        AuthContext.runAs("user0") {
+            delegationService.setDelegationTo("user1", AuthDelegation("user0", setOf("test-type1"), setOf("user0")))
+        }
+
+        AuthContext.runAs("user1") {
+            emptyQueryResAssert()
+            assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("")
+        }
+
+        AuthContext.runAs("user0") {
+            delegationService.setDelegationTo("user1", AuthDelegation("user0", setOf("test-type1", "base"), setOf("user0")))
+        }
+
+        AuthContext.runAs("user1") {
+            notEmptyQueryResAssert()
             assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
         }
     }

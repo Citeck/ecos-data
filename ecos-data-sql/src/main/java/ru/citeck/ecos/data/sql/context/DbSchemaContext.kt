@@ -55,8 +55,7 @@ class DbSchemaContext(
     val recordRefService: DbRecordRefService = DbRecordRefService(dataSourceCtx.appName, this)
     val assocsService: DbAssocsService = DbAssocsService(this)
 
-    val delegationService: DelegationService = dataSourceCtx.modelServices.delegationService
-    val ecosTypeService: DbEcosModelService = DbEcosModelService(dataSourceCtx.modelServices)
+    val delegationService: DelegationService = dataSourceCtx.delegationService
 
     private val metaSchemaVersionKey = listOf("schema-version")
 
