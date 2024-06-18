@@ -11,6 +11,7 @@ import ru.citeck.ecos.context.lib.i18n.I18nContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
+import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValue
@@ -30,6 +31,7 @@ import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.time.temporal.Temporal
 import java.util.*
 import kotlin.collections.ArrayList
@@ -676,7 +678,20 @@ class DbRecord(
     fun getDefaultContent(): DbContentValueWithCustomName? {
         val attributeWithContent = getDefaultContentAtt()
         if (attributeWithContent.contains(".")) {
-            // todo
+            val attContentRef = attributeWithContent.substringBefore(".")
+            if (isCurrentUserHasAttReadPerms(attContentRef)) {
+                val recordRef = additionalAtts[attContentRef]
+                if (recordRef is EntityRef) {
+                    val recordsDao = ctx.recordsService.getRecordsDao(recordRef.getSourceId(), DbRecordsDao::class.java) ?: return null
+                    val atts = recordsDao.getRecordsAtts(listOf(recordRef.getLocalId())).first()
+                    atts.init()
+                    val contentValue = atts.getAtt(RecordConstants.ATT_CONTENT)
+                    if (contentValue is DbContentValueWithCustomName) {
+                        contentValue.getContentValue().setMaskEntityRef(ctx, extId, typeInfo)
+                        return contentValue
+                    }
+                }
+            }
             return null
         }
         return if (isCurrentUserHasAttReadPerms(attributeWithContent)) {

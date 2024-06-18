@@ -15,11 +15,11 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.mime.MimeType
 
 class DbContentValue(
-    private val ctx: DbRecordsDaoCtx,
-    private val recId: String,
-    private val recType: TypeInfo?,
+    private var ctx: DbRecordsDaoCtx,
+    private var recId: String,
+    private var recType: TypeInfo?,
     private val contentDbId: Long,
-    private val attribute: String,
+    private var attribute: String,
     private val isDefaultContent: Boolean
 ) : AttValue, HasEcosContentDbData {
 
@@ -57,11 +57,19 @@ class DbContentValue(
         private const val TRANSFORM_WEBAPI_PATH = "/tfm/transform"
     }
 
-    private val currentEntityRef: EntityRef = ctx.getGlobalRef(recId)
+    private var currentEntityRef: EntityRef = ctx.getGlobalRef(recId)
 
     val contentData: DbEcosContentData by lazy {
         val service = ctx.contentService ?: error("Content service is null")
         service.getContent(contentDbId) ?: error("Content doesn't found by id '$id'")
+    }
+
+    fun setMaskEntityRef(ctx: DbRecordsDaoCtx, extId: String, type: TypeInfo) {
+        recId = extId
+        recType = type
+        currentEntityRef = ctx.getGlobalRef(extId)
+        this.ctx = ctx
+        attribute = ""
     }
 
     override fun getContentDbData(): DbEcosContentData {

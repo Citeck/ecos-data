@@ -4,10 +4,15 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.commons.utils.digest.DigestUtils
 import ru.citeck.ecos.commons.utils.io.IOUtils
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.dto.TypeContentConfig
+import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.dao.atts.RecordAttsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -255,5 +260,56 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
 
             assertThat(bytesFromRead).isEqualTo(bytesFromAtt).isEqualTo(contentSrc)
         }
+    }
+
+    @Test
+    fun customContentConfigTest() {
+        registerType(
+            TypeInfo.create {
+                withId(REC_TEST_TYPE_ID)
+                withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("systemDocumentLink")
+                                    .withType(AttributeType.ASSOC)
+                                    .build()
+                            )
+                        ).build()
+                ).build()
+                withContentConfig(
+                    TypeContentConfig.create()
+                        .withPath("systemDocumentLink.content")
+                        .withPreviewPath("systemDocumentLink.content")
+                        .build()
+                )
+            }
+        )
+
+        val fileName = "text-file-sample.txt"
+        val textContent = "text-file-sample content\n"
+
+        val contentRecord = createTempRecord(fileName, MimeTypes.TXT_PLAIN, textContent.toByteArray())
+        val record = createRecord("systemDocumentLink" to contentRecord)
+
+        val content = recordsDao.getContent(record.getLocalId(), RecordConstants.ATT_CONTENT)
+        val utf8String = content?.readContent { IOUtils.readAsString(it) }
+        val mimeType = records.getAtt(record, "${RecordConstants.ATT_CONTENT}.mimeType").asText()
+
+        assertThat(utf8String).isEqualTo(textContent)
+        assertThat(mimeType).isEqualTo(MimeTypes.TXT_PLAIN.toString())
+
+        val contentDataJson = records.getAtt(record, "${RecordConstants.ATT_CONTENT}._as.content-data?json")
+        val contentNameFromAtt = records.getAtt(record, "${RecordConstants.ATT_CONTENT}.name").asText()
+        val expectedContentSize = textContent.toByteArray(Charsets.UTF_8).size
+
+        assertThat(contentDataJson.size()).isEqualTo(5)
+        assertThat(contentDataJson["name"].asText()).isEqualTo(fileName).isEqualTo(contentNameFromAtt)
+        assertThat(contentDataJson["size"].asInt()).isEqualTo(expectedContentSize)
+        assertThat(contentDataJson["url"].asText()).isNotBlank
+        assertThat(contentDataJson["recordRef"].toEntityRef()).isEqualTo(record)
+        assertThat(contentDataJson["fileType"].asText()).isEqualTo(REC_TEST_TYPE_ID)
+        assertThat(records.getAtt(record, "${RecordConstants.ATT_CONTENT}.size").asInt()).isEqualTo(expectedContentSize)
     }
 }
