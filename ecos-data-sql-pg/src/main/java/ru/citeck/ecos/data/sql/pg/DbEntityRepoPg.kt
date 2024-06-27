@@ -448,7 +448,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             permsColumn,
             query.groupBy,
             query.assocSelectJoins,
-            query.rawTableJoins
+            query.rawTableJoins,
+            query.typeId
         )
     }
 
@@ -524,7 +525,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         permsColumn: String,
         groupBy: List<String>,
         assocSelectJoins: Map<String, DbTableContext>,
-        rawTableJoins: Map<String, RawTableJoin>
+        rawTableJoins: Map<String, RawTableJoin>,
+        typeId: String
     ): Long {
 
         val selectQuery = createSelectQuery(
@@ -539,7 +541,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             emptyMap(),
             groupBy,
             assocSelectJoins,
-            rawTableJoins
+            rawTableJoins,
+            typeId
         )
         if (selectQuery.contains(WHERE_ALWAYS_FALSE)) {
             return 0
@@ -677,7 +680,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             query.assocSelectJoins,
             query.rawTableJoins,
             asjAliases,
-            selectExpressions
+            selectExpressions,
+            query.typeId
         )
 
         val resultEntities = context.getDataSource().query(selectQuery, params) { resultSet ->
@@ -708,7 +712,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 permsColumn,
                 query.groupBy,
                 query.assocSelectJoins,
-                query.rawTableJoins
+                query.rawTableJoins,
+                query.typeId
             )
         }
         return DbFindRes(resultEntities, totalCount)
@@ -729,7 +734,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         assocSelectJoins: Map<String, DbTableContext>,
         rawTableJoins: Map<String, RawTableJoin>,
         asjAliases: MutableMap<String, String>,
-        selectExpressions: Set<String>
+        selectExpressions: Set<String>,
+        typeId: String
     ): String {
 
         val selectColumnsStr = StringBuilder()
@@ -803,7 +809,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             expressions,
             convertedGroupBy,
             assocSelectJoins,
-            rawTableJoins
+            rawTableJoins,
+            typeId
         )
     }
 
@@ -851,7 +858,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         expressions: Map<String, ExpressionToken>,
         groupBy: List<String> = emptyList(),
         assocSelectJoins: Map<String, DbTableContext>,
-        rawTableJoins: Map<String, RawTableJoin>
+        rawTableJoins: Map<String, RawTableJoin>,
+        typeId: String
     ): String {
 
         val delCondition = if (context.hasDeleteFlag() && !withDeleted) {
@@ -860,7 +868,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             ""
         }
 
-        val permsCondition = getPermsCondition(context, permsColumn)
+        val permsCondition = getPermsCondition(context, permsColumn, typeId)
         val fullCondition = joinConditionsByAnd(delCondition, condition, permsCondition)
 
         val query = StringBuilder()
@@ -1111,13 +1119,13 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
     }
 
-    private fun getPermsCondition(context: DbTableContext, permsColumn: String): String {
+    private fun getPermsCondition(context: DbTableContext, permsColumn: String, typeId: String): String {
 
         if (permsColumn.isBlank()) {
             return ""
         }
 
-        val authorities = context.getCurrentUserAuthorityIds()
+        val authorities = context.getCurrentUserAuthorityIds(typeId)
         if (authorities.isEmpty()) {
             return ALWAYS_FALSE_CONDITION
         }

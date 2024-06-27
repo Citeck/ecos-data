@@ -42,13 +42,11 @@ interface DbTableContext {
 
     fun getTypesConverter(): DbTypesConverter
 
-    fun getCurrentUserAuthorityIds(): Set<Long>
+    fun getCurrentUserAuthorityIds(type: String): Set<Long>
 
     fun getQueryPermsPolicy(): QueryPermsPolicy
 
     fun isSameSchema(other: DbTableContext): Boolean
 
     fun getSchemaCtx(): DbSchemaContext
-
-    fun setTypeId(typeId: String)
 }
