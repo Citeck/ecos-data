@@ -17,7 +17,8 @@ class DbFindQuery(
     val predicate: Predicate,
     val withDeleted: Boolean,
     val sortBy: List<DbFindSort>,
-    val groupBy: List<String>
+    val groupBy: List<String>,
+    var typeId: String
 ) {
 
     companion object {
@@ -52,6 +53,8 @@ class DbFindQuery(
         var assocJoinWithPredicates: MutableList<AssocJoinWithPredicate> = ArrayList()
         var rawTableJoins: Map<String, RawTableJoin> = emptyMap()
 
+        var typeId: String = ""
+
         constructor(base: DbFindQuery) : this() {
             this.predicate = base.predicate.copy()
             this.withDeleted = base.withDeleted
@@ -62,6 +65,7 @@ class DbFindQuery(
             this.assocSelectJoins = HashMap(base.assocSelectJoins)
             this.assocJoinWithPredicates = ArrayList(base.assocJoinsWithPredicate)
             this.rawTableJoins = base.rawTableJoins
+            this.typeId = base.typeId
         }
 
         fun withPredicate(predicate: Predicate?): Builder {
@@ -124,6 +128,11 @@ class DbFindQuery(
             return this
         }
 
+        fun withTypeId(typeId: String): Builder {
+            this.typeId = typeId
+            return this
+        }
+
         fun build(): DbFindQuery {
             return DbFindQuery(
                 expressions = expressions,
@@ -134,7 +143,8 @@ class DbFindQuery(
                 predicate = predicate,
                 withDeleted = withDeleted,
                 sortBy = sortBy,
-                groupBy = groupBy
+                groupBy = groupBy,
+                typeId = typeId
             )
         }
     }

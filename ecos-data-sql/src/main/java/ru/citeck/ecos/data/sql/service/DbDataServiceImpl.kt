@@ -901,7 +901,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         private val columnsByName = columns.associateBy { it.name }
         private val hasIdColumn = columnsByName.containsKey(DbEntity.ID)
         private val hasDeleteFlag = columnsByName.containsKey(DbEntity.DELETED)
-        private var typeId: String? = null
 
         override fun getRecordRefsService(): DbRecordRefService {
             return schemaCtx.recordRefService
@@ -983,24 +982,21 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             return permsPolicy.get()
         }
 
-        override fun getCurrentUserAuthorityIds(): Set<Long> {
+        override fun getCurrentUserAuthorityIds(type: String): Set<Long> {
             val authority = getAuthorityEntitiesIds(DbRecordsUtils.getCurrentAuthorities()).toMutableSet()
-            val delegatedAuthority = getDelegatedUserAuthorityIds()
+            val delegatedAuthority = getDelegatedUserAuthorityIds(type)
             if (delegatedAuthority.isNotEmpty()) {
                 authority.addAll(delegatedAuthority)
             }
             return authority
         }
 
-        private fun getDelegatedUserAuthorityIds(): List<Long> {
-            typeId?.let { type ->
-                val authDelegations = schemaCtx.delegationService.getActiveAuthDelegations(
-                    AuthContext.getCurrentUser(),
-                    listOf(type)
-                )
-                return authDelegations.flatMap { getAuthorityEntitiesIds(it.delegatedAuthorities) }
-            }
-            return emptyList()
+        private fun getDelegatedUserAuthorityIds(type: String): List<Long> {
+            val authDelegations = schemaCtx.delegationService.getActiveAuthDelegations(
+                AuthContext.getCurrentUser(),
+                listOf(type)
+            )
+            return authDelegations.flatMap { getAuthorityEntitiesIds(it.delegatedAuthorities) }
         }
 
         private fun getAuthorityEntitiesIds(authorities: Set<String>): Set<Long> {
@@ -1032,10 +1028,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
         override fun getSchemaCtx(): DbSchemaContext {
             return schemaCtx
-        }
-
-        override fun setTypeId(typeId: String) {
-            this.typeId = typeId
         }
     }
 }

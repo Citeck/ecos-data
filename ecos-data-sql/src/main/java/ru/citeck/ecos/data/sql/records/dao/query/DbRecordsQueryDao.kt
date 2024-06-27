@@ -161,6 +161,7 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             withAssocTableJoins(predicateData.assocTableJoins)
             withAssocJoinWithPredicates(predicateData.assocJoinWithPredicates)
             withExpressions(expressionsToQuery)
+            withTypeId(ecosTypeRef.getLocalId())
         }
         val resultMaxItems = if (page.maxItems == -1) {
             config.queryMaxItems
@@ -172,7 +173,6 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
 
         return dataService.doWithPermsPolicy(predicateData.queryPermsPolicy) {
             executeFind(
-                ecosTypeRef.getLocalId(),
                 dbQuery,
                 queryCtx,
                 predicateData,
@@ -184,7 +184,6 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
     }
 
     private fun executeFind(
-        typeId: String,
         dbQuery: DbFindQuery,
         queryCtx: DbFindQueryContext,
         predicateData: ProcessedPredicateData,
@@ -214,7 +213,6 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             maxItems + 1
         }
 
-        dataService.getTableContext().setTypeId(typeId)
         val findRes = dataService.find(
             dbQuery,
             DbFindPage(totalSkipCount, queryMaxItems),
