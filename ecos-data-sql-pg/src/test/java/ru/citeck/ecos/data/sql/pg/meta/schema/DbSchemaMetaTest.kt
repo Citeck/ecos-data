@@ -10,7 +10,6 @@ import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaEntity
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaService
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaServiceImpl
 import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
-import ru.citeck.ecos.data.sql.pg.records.DbRecordsTestBase
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
@@ -50,8 +49,7 @@ class DbSchemaMetaTest {
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test"),
-            DbRecordsTestBase.CustomDelegationService()
+            EcosWebAppApiMock("test")
         )
         val schemaCtx = dsCtx.getSchemaContext("")
         val dbSchemaDao = dsCtx.schemaDao

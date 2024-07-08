@@ -83,6 +83,26 @@ class DbRecordRefService(
     }
 
     /**
+     * Get record identifiers for references
+     */
+    fun getIdByEntityRefsMap(refs: Collection<EntityRef>): Map<EntityRef, Long> {
+        val refsList = if (refs is List<EntityRef>) {
+            refs
+        } else {
+            refs.toList()
+        }
+        val ids = getIdByEntityRefs(refsList)
+        val result = LinkedHashMap<EntityRef, Long>()
+        for (i in refs.indices) {
+            val id = ids[i]
+            if (id != -1L) {
+                result[refsList[i]] = id
+            }
+        }
+        return result
+    }
+
+    /**
      * Get record identifiers for references or -1 if reference is not registered
      */
     fun getIdByEntityRefs(refs: List<EntityRef>): List<Long> {

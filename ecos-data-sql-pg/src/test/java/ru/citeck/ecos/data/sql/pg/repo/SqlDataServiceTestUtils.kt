@@ -5,7 +5,6 @@ import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.pg.PgDataServiceFactory
-import ru.citeck.ecos.data.sql.pg.records.DbRecordsTestBase
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
@@ -14,12 +13,12 @@ import ru.citeck.ecos.test.commons.EcosWebAppApiMock
 object SqlDataServiceTestUtils {
 
     fun createService(dbDataSource: DbDataSource, tableName: String): SqlDataServiceTestCtx {
+
         val dsCtx = DbDataSourceContext(
             dbDataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test"),
-            DbRecordsTestBase.CustomDelegationService()
+            EcosWebAppApiMock("test")
         )
         val schemaCtx = dsCtx.getSchemaContext("sql-data-service-test-utils-schema")
 

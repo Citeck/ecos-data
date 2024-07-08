@@ -18,7 +18,8 @@ class DbFindQuery(
     val withDeleted: Boolean,
     val sortBy: List<DbFindSort>,
     val groupBy: List<String>,
-    var typeId: String
+    val userAuthorities: Set<String>,
+    val delegatedAuthorities: List<Pair<Set<Long>, Set<String>>>
 ) {
 
     companion object {
@@ -52,8 +53,8 @@ class DbFindQuery(
         var assocSelectJoins: Map<String, DbTableContext> = HashMap()
         var assocJoinWithPredicates: MutableList<AssocJoinWithPredicate> = ArrayList()
         var rawTableJoins: Map<String, RawTableJoin> = emptyMap()
-
-        var typeId: String = ""
+        var userAuthorities: Set<String> = emptySet()
+        var delegatedAuthorities: List<Pair<Set<Long>, Set<String>>> = emptyList()
 
         constructor(base: DbFindQuery) : this() {
             this.predicate = base.predicate.copy()
@@ -65,7 +66,8 @@ class DbFindQuery(
             this.assocSelectJoins = HashMap(base.assocSelectJoins)
             this.assocJoinWithPredicates = ArrayList(base.assocJoinsWithPredicate)
             this.rawTableJoins = base.rawTableJoins
-            this.typeId = base.typeId
+            this.userAuthorities = base.userAuthorities
+            this.delegatedAuthorities = base.delegatedAuthorities
         }
 
         fun withPredicate(predicate: Predicate?): Builder {
@@ -128,8 +130,13 @@ class DbFindQuery(
             return this
         }
 
-        fun withTypeId(typeId: String): Builder {
-            this.typeId = typeId
+        fun withUserAuthorities(userAuthorities: Set<String>): Builder {
+            this.userAuthorities = userAuthorities
+            return this
+        }
+
+        fun withDelegatedAuthorities(delegatedAuthorities: List<Pair<Set<Long>, Set<String>>>): Builder {
+            this.delegatedAuthorities = delegatedAuthorities
             return this
         }
 
@@ -144,7 +151,8 @@ class DbFindQuery(
                 withDeleted = withDeleted,
                 sortBy = sortBy,
                 groupBy = groupBy,
-                typeId = typeId
+                userAuthorities = userAuthorities,
+                delegatedAuthorities = delegatedAuthorities
             )
         }
     }
