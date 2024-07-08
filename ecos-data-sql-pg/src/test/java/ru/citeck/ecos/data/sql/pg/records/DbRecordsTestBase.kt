@@ -262,6 +262,7 @@ abstract class DbRecordsTestBase {
                                 ModelUtils.getTypeRef(it.id)
                             }
                         }
+
                         override fun getTypeInfo(typeRef: EntityRef): TypeInfo? {
                             return typesInfo[typeRef.getLocalId()]
                         }
@@ -300,8 +301,7 @@ abstract class DbRecordsTestBase {
                 dbDataSource,
                 PgDataServiceFactory(),
                 DbMigrationService(),
-                webAppApi,
-                delegationService
+                webAppApi
             )
 
             records = recordsServiceFactory.recordsServiceV1
@@ -736,20 +736,75 @@ abstract class DbRecordsTestBase {
 
         override fun getActiveAuthDelegations(user: String, types: Collection<String>): List<AuthDelegation> {
             val delegations = activeAuthDelegations[user] ?: return emptyList()
-            return delegations.filter { delegation ->
-                delegation.delegatedTypes.isEmpty() ||
-                    delegation.delegatedTypes.any { delegatedType ->
-                        types.contains(delegatedType) ||
-                            types.any { type ->
-                                ecosTypeService.isSubType(type, delegatedType)
-                            }
-                    }
+            return delegations.mapNotNull { prepareDelegation(types, it) }
+        }
+
+        private fun prepareDelegation(reqTypes: Collection<String>, delegation: AuthDelegation): AuthDelegation? {
+            val delegatedTypes = delegation.delegatedTypes
+
+            val matchedReqTypes = HashSet<String>(reqTypes.size)
+            if (!isDelegatedTypesMatch(reqTypes, delegatedTypes, matchedReqTypes)) {
+                return null
             }
+            val delegatedAuthorities = delegation.delegatedAuthorities.mapTo(HashSet()) {
+                if (it == "OWN") {
+                    delegation.delegator
+                } else {
+                    it
+                }
+            }
+            if (delegatedAuthorities.isEmpty()) {
+                return null
+            }
+            val types: Set<String> = if (delegatedTypes.isEmpty()) {
+                emptySet()
+            } else if (reqTypes.isEmpty()) {
+                val allTypes = mutableSetOf<String>()
+                delegatedTypes.forEach { delegatedTypeId ->
+                    allTypes.add(delegatedTypeId)
+                    ecosTypeService.getAllChildrenIds(delegatedTypeId, allTypes)
+                }
+                allTypes
+            } else {
+                matchedReqTypes
+            }
+            return AuthDelegation(
+                delegator = delegation.delegator,
+                delegatedTypes = types,
+                delegatedAuthorities = delegatedAuthorities
+            )
+        }
+
+        private fun isDelegatedTypesMatch(
+            reqTypes: Collection<String>,
+            delegatedTypes: Set<String>,
+            matchedReqTypes: MutableSet<String>
+        ): Boolean {
+            if (reqTypes.isEmpty() || delegatedTypes.isEmpty()) {
+                return true
+            }
+            var hasTypesMatch = false
+            for (delegatedType in delegatedTypes) {
+                if (reqTypes.contains(delegatedType)) {
+                    return true
+                }
+                for (reqTypeId in reqTypes) {
+                    if (ecosTypeService.isSubType(delegatedType, reqTypeId)) {
+                        hasTypesMatch = true
+                        matchedReqTypes.add(delegatedType)
+                    } else if (ecosTypeService.isSubType(reqTypeId, delegatedType)) {
+                        hasTypesMatch = true
+                        matchedReqTypes.add(reqTypeId)
+                    }
+                }
+            }
+            return hasTypesMatch
         }
 
         override fun delegatePermission(record: Any, permission: PermissionType, from: String, to: String) {
             TODO("Not yet implemented")
         }
+
         override fun getPermissionDelegates(record: Any, permission: PermissionType): List<PermissionDelegateData> {
             TODO("Not yet implemented")
         }

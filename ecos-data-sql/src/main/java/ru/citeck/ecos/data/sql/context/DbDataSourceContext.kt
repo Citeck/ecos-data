@@ -7,7 +7,6 @@ import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.service.DbDataServiceFactory
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
-import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import java.util.concurrent.ConcurrentHashMap
@@ -18,7 +17,6 @@ class DbDataSourceContext(
     dataServiceFactory: DbDataServiceFactory,
     private val migrationService: DbMigrationService,
     private val webAppApi: EcosWebAppApi,
-    val delegationService: DelegationService,
     val remoteActionsClient: DbRecordsRemoteActionsClient? = null
 ) {
     val appName: String = webAppApi.getProperties().appName

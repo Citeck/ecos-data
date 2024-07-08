@@ -9,7 +9,6 @@ import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.dto.DbTableRef
-import ru.citeck.ecos.data.sql.pg.records.DbRecordsTestBase
 import ru.citeck.ecos.test.commons.EcosWebAppApiMock
 
 class SchemaDaoTest {
@@ -21,12 +20,12 @@ class SchemaDaoTest {
     }
 
     private fun testImpl(dataSource: DbDataSource) {
+
         val dsCtx = DbDataSourceContext(
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test"),
-            DbRecordsTestBase.CustomDelegationService()
+            EcosWebAppApiMock("test")
         )
         val tableRef = DbTableRef("some-schema", "test-table")
 
@@ -94,12 +93,12 @@ class SchemaDaoTest {
     }
 
     private fun typeUpdateTestImpl(dataSource: DbDataSource) {
+
         val dsCtx = DbDataSourceContext(
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test"),
-            DbRecordsTestBase.CustomDelegationService()
+            EcosWebAppApiMock("test")
         )
         val tableRef = DbTableRef("some-schema", "test-table")
 

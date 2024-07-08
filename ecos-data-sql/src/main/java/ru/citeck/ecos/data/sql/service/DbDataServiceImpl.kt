@@ -4,7 +4,6 @@ import mu.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
-import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
@@ -17,7 +16,6 @@ import ru.citeck.ecos.data.sql.meta.table.dto.DbTableChangeSet
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaConfig
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
-import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
@@ -982,32 +980,14 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             return permsPolicy.get()
         }
 
-        override fun getCurrentUserAuthorityIds(type: String): Set<Long> {
-            val authority = getAuthorityEntitiesIds(DbRecordsUtils.getCurrentAuthorities()).toMutableSet()
-            val delegatedAuthority = getDelegatedUserAuthorityIds(type)
-            if (delegatedAuthority.isNotEmpty()) {
-                authority.addAll(delegatedAuthority)
-            }
-            return authority
-        }
-
-        private fun getDelegatedUserAuthorityIds(type: String): List<Long> {
-            val authDelegations = schemaCtx.delegationService.getActiveAuthDelegations(
-                AuthContext.getCurrentUser(),
-                listOf(type)
-            )
-            return authDelegations.flatMap { getAuthorityEntitiesIds(it.delegatedAuthorities) }
-        }
-
-        private fun getAuthorityEntitiesIds(authorities: Set<String>): Set<Long> {
+        override fun getAuthoritiesIdsMap(authorities: Collection<String>): Map<String, Long> {
             if (authorities.isEmpty()) {
-                return emptySet()
+                return emptyMap()
             }
-
             val authorityEntities = schemaCtx.authorityDataService.findAll(
                 Predicates.`in`(DbAuthorityEntity.EXT_ID, authorities)
             )
-            return authorityEntities.map { it.id }.toSet()
+            return authorityEntities.associate { it.extId to it.id }
         }
 
         override fun isSameSchema(other: DbTableContext): Boolean {
