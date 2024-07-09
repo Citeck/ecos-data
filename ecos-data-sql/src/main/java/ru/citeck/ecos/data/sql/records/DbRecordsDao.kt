@@ -1012,7 +1012,7 @@ class DbRecordsDao(
             typeAttColumns
         )
 
-        if (entityToMutate == entityBeforeMutation) {
+        if (entityToMutate == entityBeforeMutation && changedAssocs.isEmpty()) {
             return entityBeforeMutation
         }
 
