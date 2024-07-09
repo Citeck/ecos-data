@@ -6,6 +6,7 @@ import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.perms.DbPermsEntity
+import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
 import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
@@ -448,7 +449,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             permsColumn,
             query.groupBy,
             query.assocSelectJoins,
-            query.rawTableJoins
+            query.rawTableJoins,
+            query.userAuthorities,
+            query.delegatedAuthorities
         )
     }
 
@@ -524,7 +527,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         permsColumn: String,
         groupBy: List<String>,
         assocSelectJoins: Map<String, DbTableContext>,
-        rawTableJoins: Map<String, RawTableJoin>
+        rawTableJoins: Map<String, RawTableJoin>,
+        userAuthorities: Set<String>,
+        delegatedAuthorities: List<Pair<Set<Long>, Set<String>>>
     ): Long {
 
         val selectQuery = createSelectQuery(
@@ -539,7 +544,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             emptyMap(),
             groupBy,
             assocSelectJoins,
-            rawTableJoins
+            rawTableJoins,
+            userAuthorities,
+            delegatedAuthorities
         )
         if (selectQuery.contains(WHERE_ALWAYS_FALSE)) {
             return 0
@@ -677,7 +684,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             query.assocSelectJoins,
             query.rawTableJoins,
             asjAliases,
-            selectExpressions
+            selectExpressions,
+            query.userAuthorities,
+            query.delegatedAuthorities
         )
 
         val resultEntities = context.getDataSource().query(selectQuery, params) { resultSet ->
@@ -708,7 +717,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 permsColumn,
                 query.groupBy,
                 query.assocSelectJoins,
-                query.rawTableJoins
+                query.rawTableJoins,
+                query.userAuthorities,
+                query.delegatedAuthorities
             )
         }
         return DbFindRes(resultEntities, totalCount)
@@ -729,7 +740,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         assocSelectJoins: Map<String, DbTableContext>,
         rawTableJoins: Map<String, RawTableJoin>,
         asjAliases: MutableMap<String, String>,
-        selectExpressions: Set<String>
+        selectExpressions: Set<String>,
+        userAuthorities: Set<String>,
+        delegatedAuthorities: List<Pair<Set<Long>, Set<String>>>
     ): String {
 
         val selectColumnsStr = StringBuilder()
@@ -803,7 +816,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             expressions,
             convertedGroupBy,
             assocSelectJoins,
-            rawTableJoins
+            rawTableJoins,
+            userAuthorities,
+            delegatedAuthorities
         )
     }
 
@@ -851,7 +866,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         expressions: Map<String, ExpressionToken>,
         groupBy: List<String> = emptyList(),
         assocSelectJoins: Map<String, DbTableContext>,
-        rawTableJoins: Map<String, RawTableJoin>
+        rawTableJoins: Map<String, RawTableJoin>,
+        userAuthorities: Set<String>,
+        delegatedAuthorities: List<Pair<Set<Long>, Set<String>>>
     ): String {
 
         val delCondition = if (context.hasDeleteFlag() && !withDeleted) {
@@ -860,7 +877,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             ""
         }
 
-        val permsCondition = getPermsCondition(context, permsColumn)
+        val permsCondition = getPermsCondition(context, permsColumn, userAuthorities, delegatedAuthorities)
         val fullCondition = joinConditionsByAnd(delCondition, condition, permsCondition)
 
         val query = StringBuilder()
@@ -1111,14 +1128,28 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
     }
 
-    private fun getPermsCondition(context: DbTableContext, permsColumn: String): String {
+    private fun getPermsCondition(
+        context: DbTableContext,
+        permsColumn: String,
+        userAuthorities: Set<String>,
+        delegatedAuthorities: List<Pair<Set<Long>, Set<String>>>
+    ): String {
 
         if (permsColumn.isBlank()) {
             return ""
         }
 
-        val authorities = context.getCurrentUserAuthorityIds()
+        val authorities = userAuthorities.ifEmpty { DbRecordsUtils.getCurrentAuthorities() }
         if (authorities.isEmpty()) {
+            return ALWAYS_FALSE_CONDITION
+        }
+        val fullAuthorities = HashSet<String>(authorities)
+        for ((_, delegationAuth) in delegatedAuthorities) {
+            fullAuthorities.addAll(delegationAuth)
+        }
+        val authorityIdByName = context.getAuthoritiesIdsMap(fullAuthorities)
+        val authoritiesIds = authorities.mapNotNull { authorityIdByName[it] }
+        if (authoritiesIds.isEmpty() && delegatedAuthorities.isEmpty()) {
             return ALWAYS_FALSE_CONDITION
         }
 
@@ -1138,13 +1169,32 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             .append(permsTableName).append(" ").append(permsAlias)
             .append(" WHERE ")
             .append(permsJoinCondition)
-            .append(" AND $permsAlias.\"${DbPermsEntity.AUTHORITY_ID}\" IN (")
+            .append(" AND ($permsAlias.\"${DbPermsEntity.AUTHORITY_ID}\" IN (")
 
-        condition.append("")
-        authorities.forEach {
+        authoritiesIds.forEach {
             condition.append(it).append(",")
         }
         condition.setLength(condition.length - 1)
+        condition.append(")")
+        if (context.hasColumn(DbEntity.TYPE)) {
+            for ((delegatedTypesIds, delegationAuth) in delegatedAuthorities) {
+                val authIds = delegationAuth.mapNotNull { authorityIdByName[it] }
+                if (authIds.isEmpty() || delegatedTypesIds.isEmpty()) {
+                    continue
+                }
+                condition.append(" OR (\"$RECORD_TABLE_ALIAS\".\"${DbEntity.TYPE}\" IN (")
+                for (typeId in delegatedTypesIds) {
+                    condition.append(typeId).append(",")
+                }
+                condition.setLength(condition.length - 1)
+                condition.append(") AND $permsAlias.\"${DbPermsEntity.AUTHORITY_ID}\" IN (")
+                for (authId in authIds) {
+                    condition.append(authId).append(",")
+                }
+                condition.setLength(condition.length - 1)
+                condition.append("))")
+            }
+        }
         condition.append("))")
         if (isCheckPermsByParent) {
             condition.append(" OR NOT EXISTS(SELECT 1 FROM ").append(permsTableName).append(" ")

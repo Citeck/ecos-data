@@ -132,6 +132,10 @@ class DbRecord(
             AttributeDef.create()
                 .withId(RecordConstants.ATT_MODIFIED)
                 .withType(AttributeType.DATETIME)
+                .build(),
+            AttributeDef.create()
+                .withId(ATT_STATUS_MODIFIED)
+                .withType(AttributeType.DATETIME)
                 .build()
         ).associateBy { it.id }
 

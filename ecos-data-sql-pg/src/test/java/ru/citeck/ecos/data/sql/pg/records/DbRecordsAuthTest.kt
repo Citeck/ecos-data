@@ -10,11 +10,14 @@ import ru.citeck.ecos.context.lib.auth.AuthGroup
 import ru.citeck.ecos.context.lib.auth.data.EmptyAuth
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.delegation.dto.AuthDelegation
 import ru.citeck.ecos.model.lib.role.constants.RoleConstants
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.utils.ModelUtils
+import ru.citeck.ecos.records2.predicate.model.Predicate
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import kotlin.collections.ArrayList
@@ -361,5 +364,180 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
         AuthContext.runAs("user0") {
             testPermissions("as-user-0", true)
         }
+    }
+
+    @Test
+    fun queryTestWithDelegationPerms() {
+        registerType(
+            TypeInfo.create()
+                .withId(REC_TEST_TYPE_ID)
+                .withParentRef(ModelUtils.getTypeRef("base"))
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create {
+                                    withId("textAtt")
+                                    withType(AttributeType.TEXT)
+                                }
+                            )
+                        )
+                        .build()
+                ).build()
+        )
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
+
+        var rec: EntityRef = EntityRef.EMPTY
+
+        AuthContext.runAs("user0") {
+            TxnContext.doInTxn {
+                rec = createRecord("textAtt" to "value")
+                assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
+            }
+            setAuthoritiesWithReadPerms(rec, "user0")
+            assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
+        }
+
+        val baseQuery = createQuery()
+
+        val emptyQueryResAssert = {
+            val queryRes = records.query(baseQuery)
+            assertThat(queryRes.getTotalCount()).isEqualTo(0L)
+            assertThat(queryRes.getRecords()).isEmpty()
+        }
+
+        val notEmptyQueryResAssert = {
+            val queryRes = records.query(baseQuery)
+            assertThat(queryRes.getTotalCount()).isEqualTo(1L)
+            assertThat(queryRes.getRecords()).hasSize(1)
+        }
+
+        AuthContext.runAs("user1") {
+            emptyQueryResAssert()
+            assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("")
+        }
+
+        AuthContext.runAs("user0") {
+            delegationService.addDelegationTo("user1", AuthDelegation("user0", emptySet(), setOf("user0")))
+        }
+
+        AuthContext.runAs("user1") {
+            notEmptyQueryResAssert()
+            assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
+        }
+
+        AuthContext.runAs("user0") {
+            delegationService.setDelegationTo("user1", AuthDelegation("user0", setOf("test-type1"), setOf("user0")))
+        }
+
+        AuthContext.runAs("user1") {
+            emptyQueryResAssert()
+            assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("")
+        }
+
+        AuthContext.runAs("user0") {
+            delegationService.setDelegationTo("user1", AuthDelegation("user0", setOf("test-type1", "base"), setOf("user0")))
+        }
+
+        AuthContext.runAs("user1") {
+            notEmptyQueryResAssert()
+            assertThat(records.getAtt(rec, "textAtt").asText()).isEqualTo("value")
+        }
+    }
+
+    @Test
+    fun queryTypesDelegationTest() {
+
+        val type0 = ModelUtils.getTypeRef("test-type-0")
+        val type1 = ModelUtils.getTypeRef("test-type-1")
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("parentTextAtt")
+                }
+            )
+        )
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
+
+        registerType(
+            TypeInfo.create()
+                .withId(type0.getLocalId())
+                .withQueryPermsPolicy(QueryPermsPolicy.OWN)
+                .withParentRef(REC_TEST_TYPE_REF)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create {
+                                    withId("textAtt0")
+                                }
+                            )
+                        )
+                        .build()
+                ).build()
+        )
+
+        registerType(
+            TypeInfo.create()
+                .withId(type1.getLocalId())
+                .withQueryPermsPolicy(QueryPermsPolicy.OWN)
+                .withParentRef(REC_TEST_TYPE_REF)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create {
+                                    withId("textAtt1")
+                                }
+                            )
+                        )
+                        .build()
+                ).build()
+        )
+
+        val type0Recs = (0..50).map { createRecord("_type" to type0) }
+        val type1Recs = (0..50).map { createRecord("_type" to type1) }
+        val baseRecs = listOf(createRecord("_type" to REC_TEST_TYPE_REF))
+
+        val user0 = "user0"
+        val user1 = "user1"
+        val usersAuth = mapOf(
+            user0 to listOf("GROUP_group0", "GROUP_group1"),
+            user1 to listOf("GROUP_group1", "GROUP_group2")
+        )
+
+        fun queryTest(runAs: String, predicate: Predicate?, vararg expected: List<EntityRef>) {
+
+            val query = baseQuery.copy().withQuery(predicate ?: Predicates.alwaysTrue()).build()
+            val recs = if (runAs == "") {
+                records.query(query).getRecords()
+            } else {
+                AuthContext.runAs(runAs, usersAuth[runAs] ?: emptyList()) {
+                    records.query(query).getRecords()
+                }
+            }
+            val expectedList = ArrayList<EntityRef>()
+            expected.forEach { expectedList.addAll(it) }
+            assertThat(recs).containsExactlyInAnyOrderElementsOf(expectedList)
+        }
+        queryTest("", null, type0Recs, type1Recs, baseRecs)
+        setAuthoritiesWithReadPerms(type1Recs[10], "GROUP_group2")
+
+        val allRecords = listOf(
+            *type0Recs.toTypedArray(),
+            *baseRecs.toTypedArray(),
+            *type1Recs.toTypedArray()
+        )
+        val restrictedRecords = allRecords.filter { it != type1Recs[10] }
+
+        queryTest("", null, allRecords)
+        queryTest(user0, null, restrictedRecords)
+        queryTest(user1, null, allRecords)
+
+        delegationService.addDelegationTo(user0, AuthDelegation(user1, setOf(type0.getLocalId()), setOf("GROUP_group2")))
+        queryTest(user0, null, restrictedRecords)
+        delegationService.addDelegationTo(user0, AuthDelegation(user1, setOf(type1.getLocalId()), setOf("GROUP_group2")))
+        queryTest(user0, null, allRecords)
     }
 }

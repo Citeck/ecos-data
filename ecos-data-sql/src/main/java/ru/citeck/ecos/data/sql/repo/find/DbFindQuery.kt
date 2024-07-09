@@ -17,7 +17,9 @@ class DbFindQuery(
     val predicate: Predicate,
     val withDeleted: Boolean,
     val sortBy: List<DbFindSort>,
-    val groupBy: List<String>
+    val groupBy: List<String>,
+    val userAuthorities: Set<String>,
+    val delegatedAuthorities: List<Pair<Set<Long>, Set<String>>>
 ) {
 
     companion object {
@@ -51,6 +53,8 @@ class DbFindQuery(
         var assocSelectJoins: Map<String, DbTableContext> = HashMap()
         var assocJoinWithPredicates: MutableList<AssocJoinWithPredicate> = ArrayList()
         var rawTableJoins: Map<String, RawTableJoin> = emptyMap()
+        var userAuthorities: Set<String> = emptySet()
+        var delegatedAuthorities: List<Pair<Set<Long>, Set<String>>> = emptyList()
 
         constructor(base: DbFindQuery) : this() {
             this.predicate = base.predicate.copy()
@@ -62,6 +66,8 @@ class DbFindQuery(
             this.assocSelectJoins = HashMap(base.assocSelectJoins)
             this.assocJoinWithPredicates = ArrayList(base.assocJoinsWithPredicate)
             this.rawTableJoins = base.rawTableJoins
+            this.userAuthorities = base.userAuthorities
+            this.delegatedAuthorities = base.delegatedAuthorities
         }
 
         fun withPredicate(predicate: Predicate?): Builder {
@@ -124,6 +130,16 @@ class DbFindQuery(
             return this
         }
 
+        fun withUserAuthorities(userAuthorities: Set<String>): Builder {
+            this.userAuthorities = userAuthorities
+            return this
+        }
+
+        fun withDelegatedAuthorities(delegatedAuthorities: List<Pair<Set<Long>, Set<String>>>): Builder {
+            this.delegatedAuthorities = delegatedAuthorities
+            return this
+        }
+
         fun build(): DbFindQuery {
             return DbFindQuery(
                 expressions = expressions,
@@ -134,7 +150,9 @@ class DbFindQuery(
                 predicate = predicate,
                 withDeleted = withDeleted,
                 sortBy = sortBy,
-                groupBy = groupBy
+                groupBy = groupBy,
+                userAuthorities = userAuthorities,
+                delegatedAuthorities = delegatedAuthorities
             )
         }
     }

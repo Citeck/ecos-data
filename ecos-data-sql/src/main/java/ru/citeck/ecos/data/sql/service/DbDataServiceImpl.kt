@@ -16,7 +16,6 @@ import ru.citeck.ecos.data.sql.meta.table.dto.DbTableChangeSet
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaConfig
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
-import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
@@ -40,12 +39,9 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
-import java.lang.IllegalStateException
 import java.sql.SQLException
 import java.time.Instant
-import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.collections.HashMap
 import kotlin.reflect.KClass
 
 class DbDataServiceImpl<T : Any> : DbDataService<T> {
@@ -984,11 +980,14 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             return permsPolicy.get()
         }
 
-        override fun getCurrentUserAuthorityIds(): Set<Long> {
+        override fun getAuthoritiesIdsMap(authorities: Collection<String>): Map<String, Long> {
+            if (authorities.isEmpty()) {
+                return emptyMap()
+            }
             val authorityEntities = schemaCtx.authorityDataService.findAll(
-                Predicates.`in`(DbAuthorityEntity.EXT_ID, DbRecordsUtils.getCurrentAuthorities())
+                Predicates.`in`(DbAuthorityEntity.EXT_ID, authorities)
             )
-            return authorityEntities.map { it.id }.toSet()
+            return authorityEntities.associate { it.extId to it.id }
         }
 
         override fun isSameSchema(other: DbTableContext): Boolean {

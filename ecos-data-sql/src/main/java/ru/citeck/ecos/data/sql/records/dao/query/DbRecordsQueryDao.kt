@@ -135,6 +135,40 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         val groupByForQuery = groupBy.map { queryCtx.registerSelectAtt(it, true) }
         val expressionsToQuery = queryCtx.expressionsCtx.getExpressions()
 
+        val runAsAuth = AuthContext.getCurrentRunAsAuth()
+        val userAuthorities = DbRecordsUtils.getCurrentAuthorities(runAsAuth).toMutableSet()
+        val delegationsList: MutableList<Pair<Set<Long>, Set<String>>> = ArrayList()
+        if (!AuthContext.isRunAsSystem() && predicateData.queryPermsPolicy != QueryPermsPolicy.PUBLIC) {
+            val delegations = daoCtx.delegationService.getActiveAuthDelegations(
+                runAsAuth.getUser(),
+                listOf(ecosTypeRef.getLocalId())
+            )
+            val delegationsForTypeIds: MutableList<Pair<Set<String>, Set<String>>> = ArrayList()
+            val fullTypesIds = HashSet<String>()
+            for (delegation in delegations) {
+                if (delegation.delegatedTypes.isEmpty() ||
+                    delegation.delegatedTypes.contains(ecosTypeRef.getLocalId())
+                ) {
+                    userAuthorities.addAll(delegation.delegatedAuthorities)
+                } else {
+                    fullTypesIds.addAll(delegation.delegatedTypes)
+                    delegationsForTypeIds.add(delegation.delegatedTypes to delegation.delegatedAuthorities)
+                }
+            }
+            val typeRefIdByTypeId: Map<EntityRef, Long> = daoCtx.recordRefService.getIdByEntityRefsMap(
+                fullTypesIds.mapTo(ArrayList()) { ModelUtils.getTypeRef(it) }
+            )
+            for ((typesIds, authorities) in delegationsForTypeIds) {
+                val typeLongIds: Set<Long> = typesIds.mapNotNullTo(HashSet()) {
+                    typeRefIdByTypeId[ModelUtils.getTypeRef(it)]
+                }
+                if (typeLongIds.isEmpty()) {
+                    continue
+                }
+                delegationsList.add(typeLongIds to authorities)
+            }
+        }
+
         val dbQuery = DbFindQuery.create {
             withPredicate(predicate)
             withSortBy(
@@ -161,6 +195,8 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
             withAssocTableJoins(predicateData.assocTableJoins)
             withAssocJoinWithPredicates(predicateData.assocJoinWithPredicates)
             withExpressions(expressionsToQuery)
+            withUserAuthorities(userAuthorities)
+            withDelegatedAuthorities(delegationsList)
         }
         val resultMaxItems = if (page.maxItems == -1) {
             config.queryMaxItems
@@ -171,7 +207,14 @@ class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
         }
 
         return dataService.doWithPermsPolicy(predicateData.queryPermsPolicy) {
-            executeFind(dbQuery, queryCtx, predicateData, groupBy, page.skipCount, resultMaxItems)
+            executeFind(
+                dbQuery,
+                queryCtx,
+                predicateData,
+                groupBy,
+                page.skipCount,
+                resultMaxItems
+            )
         }
     }
 

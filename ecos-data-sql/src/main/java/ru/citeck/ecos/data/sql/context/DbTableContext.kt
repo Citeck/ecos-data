@@ -42,7 +42,7 @@ interface DbTableContext {
 
     fun getTypesConverter(): DbTypesConverter
 
-    fun getCurrentUserAuthorityIds(): Set<Long>
+    fun getAuthoritiesIdsMap(authorities: Collection<String>): Map<String, Long>
 
     fun getQueryPermsPolicy(): QueryPermsPolicy
 
