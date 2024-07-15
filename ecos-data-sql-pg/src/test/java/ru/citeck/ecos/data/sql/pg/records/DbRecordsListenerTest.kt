@@ -6,6 +6,7 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
@@ -24,6 +25,11 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
                             listOf(
                                 AttributeDef.create {
                                     withId("textAtt")
+                                },
+                                AttributeDef.create {
+                                    withId("assocs")
+                                    withMultiple(true)
+                                    withType(AttributeType.ASSOC)
                                 }
                             )
                         )
@@ -143,5 +149,35 @@ class DbRecordsListenerTest : DbRecordsTestBase() {
         records.delete(newRec)
 
         assertThat(listOf(mutationLists, deletionLists, listOf(createdEvents)).flatten().all { it.isEmpty() }).isTrue
+
+        recordsDao.addListener(listener)
+
+        val assocRec = createRecord()
+        val links = (0 until 30).map { createRecord("id" to "link-$it") }
+        mutationEvents.clear()
+
+        fun checkAssocDiff(added: List<EntityRef>, removed: List<EntityRef>) {
+            assertThat(mutationEvents).hasSize(1)
+            assertThat(mutationEvents[0].assocs).hasSize(1)
+            val assocDiff = mutationEvents[0].assocs[0]
+            assertThat(assocDiff.assocId).isEqualTo("assocs")
+            assertThat(assocDiff.added).containsExactlyElementsOf(added)
+            assertThat(assocDiff.removed).containsExactlyElementsOf(removed)
+            mutationEvents.clear()
+        }
+        updateRecord(assocRec, "assocs" to links)
+        checkAssocDiff(links, emptyList())
+
+        updateRecord(assocRec, "assocs" to emptyList<EntityRef>())
+        checkAssocDiff(emptyList(), links)
+
+        for (ref in links) {
+            updateRecord(assocRec, "att_add_assocs" to ref)
+            checkAssocDiff(listOf(ref), emptyList())
+        }
+        for (ref in links) {
+            updateRecord(assocRec, "att_rem_assocs" to ref)
+            checkAssocDiff(emptyList(), listOf(ref))
+        }
     }
 }
