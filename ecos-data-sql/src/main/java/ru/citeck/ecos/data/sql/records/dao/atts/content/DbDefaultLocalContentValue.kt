@@ -6,14 +6,10 @@ import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.io.InputStream
 import java.time.Instant
 
-class DbContentValueWithCustomName(
+class DbDefaultLocalContentValue(
     private val name: String,
     private val value: DbContentValue
 ) : AttValueDelegate(value), HasEcosContentDbData {
-
-    fun getContentValue(): DbContentValue {
-        return value
-    }
 
     override fun getDisplayName(): Any {
         return getNameWithExt()
@@ -32,10 +28,18 @@ class DbContentValueWithCustomName(
     }
 
     override fun getAtt(name: String): Any? {
-        if (name == "name") {
+        if (name == DbContentValue.ATT_NAME) {
             return getNameWithExt()
         }
         return super.getAtt(name)
+    }
+
+    override fun asJson(): Any? {
+        val json = value.asJson()
+        if (json.containsKey(DbContentValue.ATT_NAME)) {
+            json[DbContentValue.ATT_NAME] = getNameWithExt()
+        }
+        return super.asJson()
     }
 
     private fun getNameWithExt(): String {

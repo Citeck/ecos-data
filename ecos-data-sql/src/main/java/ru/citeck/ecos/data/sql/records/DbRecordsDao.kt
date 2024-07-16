@@ -201,7 +201,13 @@ class DbRecordsDao(
     fun getContent(recordId: String, attribute: String = "", index: Int = 0): EcosContentData? {
 
         val entity = findDbEntityByExtId(recordId) ?: error("Entity doesn't found with id '$recordId'")
-        val notBlankAttribute = attribute.ifBlank { RecordConstants.ATT_CONTENT }
+
+        val notBlankAttribute = if (attribute.isEmpty() || attribute == RecordConstants.ATT_CONTENT) {
+            DbRecord.getDefaultContentAtt(daoCtx.getEntityMeta(entity).typeInfo)
+        } else {
+            attribute
+        }
+
         val dotIdx = notBlankAttribute.indexOf('.')
 
         if (dotIdx > 0) {
@@ -1290,6 +1296,7 @@ class DbRecordsDao(
             recordRefService,
             ecosTypeService,
             serviceFactory.recordsServiceV1,
+            serviceFactory.attSchemaWriter,
             serviceFactory.getEcosWebAppApi()?.getContentApi(),
             listeners,
             this,

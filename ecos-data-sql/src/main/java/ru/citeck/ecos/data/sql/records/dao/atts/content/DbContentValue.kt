@@ -15,11 +15,11 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.mime.MimeType
 
 class DbContentValue(
-    private var ctx: DbRecordsDaoCtx,
-    private var recId: String,
-    private var recType: TypeInfo?,
+    private val ctx: DbRecordsDaoCtx,
+    private val recId: String,
+    private val recType: TypeInfo?,
     private val contentDbId: Long,
-    private var attribute: String,
+    private val attribute: String,
     private val isDefaultContent: Boolean
 ) : AttValue, HasEcosContentDbData {
 
@@ -57,19 +57,11 @@ class DbContentValue(
         private const val TRANSFORM_WEBAPI_PATH = "/tfm/transform"
     }
 
-    private var currentEntityRef: EntityRef = ctx.getGlobalRef(recId)
+    private val currentEntityRef: EntityRef = ctx.getGlobalRef(recId)
 
     val contentData: DbEcosContentData by lazy {
         val service = ctx.contentService ?: error("Content service is null")
         service.getContent(contentDbId) ?: error("Content doesn't found by id '$id'")
-    }
-
-    fun setMaskEntityRef(ctx: DbRecordsDaoCtx, extId: String, type: TypeInfo) {
-        recId = extId
-        recType = type
-        currentEntityRef = ctx.getGlobalRef(extId)
-        this.ctx = ctx
-        attribute = ""
     }
 
     override fun getContentDbData(): DbEcosContentData {
@@ -84,7 +76,7 @@ class DbContentValue(
         return contentData.getName()
     }
 
-    override fun asJson(): Any {
+    override fun asJson(): MutableMap<String, Any?> {
         val data = mutableMapOf<String, Any?>()
         data[ATT_NAME] = contentData.getName()
         data[ATT_EXTENSION] = getAtt(ATT_EXTENSION) as? String ?: ""
