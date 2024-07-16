@@ -272,6 +272,9 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
                         .withAttributes(
                             listOf(
                                 AttributeDef.create()
+                                    .withId("name")
+                                    .build(),
+                                AttributeDef.create()
                                     .withId("systemDocumentLink")
                                     .withType(AttributeType.ASSOC)
                                     .build()
@@ -289,27 +292,81 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
 
         val fileName = "text-file-sample.txt"
         val textContent = "text-file-sample content\n"
+        val baseName = "base-name.txt"
 
         val contentRecord = createTempRecord(fileName, MimeTypes.TXT_PLAIN, textContent.toByteArray())
-        val record = createRecord("systemDocumentLink" to contentRecord)
+        val record = createRecord("name" to baseName, "systemDocumentLink" to contentRecord)
 
-        val content = recordsDao.getContent(record.getLocalId(), RecordConstants.ATT_CONTENT)
-        val utf8String = content?.readContent { IOUtils.readAsString(it) }
+        val content = String(
+            Base64.getDecoder().decode(
+                records.getAtt(
+                    record,
+                    RecordConstants.ATT_CONTENT + ".bytes"
+                ).asText()
+            )
+        )
+        val contentFromDao = recordsDao.getContent(record.getLocalId(), RecordConstants.ATT_CONTENT)
+        val contentDataFromDao = contentFromDao?.readContent { IOUtils.readAsString(it) }
+
         val mimeType = records.getAtt(record, "${RecordConstants.ATT_CONTENT}.mimeType").asText()
 
-        assertThat(utf8String).isEqualTo(textContent)
+        assertThat(content).isEqualTo(textContent).isEqualTo(contentDataFromDao)
         assertThat(mimeType).isEqualTo(MimeTypes.TXT_PLAIN.toString())
 
         val contentDataJson = records.getAtt(record, "${RecordConstants.ATT_CONTENT}._as.content-data?json")
+        val contentDataJson2 = records.getAtt(record, "_as.content-data?json")
+        assertThat(contentDataJson)
+            .isEqualTo(contentDataJson2)
+
+        listOf("url", "name", "size", "recordRef", "fileType").forEach {
+            val att = it + when (it) {
+                "recordRef" -> "?id"
+                else -> "?str"
+            }
+            assertThat(records.getAtt(record, "_as.content-data.$att").asText())
+                .isEqualTo(contentDataJson[it].asText())
+        }
+
         val contentNameFromAtt = records.getAtt(record, "${RecordConstants.ATT_CONTENT}.name").asText()
         val expectedContentSize = textContent.toByteArray(Charsets.UTF_8).size
 
         assertThat(contentDataJson.size()).isEqualTo(5)
-        assertThat(contentDataJson["name"].asText()).isEqualTo(fileName).isEqualTo(contentNameFromAtt)
+        assertThat(contentDataJson["name"].asText()).isEqualTo(baseName).isEqualTo(contentNameFromAtt)
         assertThat(contentDataJson["size"].asInt()).isEqualTo(expectedContentSize)
         assertThat(contentDataJson["url"].asText()).isNotBlank
         assertThat(contentDataJson["recordRef"].toEntityRef()).isEqualTo(record)
         assertThat(contentDataJson["fileType"].asText()).isEqualTo(REC_TEST_TYPE_ID)
         assertThat(records.getAtt(record, "${RecordConstants.ATT_CONTENT}.size").asInt()).isEqualTo(expectedContentSize)
+
+        val contentJson = records.getAtt(record, RecordConstants.ATT_CONTENT + "?json")
+
+        assertThat(contentJson["name"].asText()).isEqualTo(baseName)
+        assertThat(contentJson["extension"]).isEqualTo(records.getAtt(contentRecord, "_content.extension"))
+        assertThat(contentJson["sha256"]).isEqualTo(records.getAtt(contentRecord, "_content.sha256"))
+        assertThat(contentJson["size"].asText()).isEqualTo(records.getAtt(contentRecord, "_content.size").asText())
+        assertThat(contentJson["mimeType"]).isEqualTo(records.getAtt(contentRecord, "_content.mimeType"))
+        assertThat(contentJson["encoding"]).isEqualTo(records.getAtt(contentRecord, "_content.encoding"))
+        assertThat(contentJson["created"]).isEqualTo(records.getAtt(contentRecord, "_content.created"))
+        assertThat(contentJson["creator"]).isEqualTo(records.getAtt(contentRecord, "_content.creator?localId"))
+        assertThat(contentJson["url"]).isEqualTo(contentDataJson["url"])
+
+        thumbnailCtx.createRecord(
+            RecordConstants.ATT_PARENT to contentRecord,
+            RecordConstants.ATT_PARENT_ATT to "thumbnail:thumbnails",
+            "mimeType" to MimeTypes.APP_PDF_TEXT,
+            "srcAttribute" to "_content",
+            "content" to createTempRecord("preview.pdf", MimeTypes.APP_PDF, textContent.toByteArray())
+        )
+
+        val expectedPreviewInfo = records.getAtt(contentRecord, "previewInfo?json")
+        assertThat(expectedPreviewInfo).isNotEmpty
+
+        assertThat(records.getAtt(contentRecord, "_content.previewInfo?json")).isEqualTo(expectedPreviewInfo)
+
+        assertThat(records.getAtt(record, "previewInfo?json")).isEqualTo(expectedPreviewInfo)
+        assertThat(records.getAtt(record, "_content.previewInfo?json")).isEqualTo(expectedPreviewInfo)
+
+        assertThat(records.getAtt(contentRecord, "_has._content?bool").asBoolean()).isTrue()
+        assertThat(records.getAtt(record, "_has._content?bool").asBoolean()).isTrue()
     }
 }

@@ -1,17 +1,18 @@
 package ru.citeck.ecos.data.sql.records.dao.events
 
-import ru.citeck.ecos.data.sql.content.DbEcosContentData
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocRefsDiff
 import ru.citeck.ecos.data.sql.records.dao.DbEntityMeta
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
+import ru.citeck.ecos.data.sql.records.dao.atts.content.DbDefaultLocalContentValue
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.records3.record.atts.value.AttValue
 
 class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
 
@@ -101,17 +102,28 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         val nonSystemAttsBefore = nonSystemChangedAttsData.before
         val nonSystemAttsAfter = nonSystemChangedAttsData.after
 
-        val contentBefore = recBefore.getDefaultContent()
-        val contentAfter = recAfter.getDefaultContent()
+        val contentBefore = recBefore.getDefaultContent("")
+        val contentAfter = recAfter.getDefaultContent("")
 
-        fun isEqualContentData(before: DbEcosContentData?, after: DbEcosContentData?): Boolean {
-            return before?.getDataKey() == after?.getDataKey() && before?.getStorageRef() == after?.getStorageRef()
+        fun isEqualContentData(before: AttValue?, after: AttValue?): Boolean {
+            val localDataBefore = if (before is DbDefaultLocalContentValue) {
+                before.getContentDbData()
+            } else {
+                null
+            }
+            val localDataAfter = if (after is DbDefaultLocalContentValue) {
+                after.getContentDbData()
+            } else {
+                null
+            }
+            return localDataBefore?.getDataKey() == localDataAfter?.getDataKey() &&
+                localDataBefore?.getStorageRef() == localDataAfter?.getStorageRef()
         }
 
         if (contentBefore != null || contentAfter != null) {
 
             if (nonSystemAttsBefore[DbRecord.ATT_CONTENT_VERSION] != nonSystemAttsAfter[DbRecord.ATT_CONTENT_VERSION] ||
-                !isEqualContentData(contentBefore?.getContentDbData(), contentAfter?.getContentDbData())
+                !isEqualContentData(contentBefore, contentAfter)
             ) {
 
                 val contentChangedEvent = DbRecordContentChangedEvent(

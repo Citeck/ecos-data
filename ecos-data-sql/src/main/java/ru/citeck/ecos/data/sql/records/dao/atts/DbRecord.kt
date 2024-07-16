@@ -11,11 +11,11 @@ import ru.citeck.ecos.context.lib.i18n.I18nContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
-import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValue
-import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValueWithCustomName
+import ru.citeck.ecos.data.sql.records.dao.atts.content.DbDefaultLocalContentValue
+import ru.citeck.ecos.data.sql.records.dao.atts.content.DbDefaultRemoteContentValue
 import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -31,7 +31,6 @@ import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.webapp.api.entity.EntityRef
-import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.time.temporal.Temporal
 import java.util.*
 import kotlin.collections.ArrayList
@@ -585,6 +584,12 @@ class DbRecord(
     }
 
     override fun has(name: String): Boolean {
+        if (name == RecordConstants.ATT_CONTENT) {
+            val defaultContentAtt = getDefaultContentAtt()
+            if (defaultContentAtt.contains('.')) {
+                return getDefaultContent("") != null
+            }
+        }
         val fixedName = when (name) {
             RecordConstants.ATT_CONTENT -> getDefaultContentAtt()
             else -> ATTS_MAPPING.getOrDefault(name, name)
@@ -599,7 +604,7 @@ class DbRecord(
 
     override fun getAs(type: String): Any? {
         if (type == DbContentValue.CONTENT_DATA) {
-            return (getAtt(RecordConstants.ATT_CONTENT) as? AttValue)?.getAs(DbContentValue.CONTENT_DATA)
+            return getDefaultContent("_as.${DbContentValue.CONTENT_DATA}")
         }
         return super.getAs(type)
     }
@@ -627,9 +632,10 @@ class DbRecord(
             }
 
             ATT_PERMISSIONS -> permsValue
-            RecordConstants.ATT_CONTENT -> getDefaultContent()
+            RecordConstants.ATT_CONTENT -> getDefaultContent("")
             RecordConstants.ATT_PARENT -> additionalAtts[RecordConstants.ATT_PARENT]
-            ATT_PREVIEW_INFO -> getDefaultContent()?.getContentValue()?.getAtt(ATT_PREVIEW_INFO)
+            ATT_PREVIEW_INFO -> getDefaultContent(ATT_PREVIEW_INFO)
+
             ATT_IS_DRAFT -> additionalAtts[ATT_IS_DRAFT] ?: false
             else -> {
                 if (name.startsWith(ASSOC_SRC_ATT_PREFIX)) {
@@ -645,7 +651,7 @@ class DbRecord(
                     if (name == ATT_CONTENT_VERSION &&
                         typeInfo.aspects.any { it.ref.getLocalId() == ASPECT_VERSIONABLE } &&
                         additionalAtts[ATT_CONTENT_VERSION] == null &&
-                        getDefaultContent() != null
+                        getDefaultContent("") != null
                     ) {
                         return "1.0"
                     }
@@ -675,24 +681,40 @@ class DbRecord(
         return getDefaultContentAtt(typeInfo)
     }
 
-    fun getDefaultContent(): DbContentValueWithCustomName? {
+    /**
+     * Get default content value
+     *
+     * @param innerContentAtts list of required attributes to load from remote content.
+     *                         These attributes used only when default content configured
+     *                         to load from association.
+     *                         For checking of content existence you can pass empty list.
+     */
+    fun getDefaultContent(innerPath: String): AttValue? {
         val attributeWithContent = getDefaultContentAtt()
         if (attributeWithContent.contains(".")) {
             val attContentRef = attributeWithContent.substringBefore(".")
-            if (isCurrentUserHasAttReadPerms(attContentRef)) {
-                val recordRef = additionalAtts[attContentRef]
-                if (recordRef is EntityRef) {
-                    val recordsDao = ctx.recordsService.getRecordsDao(recordRef.getSourceId(), DbRecordsDao::class.java) ?: return null
-                    val atts = recordsDao.getRecordsAtts(listOf(recordRef.getLocalId())).first()
-                    atts.init()
-                    val contentValue = atts.getAtt(RecordConstants.ATT_CONTENT)
-                    if (contentValue is DbContentValueWithCustomName) {
-                        contentValue.getContentValue().setMaskEntityRef(ctx, extId, typeInfo)
-                        return contentValue
-                    }
-                }
+            if (!isCurrentUserHasAttReadPerms(attContentRef)) {
+                return null
             }
-            return null
+            val recordRef = additionalAtts[attContentRef]
+            if (recordRef !is EntityRef) {
+                return null
+            }
+            val contentAttPath = attributeWithContent.substringAfter(".")
+            val size = ctx.recordsService.getAtt(recordRef, "$contentAttPath.size?num").asInt()
+            if (size <= 0) {
+                return null
+            }
+            val entityName = MLText.getClosestValue(entity.name, I18nContext.getLocale()).ifBlank { "no-name" }
+            return DbDefaultRemoteContentValue(
+                contentAttPath,
+                innerPath,
+                recordRef,
+                ctx,
+                extId,
+                typeInfo.id,
+                entityName
+            )
         }
         return if (isCurrentUserHasAttReadPerms(attributeWithContent)) {
             val contentValue = additionalAtts[attributeWithContent]
@@ -700,7 +722,22 @@ class DbRecord(
                 val entityName = MLText.getClosestValue(entity.name, I18nContext.getLocale())
                     .ifBlank { contentValue.contentData.getName() }
                     .ifBlank { "no-name" }
-                DbContentValueWithCustomName(entityName, contentValue)
+                contentValue.getAtt(DbContentValue.ATT_SIZE)
+                var value: AttValue? = DbDefaultLocalContentValue(entityName, contentValue)
+                if (innerPath.isNotBlank()) {
+                    val pathElements = innerPath.split(".")
+                    var idx = 0
+                    while (idx < pathElements.size) {
+                        val newValue = if (pathElements[idx] == RecordConstants.ATT_AS) {
+                            value?.getAs(pathElements[++idx])
+                        } else {
+                            value?.getAtt(pathElements[idx])
+                        }
+                        value = ctx.attValuesConverter.toAttValue(newValue)
+                        idx++
+                    }
+                }
+                value
             } else {
                 null
             }

@@ -19,6 +19,9 @@ object DbDateUtils {
         withTime: Boolean,
         rangePart: RangePart = RangePart.NONE
     ): String {
+        if (value.isBlank()) {
+            return value
+        }
         return when (value) {
             NOW -> Instant.now().toString()
             TODAY -> {
@@ -50,7 +53,7 @@ object DbDateUtils {
                         return "$rangeFrom/$rangeTo"
                     }
                 }
-                if (value[0] == 'P' || value[1] == 'P') {
+                if (value[0] == 'P' || value.length > 1 && value[1] == 'P') {
                     val duration = Duration.parse(value)
                     Instant.now()
                         .truncatedTo(getMinDimension(duration))

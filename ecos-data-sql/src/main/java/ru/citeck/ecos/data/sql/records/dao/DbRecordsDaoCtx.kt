@@ -29,6 +29,7 @@ import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.delegation.service.DelegationService
 import ru.citeck.ecos.records3.RecordsService
+import ru.citeck.ecos.records3.record.atts.schema.write.AttSchemaWriter
 import ru.citeck.ecos.records3.record.atts.value.AttValuesConverter
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.txn.lib.transaction.Transaction
@@ -47,6 +48,7 @@ class DbRecordsDaoCtx(
     val recordRefService: DbRecordRefService,
     val ecosTypeService: DbEcosModelService,
     val recordsService: RecordsService,
+    val schemaWriter: AttSchemaWriter,
     val contentApi: EcosContentApi?,
     val listeners: List<DbRecordsListener>,
     val recordsDao: DbRecordsDao,

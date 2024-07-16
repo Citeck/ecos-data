@@ -68,6 +68,9 @@ import ru.citeck.ecos.txn.lib.manager.EcosTxnProps
 import ru.citeck.ecos.txn.lib.manager.TransactionManagerImpl
 import ru.citeck.ecos.txn.lib.resource.type.xa.JavaXaTxnManagerAdapter
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
+import ru.citeck.ecos.webapp.api.content.EcosContentApi
+import ru.citeck.ecos.webapp.api.content.EcosContentData
+import ru.citeck.ecos.webapp.api.content.FileUploader
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
@@ -85,6 +88,7 @@ abstract class DbRecordsTestBase {
         const val REC_TEST_TYPE_ID = "test-type"
 
         const val TEMP_FILE_TYPE_ID = "temp-file"
+        const val THUMBNAIL_TYPE_ID = "thumbnail"
 
         val REC_TEST_TYPE_REF = ModelUtils.getTypeRef(REC_TEST_TYPE_ID)
 
@@ -98,6 +102,22 @@ abstract class DbRecordsTestBase {
         private val DEFAULT_ASPECTS = listOf(
             AspectInfo.create()
                 .withId(DbRecord.ASPECT_VERSIONABLE)
+                .build(),
+            AspectInfo.create()
+                .withId("thumbnail")
+                .withSystemAttributes(
+                    listOf(
+                        AttributeDef.create()
+                            .withId("thumbnail:thumbnails")
+                            .withType(AttributeType.ASSOC)
+                            .withConfig(
+                                ObjectData.create()
+                                    .set("typeRef", ModelUtils.getTypeRef(THUMBNAIL_TYPE_ID))
+                                    .set("child", true)
+                            )
+                            .build()
+                    )
+                )
                 .build(),
             AspectInfo.create()
                 .withId("versionable-data")
@@ -139,6 +159,28 @@ abstract class DbRecordsTestBase {
                         .build()
                 ).build(),
             TypeInfo.create()
+                .withId("thumbnail")
+                .withParentRef(ModelUtils.getTypeRef("base"))
+                .withSourceId(THUMBNAIL_TYPE_ID)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("mimeType")
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("srcAttribute")
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("content")
+                                    .withType(AttributeType.CONTENT)
+                                    .build()
+                            )
+                        )
+                        .build()
+                ).build(),
+            TypeInfo.create()
                 .withId("user-base")
                 .withParentRef(ModelUtils.getTypeRef("base"))
                 .build(),
@@ -168,6 +210,7 @@ abstract class DbRecordsTestBase {
 
     lateinit var mainCtx: RecordsDaoTestCtx
     lateinit var tempCtx: RecordsDaoTestCtx
+    lateinit var thumbnailCtx: RecordsDaoTestCtx
 
     lateinit var delegationService: CustomDelegationService
 
@@ -207,8 +250,11 @@ abstract class DbRecordsTestBase {
                 records.unregister(it.dao.getId())
             }
         } else {
-
-            webAppApi = EcosWebAppApiMock(APP_NAME)
+            webAppApi = object : EcosWebAppApiMock(APP_NAME) {
+                override fun getContentApi(): EcosContentApi {
+                    return ContentApiTest()
+                }
+            }
 
             val dataSource = BasicManagedDataSource()
             dataSource.transactionManager = JavaXaTxnManagerAdapter(webAppApi.getProperties())
@@ -316,6 +362,12 @@ abstract class DbRecordsTestBase {
             DEFAULT_TABLE_REF.withTable(TEMP_FILE_TYPE_ID),
             ModelUtils.getTypeRef(TEMP_FILE_TYPE_ID),
             TEMP_FILE_TYPE_ID
+        )
+
+        thumbnailCtx = createRecordsDao(
+            DEFAULT_TABLE_REF.withTable(THUMBNAIL_TYPE_ID),
+            ModelUtils.getTypeRef(THUMBNAIL_TYPE_ID),
+            THUMBNAIL_TYPE_ID
         )
 
         mainCtxInitialized = true
@@ -806,6 +858,37 @@ abstract class DbRecordsTestBase {
         }
 
         override fun getPermissionDelegates(record: Any, permission: PermissionType): List<PermissionDelegateData> {
+            TODO("Not yet implemented")
+        }
+    }
+
+    inner class ContentApiTest : EcosContentApi {
+        override fun getContent(entity: EntityRef, attribute: String, index: Int): EcosContentData? {
+            if (entity.getAppName() != webAppApi.appName) {
+                return null
+            }
+            val dao = records.getRecordsDao(entity.getSourceId(), DbRecordsDao::class.java)
+                ?: error("DAO doesn't found for ref $entity")
+            return dao.getContent(entity.getLocalId(), attribute, index)
+        }
+
+        override fun getDownloadUrl(entity: EntityRef): String {
+            TODO("Not yet implemented")
+        }
+
+        override fun getDownloadUrl(entity: EntityRef, attribute: String): String {
+            TODO("Not yet implemented")
+        }
+
+        override fun getDownloadUrl(entity: EntityRef, attribute: String, index: Int): String {
+            TODO("Not yet implemented")
+        }
+
+        override fun uploadFile(): FileUploader {
+            TODO("Not yet implemented")
+        }
+
+        override fun uploadTempFile(): FileUploader {
             TODO("Not yet implemented")
         }
     }
