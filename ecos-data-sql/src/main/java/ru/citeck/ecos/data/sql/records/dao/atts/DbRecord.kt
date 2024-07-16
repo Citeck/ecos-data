@@ -635,7 +635,6 @@ class DbRecord(
             RecordConstants.ATT_CONTENT -> getDefaultContent("")
             RecordConstants.ATT_PARENT -> additionalAtts[RecordConstants.ATT_PARENT]
             ATT_PREVIEW_INFO -> getDefaultContent(ATT_PREVIEW_INFO)
-
             ATT_IS_DRAFT -> additionalAtts[ATT_IS_DRAFT] ?: false
             else -> {
                 if (name.startsWith(ASSOC_SRC_ATT_PREFIX)) {
@@ -684,10 +683,7 @@ class DbRecord(
     /**
      * Get default content value
      *
-     * @param innerContentAtts list of required attributes to load from remote content.
-     *                         These attributes used only when default content configured
-     *                         to load from association.
-     *                         For checking of content existence you can pass empty list.
+     * @param innerPath path to inner value of content
      */
     fun getDefaultContent(innerPath: String): AttValue? {
         val attributeWithContent = getDefaultContentAtt()
@@ -722,7 +718,6 @@ class DbRecord(
                 val entityName = MLText.getClosestValue(entity.name, I18nContext.getLocale())
                     .ifBlank { contentValue.contentData.getName() }
                     .ifBlank { "no-name" }
-                contentValue.getAtt(DbContentValue.ATT_SIZE)
                 var value: AttValue? = DbDefaultLocalContentValue(entityName, contentValue)
                 if (innerPath.isNotBlank()) {
                     val pathElements = innerPath.split(".")

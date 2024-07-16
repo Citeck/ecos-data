@@ -27,8 +27,6 @@ class DbDefaultRemoteContentValue(
         private val ATTS_WITHOUT_LOADING = setOf("_as", "name", "url")
 
         private const val AS_CONTENT_DATA_PATH = "_as.content-data"
-        private const val ALIAS_CONTENT_SIZE = "__contentSize__"
-        private const val ALIAS_EXTENSION = "__extension__"
     }
 
     private var size: Long = 0
