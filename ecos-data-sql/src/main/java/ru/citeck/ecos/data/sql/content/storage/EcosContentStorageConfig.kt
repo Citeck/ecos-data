@@ -1,7 +1,7 @@
 package ru.citeck.ecos.data.sql.content.storage
 
-import ecos.com.fasterxml.jackson210.databind.annotation.JsonDeserialize
-import ecos.com.fasterxml.jackson210.databind.annotation.JsonPOJOBuilder
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
+import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 

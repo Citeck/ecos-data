@@ -62,8 +62,26 @@ class DbRecordsDaoTotalCountTest : DbRecordsTestBase() {
             }
         }
 
-        queryTest(0, 10, if (enableTotalCount) { 20 } else { 11 }, 0..9)
-        queryTest(5, 10, if (enableTotalCount) { 20 } else { 16 }, 5..14)
+        queryTest(
+            0,
+            10,
+            if (enableTotalCount) {
+                20
+            } else {
+                11
+            },
+            0..9
+        )
+        queryTest(
+            5,
+            10,
+            if (enableTotalCount) {
+                20
+            } else {
+                16
+            },
+            5..14
+        )
         queryTest(0, 0, 20, null)
         queryTest(0, 100, 20, 0..19)
         queryTest(0, 20, 20, 0..19)

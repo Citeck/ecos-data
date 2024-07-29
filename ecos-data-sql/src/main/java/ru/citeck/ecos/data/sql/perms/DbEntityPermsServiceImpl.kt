@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.perms
 
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint

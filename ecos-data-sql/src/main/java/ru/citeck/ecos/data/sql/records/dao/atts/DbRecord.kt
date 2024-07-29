@@ -1,7 +1,7 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
-import ecos.com.fasterxml.jackson210.databind.node.ArrayNode
-import ecos.com.fasterxml.jackson210.databind.node.ObjectNode
+import com.fasterxml.jackson.databind.node.ArrayNode
+import com.fasterxml.jackson.databind.node.ObjectNode
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData

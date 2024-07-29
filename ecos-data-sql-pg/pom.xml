@@ -15,8 +15,8 @@
 
     <properties>
 
-        <commons-dbcp2.version>2.9.0</commons-dbcp2.version>
-        <javax.jta.version>1.1</javax.jta.version>
+        <commons-dbcp2.version>2.12.0_citeck</commons-dbcp2.version>
+        <javax.jta.version>2.0.1</javax.jta.version>
 
     </properties>
 
@@ -31,7 +31,6 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>${postgresql.driver.version}</version>
             <scope>provided</scope>
         </dependency>
 
@@ -43,8 +42,8 @@
         </dependency>
 
         <dependency>
-            <groupId>javax.transaction</groupId>
-            <artifactId>jta</artifactId>
+            <groupId>jakarta.transaction</groupId>
+            <artifactId>jakarta.transaction-api</artifactId>
             <version>${javax.jta.version}</version>
             <scope>test</scope>
         </dependency>
@@ -66,7 +65,19 @@
             </plugin>
 
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+            </plugin>
+
+            <plugin>
                 <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
         </plugins>

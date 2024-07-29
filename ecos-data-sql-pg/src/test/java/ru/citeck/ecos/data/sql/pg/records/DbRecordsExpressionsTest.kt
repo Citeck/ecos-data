@@ -99,7 +99,10 @@ class DbRecordsExpressionsTest : DbRecordsTestBase() {
 
         val expr3 = "coalesce(1)"
         val result3 = records.query(
-            baseQuery.copy { withGroupBy(listOf(expr3)); withSortBy(emptyList()) },
+            baseQuery.copy {
+                withGroupBy(listOf(expr3))
+                withSortBy(emptyList())
+            },
             listOf(expr3),
         ).getRecords()
 

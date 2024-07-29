@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao.query
 
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
@@ -140,9 +140,9 @@ class DbFindQueryContext(
             }
             val innerAtt = att.substring(dotIdx + 1)
             if (innerAtt.startsWith(RecordConstants.ATT_TYPE) && (
-                innerAtt.length == RecordConstants.ATT_TYPE.length ||
-                    innerAtt[RecordConstants.ATT_TYPE.length] == '?'
-                )
+                    innerAtt.length == RecordConstants.ATT_TYPE.length ||
+                        innerAtt[RecordConstants.ATT_TYPE.length] == '?'
+                    )
             ) {
                 val strValue = value.asText()
                 if (strValue.isBlank()) {

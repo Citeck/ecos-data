@@ -11,7 +11,9 @@ object DbDateUtils {
     const val NOW = "\$NOW"
 
     enum class RangePart {
-        START, END, NONE
+        START,
+        END,
+        NONE
     }
 
     fun normalizeDateTimePredicateValue(

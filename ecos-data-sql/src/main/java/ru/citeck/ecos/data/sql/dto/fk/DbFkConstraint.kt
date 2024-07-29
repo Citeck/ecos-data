@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.dto.fk
 
-import ecos.com.fasterxml.jackson210.databind.annotation.JsonDeserialize
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 
 @JsonDeserialize(builder = DbFkConstraint.Builder::class)

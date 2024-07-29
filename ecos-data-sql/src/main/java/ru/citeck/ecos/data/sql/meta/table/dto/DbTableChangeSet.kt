@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.meta.table.dto
 
-import ecos.com.fasterxml.jackson210.databind.annotation.JsonDeserialize
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import ru.citeck.ecos.commons.data.ObjectData
 import java.time.Instant
 

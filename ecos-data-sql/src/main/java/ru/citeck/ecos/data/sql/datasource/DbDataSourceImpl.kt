@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.datasource
 
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.task.SystemScheduler
 import ru.citeck.ecos.commons.task.schedule.Schedules
 import ru.citeck.ecos.micrometer.EcosMicrometerContext

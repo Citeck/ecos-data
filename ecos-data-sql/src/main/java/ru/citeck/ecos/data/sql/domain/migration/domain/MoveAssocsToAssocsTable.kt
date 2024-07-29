@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.domain.migration.domain
 
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.data.sql.domain.migration.DbDomainMigrationContext
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils

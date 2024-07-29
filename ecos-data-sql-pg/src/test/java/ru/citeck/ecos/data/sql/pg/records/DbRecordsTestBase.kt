@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.pg.records
 
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.commons.dbcp2.BasicDataSource
 import org.apache.commons.dbcp2.managed.BasicManagedDataSource
 import org.junit.jupiter.api.AfterEach
@@ -68,9 +68,7 @@ import ru.citeck.ecos.txn.lib.manager.EcosTxnProps
 import ru.citeck.ecos.txn.lib.manager.TransactionManagerImpl
 import ru.citeck.ecos.txn.lib.resource.type.xa.JavaXaTxnManagerAdapter
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
-import ru.citeck.ecos.webapp.api.content.EcosContentApi
 import ru.citeck.ecos.webapp.api.content.EcosContentData
-import ru.citeck.ecos.webapp.api.content.FileUploader
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
@@ -251,7 +249,7 @@ abstract class DbRecordsTestBase {
             }
         } else {
             webAppApi = object : EcosWebAppApiMock(APP_NAME) {
-                override fun getContentApi(): EcosContentApi {
+                override fun getContentApi(): ContentApiMock {
                     return ContentApiTest()
                 }
             }
@@ -264,6 +262,7 @@ abstract class DbRecordsTestBase {
             this.dataSource = dataSource
 
             val jdbcDataSource = object : JdbcDataSource {
+                override fun getKey() = "key"
                 override fun getJavaDataSource() = dataSource
                 override fun isManaged() = true
             }
@@ -350,7 +349,7 @@ abstract class DbRecordsTestBase {
                 webAppApi
             )
 
-            records = recordsServiceFactory.recordsServiceV1
+            records = recordsServiceFactory.recordsService
             RequestContext.setDefaultServices(recordsServiceFactory)
 
             remoteActions.init(webAppApi, records)
@@ -862,7 +861,7 @@ abstract class DbRecordsTestBase {
         }
     }
 
-    inner class ContentApiTest : EcosContentApi {
+    inner class ContentApiTest : EcosWebAppApiMock.ContentApiMock() {
         override fun getContent(entity: EntityRef, attribute: String, index: Int): EcosContentData? {
             if (entity.getAppName() != webAppApi.appName) {
                 return null
@@ -870,26 +869,6 @@ abstract class DbRecordsTestBase {
             val dao = records.getRecordsDao(entity.getSourceId(), DbRecordsDao::class.java)
                 ?: error("DAO doesn't found for ref $entity")
             return dao.getContent(entity.getLocalId(), attribute, index)
-        }
-
-        override fun getDownloadUrl(entity: EntityRef): String {
-            TODO("Not yet implemented")
-        }
-
-        override fun getDownloadUrl(entity: EntityRef, attribute: String): String {
-            TODO("Not yet implemented")
-        }
-
-        override fun getDownloadUrl(entity: EntityRef, attribute: String, index: Int): String {
-            TODO("Not yet implemented")
-        }
-
-        override fun uploadFile(): FileUploader {
-            TODO("Not yet implemented")
-        }
-
-        override fun uploadTempFile(): FileUploader {
-            TODO("Not yet implemented")
         }
     }
 

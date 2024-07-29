@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.dto
 
-import ecos.com.fasterxml.jackson210.databind.annotation.JsonDeserialize
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 
 @JsonDeserialize(builder = DbColumnDef.Builder::class)
 data class DbColumnDef(

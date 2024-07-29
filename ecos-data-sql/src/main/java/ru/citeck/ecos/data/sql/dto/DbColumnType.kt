@@ -15,5 +15,5 @@ enum class DbColumnType(val type: KClass<*>) {
     DATE(Date::class),
     JSON(String::class),
     BINARY(ByteArray::class),
-    UUID(java.util.UUID::class);
+    UUID(java.util.UUID::class)
 }

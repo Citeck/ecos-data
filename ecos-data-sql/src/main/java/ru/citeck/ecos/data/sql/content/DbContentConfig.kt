@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.content
 
-import ecos.com.fasterxml.jackson210.databind.annotation.JsonDeserialize
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 
 @JsonDeserialize(builder = DbContentConfig.Builder::class)

@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.repo.entity
 
-import org.apache.commons.beanutils.PropertyUtils
+import ru.citeck.beans.BeanUtils
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
@@ -56,7 +56,7 @@ class DbEntityMapperImpl<T : Any>(
     }
 
     override fun getExtId(entity: T): String {
-        return PropertyUtils.getProperty(entity, EXT_ID_FIELD) as? String ?: ""
+        return BeanUtils.getProperty(entity, EXT_ID_FIELD) as? String ?: ""
     }
 
     override fun convertToEntity(data: Map<String, Any?>): T {
@@ -92,7 +92,7 @@ class DbEntityMapperImpl<T : Any>(
         }
         val entity = Json.mapper.convert(entityAtts, entityType.java) ?: error("Conversion error")
         if (hasAttributesField) {
-            PropertyUtils.setProperty(entity, ATTRIBUTES_FIELD, additionalAtts)
+            BeanUtils.setProperty(entity, ATTRIBUTES_FIELD, additionalAtts)
         }
         return entity
     }
@@ -124,7 +124,7 @@ class DbEntityMapperImpl<T : Any>(
 
         if (hasAttributesField) {
             @Suppress("UNCHECKED_CAST")
-            val attributes = PropertyUtils.getProperty(entity, ATTRIBUTES_FIELD) as? Map<String, Any?>
+            val attributes = BeanUtils.getProperty(entity, ATTRIBUTES_FIELD) as? Map<String, Any?>
             if (attributes != null) {
                 rawAtts.putAll(attributes)
             }
@@ -138,61 +138,61 @@ class DbEntityMapperImpl<T : Any>(
     }
 
     private fun hasField(type: KClass<*>, fieldName: String): Boolean {
-        val descriptors = PropertyUtils.getPropertyDescriptors(type.java)
-        return descriptors.any { it.name == fieldName }
+        val properties = BeanUtils.getProperties(type.java)
+        return properties.any { it.getName() == fieldName }
     }
 
     private fun getColumnsImpl(type: KClass<*>): List<DbEntityColumn> {
 
-        val descriptors = PropertyUtils.getPropertyDescriptors(type.java)
+        val properties = BeanUtils.getProperties(type.java)
         val defaultValue = type.java.getDeclaredConstructor().newInstance()
 
-        return descriptors.mapNotNull { prop ->
+        return properties.mapNotNull { prop ->
 
-            if (prop.writeMethod == null ||
-                prop.readMethod == null ||
-                prop.name == ATTRIBUTES_FIELD ||
-                prop.name.startsWith("legacy")
+            if (prop.getWriteMethod() == null ||
+                prop.getReadMethod() == null ||
+                prop.getName() == ATTRIBUTES_FIELD ||
+                prop.getName().startsWith("legacy")
             ) {
 
                 null
             } else {
 
-                val field = type.java.getDeclaredField(prop.name)
+                val field = type.java.getDeclaredField(prop.getName())
                 val constraints = field.getAnnotation(Constraints::class.java)?.value?.toList() ?: emptyList()
                 val explicitColumnType = field.getAnnotation(ColumnType::class.java)?.value
 
                 val fieldType = explicitColumnType ?: when {
-                    prop.name == "id" -> DbColumnType.BIGSERIAL
-                    prop.propertyType.kotlin == Long::class -> DbColumnType.LONG
-                    prop.propertyType.kotlin == String::class -> DbColumnType.TEXT
-                    prop.propertyType.kotlin == MLText::class -> DbColumnType.TEXT
-                    prop.propertyType.kotlin == Double::class -> DbColumnType.DOUBLE
-                    prop.propertyType.kotlin == Int::class -> DbColumnType.INT
-                    prop.propertyType.kotlin == Boolean::class -> DbColumnType.BOOLEAN
-                    prop.propertyType.kotlin == Instant::class -> DbColumnType.DATETIME
-                    prop.propertyType.kotlin == ByteArray::class -> DbColumnType.BINARY
-                    prop.propertyType.kotlin == URI::class -> DbColumnType.TEXT
-                    else -> error("Unknown type: ${prop.propertyType}")
+                    prop.getName() == "id" -> DbColumnType.BIGSERIAL
+                    prop.getPropClass().kotlin == Long::class -> DbColumnType.LONG
+                    prop.getPropClass().kotlin == String::class -> DbColumnType.TEXT
+                    prop.getPropClass().kotlin == MLText::class -> DbColumnType.TEXT
+                    prop.getPropClass().kotlin == Double::class -> DbColumnType.DOUBLE
+                    prop.getPropClass().kotlin == Int::class -> DbColumnType.INT
+                    prop.getPropClass().kotlin == Boolean::class -> DbColumnType.BOOLEAN
+                    prop.getPropClass().kotlin == Instant::class -> DbColumnType.DATETIME
+                    prop.getPropClass().kotlin == ByteArray::class -> DbColumnType.BINARY
+                    prop.getPropClass().kotlin == URI::class -> DbColumnType.TEXT
+                    else -> error("Unknown type: ${prop.getPropClass()}")
                 }
 
-                val columnName = if (prop.name == "id") {
-                    prop.name
+                val columnName = if (prop.getName() == "id") {
+                    prop.getName()
                 } else {
-                    val snakeName = CAMEL_REGEX.replace(prop.name) { "_${it.value}" }.lowercase()
+                    val snakeName = CAMEL_REGEX.replace(prop.getName()) { "_${it.value}" }.lowercase()
                     "__$snakeName"
                 }
 
                 DbEntityColumn(
-                    prop.name,
-                    prop.propertyType.kotlin,
-                    prop.readMethod.invoke(defaultValue),
+                    prop.getName(),
+                    prop.getPropClass().kotlin,
+                    prop.getReadMethod()!!.invoke(defaultValue),
                     DbColumnDef.create {
                         withName(columnName)
                         withType(fieldType)
                         withConstraints(constraints)
                     }
-                ) { obj -> prop.readMethod.invoke(obj) }
+                ) { obj -> prop.getReadMethod()!!.invoke(obj) }
             }
         }
     }

@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao.query
 
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils

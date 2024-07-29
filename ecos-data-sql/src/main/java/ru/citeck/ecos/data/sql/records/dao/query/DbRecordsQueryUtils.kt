@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao.query
 
-import ecos.com.fasterxml.jackson210.databind.node.JsonNodeType
+import com.fasterxml.jackson.databind.node.JsonNodeType
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.*

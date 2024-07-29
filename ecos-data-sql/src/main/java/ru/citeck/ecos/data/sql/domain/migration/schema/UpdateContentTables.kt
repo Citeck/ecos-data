@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.domain.migration.schema
 
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.data.sql.content.DbContentServiceImpl
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl

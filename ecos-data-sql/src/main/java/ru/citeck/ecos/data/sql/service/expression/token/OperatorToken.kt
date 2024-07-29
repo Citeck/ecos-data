@@ -38,7 +38,11 @@ class OperatorToken(val type: Type) : ExpressionToken {
                 return fromIdx + 1
             }
             val char0 = value[fromIdx]
-            val char1 = if (value.length > fromIdx + 1) { value[fromIdx + 1] } else { null }
+            val char1 = if (value.length > fromIdx + 1) {
+                value[fromIdx + 1]
+            } else {
+                null
+            }
             return if (char0 == '<') {
                 if (char1 == '=' || char1 == '>') {
                     fromIdx + 2
@@ -52,8 +56,16 @@ class OperatorToken(val type: Type) : ExpressionToken {
                     fromIdx + 1
                 }
             } else {
-                val char2 = if (value.length > fromIdx + 2) { value[fromIdx + 2] } else { null }
-                val char3 = if (value.length > fromIdx + 3) { value[fromIdx + 3] } else { null }
+                val char2 = if (value.length > fromIdx + 2) {
+                    value[fromIdx + 2]
+                } else {
+                    null
+                }
+                val char3 = if (value.length > fromIdx + 3) {
+                    value[fromIdx + 3]
+                } else {
+                    null
+                }
                 if (char0.equals('a', true) &&
                     char1?.equals('n', true) == true &&
                     char2?.equals('d', true) == true &&

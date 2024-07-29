@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao.mutate
 
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig

@@ -20,6 +20,7 @@ object PgUtils {
         val postgres = TestContainers.getPostgres(PgUtils::class.java)
 
         val jdbcDataSource = object : JdbcDataSource {
+            override fun getKey() = "key"
             override fun getJavaDataSource() = postgres.getDataSource()
             override fun isManaged() = false
         }

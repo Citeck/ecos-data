@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.pg
 
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
@@ -412,9 +412,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
         val permsColumn = getPermsColumn(context)
         if (permsColumn.isNotEmpty() && (
-            !context.getPermsService()
-                .isTableExists() || !context.hasColumn(permsColumn)
-            )
+                !context.getPermsService()
+                    .isTableExists() || !context.hasColumn(permsColumn)
+                )
         ) {
             return 0
         }
@@ -582,9 +582,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val permsColumn = getPermsColumn(context)
 
         if (permsColumn.isNotEmpty() && (
-            !context.getPermsService()
-                .isTableExists() || !context.hasColumn(permsColumn)
-            )
+                !context.getPermsService()
+                    .isTableExists() || !context.hasColumn(permsColumn)
+                )
         ) {
             return DbFindRes(emptyList(), 0)
         }
