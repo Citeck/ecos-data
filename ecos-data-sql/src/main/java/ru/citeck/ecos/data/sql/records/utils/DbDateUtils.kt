@@ -9,6 +9,13 @@ object DbDateUtils {
     const val TODAY = "\$TODAY"
     const val NOW = "\$NOW"
 
+    private val DIMENSIONS = listOf(
+        'S' to ChronoUnit.SECONDS,
+        'M' to ChronoUnit.MINUTES,
+        'H' to ChronoUnit.HOURS,
+        'D' to ChronoUnit.DAYS
+    )
+
     enum class RangePart {
         START,
         END,
@@ -73,11 +80,9 @@ object DbDateUtils {
         }
     }
 
-    fun getMinDimension(value: String): ChronoUnit = when {
-        value.last() == 'S' -> ChronoUnit.SECONDS
-        value.last() == 'M' -> ChronoUnit.MINUTES
-        value.last() == 'H' -> ChronoUnit.HOURS
-        value.last() == 'D' -> ChronoUnit.DAYS
-        else -> ChronoUnit.NANOS
+    fun getMinDimension(value: String): ChronoUnit {
+        return DIMENSIONS.firstOrNull {
+            value.contains(it.first, ignoreCase = true)
+        }?.second ?: ChronoUnit.NANOS
     }
 }
