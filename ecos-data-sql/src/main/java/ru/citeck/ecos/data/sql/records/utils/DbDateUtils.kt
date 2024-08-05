@@ -3,7 +3,6 @@ package ru.citeck.ecos.data.sql.records.utils
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.TimeUnit
 
 object DbDateUtils {
 
@@ -58,7 +57,7 @@ object DbDateUtils {
                 if (value[0] == 'P' || value.length > 1 && value[1] == 'P') {
                     val duration = Duration.parse(value)
                     Instant.now()
-                        .truncatedTo(getMinDimension(duration))
+                        .truncatedTo(getMinDimension(value))
                         .plus(duration)
                         .toString()
                 } else if (withTime && !value.contains("T")) {
@@ -74,12 +73,11 @@ object DbDateUtils {
         }
     }
 
-    fun getMinDimension(value: Duration): ChronoUnit = when {
-        value.nano != 0 -> ChronoUnit.NANOS
-        value.seconds.mod(TimeUnit.DAYS.toSeconds(1)) == 0L -> ChronoUnit.DAYS
-        value.seconds.mod(TimeUnit.HOURS.toSeconds(1)) == 0L -> ChronoUnit.HOURS
-        value.seconds.mod(TimeUnit.MINUTES.toSeconds(1)) == 0L -> ChronoUnit.MINUTES
-        value.seconds != 0L -> ChronoUnit.SECONDS
+    fun getMinDimension(value: String): ChronoUnit = when {
+        value.last() == 'S' -> ChronoUnit.SECONDS
+        value.last() == 'M' -> ChronoUnit.MINUTES
+        value.last() == 'H' -> ChronoUnit.HOURS
+        value.last() == 'D' -> ChronoUnit.DAYS
         else -> ChronoUnit.NANOS
     }
 }
