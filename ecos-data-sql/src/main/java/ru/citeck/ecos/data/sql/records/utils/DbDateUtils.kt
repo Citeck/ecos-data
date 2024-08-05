@@ -3,12 +3,18 @@ package ru.citeck.ecos.data.sql.records.utils
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.TimeUnit
 
 object DbDateUtils {
 
     const val TODAY = "\$TODAY"
     const val NOW = "\$NOW"
+
+    private val DIMENSIONS = listOf(
+        'S' to ChronoUnit.SECONDS,
+        'M' to ChronoUnit.MINUTES,
+        'H' to ChronoUnit.HOURS,
+        'D' to ChronoUnit.DAYS
+    )
 
     enum class RangePart {
         START, END, NONE
@@ -56,7 +62,7 @@ object DbDateUtils {
                 if (value[0] == 'P' || value.length > 1 && value[1] == 'P') {
                     val duration = Duration.parse(value)
                     Instant.now()
-                        .truncatedTo(getMinDimension(duration))
+                        .truncatedTo(getMinDimension(value))
                         .plus(duration)
                         .toString()
                 } else if (withTime && !value.contains("T")) {
@@ -72,12 +78,9 @@ object DbDateUtils {
         }
     }
 
-    fun getMinDimension(value: Duration): ChronoUnit = when {
-        value.nano != 0 -> ChronoUnit.NANOS
-        value.seconds.mod(TimeUnit.DAYS.toSeconds(1)) == 0L -> ChronoUnit.DAYS
-        value.seconds.mod(TimeUnit.HOURS.toSeconds(1)) == 0L -> ChronoUnit.HOURS
-        value.seconds.mod(TimeUnit.MINUTES.toSeconds(1)) == 0L -> ChronoUnit.MINUTES
-        value.seconds != 0L -> ChronoUnit.SECONDS
-        else -> ChronoUnit.NANOS
+    fun getMinDimension(value: String): ChronoUnit {
+        return DIMENSIONS.firstOrNull {
+            value.contains(it.first, ignoreCase = true)
+        }?.second ?: ChronoUnit.NANOS
     }
 }
