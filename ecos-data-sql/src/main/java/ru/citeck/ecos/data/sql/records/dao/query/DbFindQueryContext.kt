@@ -89,7 +89,7 @@ class DbFindQueryContext(
 
     fun registerSelectAtt(attribute: String, strict: Boolean): String {
         if (attribute.contains('(')) {
-            return expressionsCtx.register(attribute)
+            return expressionsCtx.register(attribute, strict) ?: ""
         }
         if (attribute.contains('.')) {
             return prepareAssocSelectJoin(attribute, strict) ?: ""
@@ -99,7 +99,7 @@ class DbFindQueryContext(
 
     fun registerConditionAtt(attribute: String): String {
         if (attribute.contains('(')) {
-            return expressionsCtx.register(attribute)
+            return expressionsCtx.register(attribute, true) ?: ""
         }
         return DbRecord.ATTS_MAPPING.getOrDefault(attribute, attribute)
     }
