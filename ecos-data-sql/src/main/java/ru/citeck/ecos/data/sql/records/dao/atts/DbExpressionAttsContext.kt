@@ -1,7 +1,9 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
+import mu.KotlinLogging
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
+import ru.citeck.ecos.data.sql.records.dao.query.DbQueryPreparingException
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.expression.ExpressionParser
 import ru.citeck.ecos.data.sql.service.expression.ExpressionTools
@@ -14,13 +16,27 @@ class DbExpressionAttsContext(
     private val withGrouping: Boolean
 ) {
 
+    companion object {
+        private val log = KotlinLogging.logger {}
+    }
+
     private val expressionCounter = AtomicInteger()
     private val expressionAliases = HashMap<ExpressionToken, String>()
     private val expressionAliasesByAttribute = LinkedHashMap<String, String>()
     private val expressions: MutableMap<String, ExpressionToken> = LinkedHashMap()
 
-    fun register(attribute: String): String {
-        var expression = ExpressionParser.parse(attribute)
+    fun register(attribute: String, strict: Boolean): String? {
+        var expression = try {
+            ExpressionParser.parse(attribute)
+        } catch (e: Throwable) {
+            val msg = "Invalid expression: '$attribute'"
+            if (strict) {
+                throw DbQueryPreparingException(msg)
+            } else {
+                log.debug { msg }
+                return null
+            }
+        }
         if (!withGrouping) {
             var expressionProcessed = false
             if (expression is FunctionToken &&
