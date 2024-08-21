@@ -100,7 +100,7 @@ class DbDataSourceImpl(
     ): T {
 
         val transaction = TxnContext.getTxnOrNull()
-        val activeQueryData = ActiveQueryData(transaction, Thread.currentThread(), query)
+        val activeQueryData = ActiveQueryData(transaction, Thread.currentThread(), query, params)
 
         activeQueries.add(activeQueryData)
 
@@ -286,7 +286,8 @@ class DbDataSourceImpl(
     private class ActiveQueryData(
         val transaction: Transaction?,
         val thread: Thread,
-        val query: String
+        val query: String,
+        val params: List<Any?>
     ) {
         companion object {
             const val IN_PROGRESS_REPORT_TIME = 60_000
@@ -312,7 +313,7 @@ class DbDataSourceImpl(
         }
 
         fun getMessage(time: Long): String {
-            return "[SQL][${thread.name}][${transaction?.getId()?.toString() ?: "no-txn"}][$status][$time] $query"
+            return "[SQL][${thread.name}][${transaction?.getId()?.toString() ?: "no-txn"}][$status][$time] $query $params"
         }
 
         override fun equals(other: Any?): Boolean {

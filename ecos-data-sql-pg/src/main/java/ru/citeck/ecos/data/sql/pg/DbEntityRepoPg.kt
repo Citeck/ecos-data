@@ -1299,18 +1299,26 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         val assocTableJoin = assocTargetJoinsWithPredicate[attribute]
                         if (assocTableJoin != null) {
                             columnDef = context.getColumnByName(assocTableJoin.srcColumn)
-                        } else if (expressions.containsKey(attribute)) {
-                            columnDef = DbColumnDef.create {
-                                withName(attribute)
-                                withType(DbColumnType.LONG)
-                            }
-                        } else if (rawTableJoins.isNotEmpty()) {
-                            val dotIdx = attribute.indexOf('.')
-                            if (dotIdx > 0) {
-                                val firstPart = attribute.substring(0, dotIdx)
-                                val rawJoin = rawTableJoins[firstPart]
-                                if (rawJoin != null) {
-                                    columnDef = rawJoin.table.getColumnByName(attribute.substring(dotIdx + 1))
+                        } else {
+                            val expression = expressions[attribute]
+                            if (expression != null) {
+                                val retType = if (expression is FunctionToken) {
+                                    FunctionToken.getFunctionReturnType(expression)
+                                } else {
+                                    DbColumnType.LONG
+                                }
+                                columnDef = DbColumnDef.create {
+                                    withName(attribute)
+                                    withType(retType)
+                                }
+                            } else if (rawTableJoins.isNotEmpty()) {
+                                val dotIdx = attribute.indexOf('.')
+                                if (dotIdx > 0) {
+                                    val firstPart = attribute.substring(0, dotIdx)
+                                    val rawJoin = rawTableJoins[firstPart]
+                                    if (rawJoin != null) {
+                                        columnDef = rawJoin.table.getColumnByName(attribute.substring(dotIdx + 1))
+                                    }
                                 }
                             }
                         }
@@ -1350,9 +1358,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 val expression = expressions[attribute]
                 if (expression != null) {
                     val operator = when (type) {
-                        ValuePredicate.Type.EQ,
-                        ValuePredicate.Type.CONTAINS -> "="
-
+                        ValuePredicate.Type.EQ -> "="
+                        ValuePredicate.Type.LIKE,
+                        ValuePredicate.Type.CONTAINS -> {
+                            if (value.isNumber()) {
+                                "="
+                            } else {
+                                "LIKE"
+                            }
+                        }
                         ValuePredicate.Type.GT -> ">"
                         ValuePredicate.Type.GE -> ">="
                         ValuePredicate.Type.LT -> "<"
@@ -1362,14 +1376,37 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                             return false
                         }
                     }
-                    val convertedParam = if (value.isIntegralNumber()) {
-                        value.asLong()
+                    var convertedParam = if (value.isNumber()) {
+                        if (value.isIntegralNumber()) {
+                            value.asLong()
+                        } else {
+                            value.asDouble()
+                        }
                     } else {
-                        value.asDouble()
+                        value.asText()
                     }
-                    val sqlExpression =
-                        sqlExpressionsByAlias[attribute] ?: error("SQL expression is not found for $expression")
-                    query.append(sqlExpression).append(" ").append(operator).append(" ?")
+                    val sqlExpression = sqlExpressionsByAlias[attribute]
+                        ?: error("SQL expression is not found for $expression")
+
+                    if (convertedParam is String && (
+                            type == ValuePredicate.Type.LIKE ||
+                                type == ValuePredicate.Type.CONTAINS
+                            )
+                    ) {
+                        query.append("LOWER(")
+                            .append(sqlExpression)
+                            .append(") ")
+                            .append(operator)
+                            .append(" ?")
+
+                        convertedParam = convertedParam.lowercase()
+                        if (type == ValuePredicate.Type.CONTAINS) {
+                            convertedParam = "%$convertedParam%"
+                        }
+                    } else {
+                        query.append(sqlExpression).append(" ").append(operator).append(" ?")
+                    }
+
                     queryParams.add(convertedParam)
                     return true
                 }

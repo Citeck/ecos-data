@@ -1,6 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.records.dao.query.DbQueryPreparingException

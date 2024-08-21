@@ -111,6 +111,46 @@ class DbRecordsExpressionsTest : DbRecordsTestBase() {
     }
 
     @Test
+    fun textExprTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("date")
+                    withType(AttributeType.DATE)
+                },
+                AttributeDef.create {
+                    withId("date2")
+                    withType(AttributeType.DATE)
+                }
+            )
+        )
+
+        val rec0 = createRecord("date" to "2024-01-01", "date2" to "2024-01-05")
+        val rec1 = createRecord("date" to null)
+
+        fun query(predicate: Predicate): List<EntityRef> {
+            return records.query(
+                baseQuery.copy()
+                    .withQuery(predicate)
+                    .build()
+            ).getRecords()
+        }
+
+        assertThat(query(Predicates.contains("to_char(date, 'YYYY.MM')", ".01"))).containsExactly(rec0)
+        assertThat(query(Predicates.contains("to_char(date, 'YYYY.MM')", ".02"))).isEmpty()
+        // it's not a very useful query, but it's complex enough for the test
+        val complexExpr = "coalesce(replace(to_char(char_length(to_char(date, 'YYYY')), '999'), '4', 'Вывезен из ЕСО'), 'Не вывезен из ЕСО')"
+        assertThat(query(Predicates.contains(complexExpr, "Не вывезен"))).containsExactly(rec1)
+        assertThat(query(Predicates.contains(complexExpr, "вывезен"))).containsExactly(rec0, rec1)
+
+        val datesDiffInDays = "ceil(((date_part('epoch', date2) - date_part('epoch', date)) / (60 * 60 * 24)))"
+        assertThat(query(Predicates.eq(datesDiffInDays, 4))).containsExactly(rec0)
+        assertThat(query(Predicates.ge(datesDiffInDays, 4))).containsExactly(rec0)
+        assertThat(query(Predicates.gt(datesDiffInDays, 4))).isEmpty()
+    }
+
+    @Test
     fun sortByTest() {
 
         registerAtts(

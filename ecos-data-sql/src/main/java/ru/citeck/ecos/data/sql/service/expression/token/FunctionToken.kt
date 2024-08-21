@@ -1,5 +1,7 @@
 package ru.citeck.ecos.data.sql.service.expression.token
 
+import ru.citeck.ecos.data.sql.dto.DbColumnType
+
 class FunctionToken(val name: String, val args: List<ExpressionToken>) : ExpressionToken {
 
     companion object {
@@ -61,6 +63,26 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
         val FUNCTIONS_WITHOUT_BRACES = setOf(
             "current_date"
         )
+
+        fun getFunctionReturnType(token: ExpressionToken): DbColumnType {
+            if (token !is FunctionToken) {
+                return DbColumnType.DOUBLE
+            }
+            val name = token.name
+            return if (name == "to_char" || STRING_FUNCTIONS.contains(name)) {
+                DbColumnType.TEXT
+            } else if (NUM_FUNCTIONS.contains(name) || AGG_FUNCTIONS.contains(name)) {
+                DbColumnType.DOUBLE
+            } else if (name == "to_timestamp" || DATETIME_FUNCTIONS.contains(name)) {
+                DbColumnType.DATETIME
+            } else if (name == "to_date") {
+                DbColumnType.DATE
+            } else if (name == "coalesce" && token.args.isNotEmpty()) {
+                getFunctionReturnType(token.args.first())
+            } else {
+                DbColumnType.DOUBLE
+            }
+        }
     }
 
     fun isAggregationFunc(): Boolean {
