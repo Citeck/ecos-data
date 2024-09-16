@@ -12,6 +12,7 @@ import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.records2.predicate.PredicateService
+import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
@@ -27,6 +28,31 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
 
     companion object {
         val log = KotlinLogging.logger { }
+    }
+
+    @Test
+    fun testWithUnknownField() {
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("text")
+                    .build()
+            )
+        )
+
+        createRecord("text" to "abc")
+
+        fun testPred(predicate: Predicate) {
+            val res = records.query(baseQuery.copy().withQuery(predicate).build())
+            assertThat(res.getRecords()).describedAs(predicate.toString()).isEmpty()
+        }
+
+        testPred(
+            Predicates.or(
+                Predicates.eq("unknown", "value"),
+                Predicates.like("unknown", "value")
+            )
+        )
     }
 
     @Test
@@ -238,7 +264,7 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
                         withQuery(Predicates.eq(attName, timeToTest))
                     }
                 )
-                assertThat(result.getRecords() as List<EntityRef>).describedAs(timeToTest).containsExactlyElementsOf(recsByTime[fixedTime])
+                assertThat(result.getRecords()).describedAs(timeToTest).containsExactlyElementsOf(recsByTime[fixedTime])
             }
         }
 
@@ -248,9 +274,9 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
             }
         )
         if (withTime) {
-            assertThat(result8.getRecords() as List<EntityRef>).containsExactly(recWithDate2)
+            assertThat(result8.getRecords()).containsExactly(recWithDate2)
         } else {
-            assertThat(result8.getRecords()as List<EntityRef>).containsExactly(recWithDate2)
+            assertThat(result8.getRecords()).containsExactly(recWithDate2)
         }
 
         val result9 = records.query(
@@ -259,9 +285,9 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
             }
         )
         if (withTime) {
-            assertThat(result9.getRecords() as List<EntityRef>).containsExactly(recWithDate1, recWithDate2)
+            assertThat(result9.getRecords()).containsExactly(recWithDate1, recWithDate2)
         } else {
-            assertThat(result9.getRecords() as List<EntityRef>).containsExactly(recWithDate0, recWithDate1, recWithDate2)
+            assertThat(result9.getRecords()).containsExactly(recWithDate0, recWithDate1, recWithDate2)
         }
 
         val result10 = records.query(
@@ -269,7 +295,7 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
                 withQuery(Predicates.ge(attName, Instant.parse(time01_00)))
             }
         )
-        assertThat(result10.getRecords() as List<EntityRef>).containsExactly(recWithDate0, recWithDate1, recWithDate2)
+        assertThat(result10.getRecords()).containsExactly(recWithDate0, recWithDate1, recWithDate2)
     }
 
     @Test

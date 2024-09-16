@@ -847,7 +847,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 }
             },
             onlyAnd = false,
-            optimize = true
+            optimize = true,
+            filterEmptyComposite = false
         ) ?: Predicates.alwaysTrue()
 
         return PredicateUtils.optimize(columnsPred)

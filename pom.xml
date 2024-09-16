@@ -13,12 +13,12 @@
     <parent>
         <groupId>ru.citeck.lib.commons</groupId>
         <artifactId>citeck-lib-base-parent</artifactId>
-        <version>1.0.0</version>
+        <version>1.0.1</version>
     </parent>
 
     <properties>
 
-        <revision>1.51.3</revision>
+        <revision>1.51.4</revision>
 
         <ecos.commons.version>3.3.0</ecos.commons.version>
         <ecos.records.version>3.71.0</ecos.records.version>
