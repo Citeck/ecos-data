@@ -31,7 +31,7 @@ import kotlin.collections.ArrayList
 import kotlin.math.max
 import kotlin.math.min
 
-class DbRecordsQueryDao(var daoCtx: DbRecordsDaoCtx) {
+class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
 
     companion object {
         private const val ATT_DBID = "dbid"
