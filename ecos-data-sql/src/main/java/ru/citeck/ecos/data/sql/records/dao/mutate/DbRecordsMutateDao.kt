@@ -29,6 +29,7 @@ import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsContext
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
+import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.service.DbDataService
@@ -36,12 +37,15 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
 import ru.citeck.ecos.model.lib.utils.ModelUtils
+import ru.citeck.ecos.model.lib.workspace.WorkspaceService
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.time.Instant
 import java.util.*
 import kotlin.collections.ArrayList
@@ -72,6 +76,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
     private lateinit var assocsService: DbAssocsService
     private lateinit var permsDao: DbRecordsPermsDao
     private lateinit var contentDao: DbRecordsContentDao
+    private lateinit var workspaceService: WorkspaceService
+    private lateinit var wsDbService: DbWorkspaceService
 
     private var contentService: DbContentService? = null
     private var computedAttsComponent: DbComputedAttsComponent? = null
@@ -90,6 +96,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         assocsService = daoCtx.assocsService
         permsDao = daoCtx.permsDao
         contentDao = daoCtx.contentDao
+        workspaceService = daoCtx.workspaceService
+        wsDbService = dataService.getTableContext().getWorkspaceService()
 
         contentService = daoCtx.contentService
         computedAttsComponent = daoCtx.computedAttsComponent
@@ -301,6 +309,25 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         }
 
         val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
+        var workspaceRef = EntityRef.EMPTY
+        if (isNewEntity && typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
+            val mutWorkspace = record.getAtt(RecordConstants.ATT_WORKSPACE).asText()
+            if (mutWorkspace.isEmpty()) {
+                error(
+                    "You should provide ${RecordConstants.ATT_WORKSPACE} attribute to create new record " +
+                        "with private workspace scope. Type: '${typeInfo.id}'"
+                )
+            }
+            workspaceRef = mutWorkspace.toEntityRef()
+            if (!isRunAsSystem) {
+                val workspaces = workspaceService.getUserWorkspaces(currentRunAsUser, currentRunAsAuthorities)
+                if (!workspaces.contains(workspaceRef.getLocalId())) {
+                    error("You can't create records in workspace $workspaceRef")
+                }
+            }
+        }
+        record.attributes.remove(RecordConstants.ATT_WORKSPACE)
+
         val currentUser = AuthContext.getCurrentUser()
         val currentUserRefId = daoCtx.getOrCreateUserRefId(currentUser)
 
@@ -389,6 +416,9 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         if (isNewEntity) {
             val globalRef = daoCtx.getGlobalRef(entityToMutate.extId)
             entityToMutate.refId = recordRefService.getOrCreateIdByEntityRefs(listOf(globalRef))[0]
+            if (workspaceRef.isNotEmpty()) {
+                entityToMutate.workspace = wsDbService.getOrCreateId(workspaceRef.getLocalId())
+            }
         }
 
         val recAttributes = record.attributes.deepCopy()

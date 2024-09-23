@@ -34,6 +34,7 @@ import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.delegation.service.DelegationService
+import ru.citeck.ecos.model.lib.workspace.WorkspaceService
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.schema.write.AttSchemaWriter
@@ -69,7 +70,8 @@ class DbRecordsDaoCtx(
     val remoteActionsClient: DbRecordsRemoteActionsClient?,
     val computedAttsComponent: DbComputedAttsComponent?,
     val recordsServiceFactory: RecordsServiceFactory,
-    val permsComponent: DbPermsComponent
+    val permsComponent: DbPermsComponent,
+    val workspaceService: WorkspaceService
 ) {
 
     companion object {

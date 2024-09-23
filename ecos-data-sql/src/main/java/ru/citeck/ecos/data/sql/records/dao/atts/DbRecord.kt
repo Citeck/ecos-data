@@ -30,6 +30,7 @@ import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
+import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.temporal.Temporal
 import java.util.*
@@ -152,6 +153,15 @@ class DbRecord(
     private val attTypes: Map<String, AttributeType>
     private val allAttDefs: Map<String, AttributeDef>
     private val nonSystemAttDefs: Map<String, AttributeDef>
+
+    private val workspace: String? by lazy {
+        val wsId = entity.workspace
+        if (wsId != null) {
+            ctx.dataService.getTableContext().getWorkspaceService().getWorkspaceNameById(wsId)
+        } else {
+            null
+        }
+    }
 
     private val defaultContentAtt: String
 
@@ -395,6 +405,14 @@ class DbRecord(
         }
     }
 
+    fun getWorkspaceName(): String? {
+        return workspace
+    }
+
+    fun getTypeInfo(): TypeInfo {
+        return typeInfo
+    }
+
     override fun getId(): EntityRef {
         return ctx.getGlobalRef(extId)
     }
@@ -628,13 +646,13 @@ class DbRecord(
             RecordConstants.ATT_CREATED, "cm:created" -> entity.created
             RecordConstants.ATT_MODIFIER -> toEntityRef(entity.modifier)
             RecordConstants.ATT_CREATOR -> toEntityRef(entity.creator)
+            RecordConstants.ATT_WORKSPACE -> EntityRef.create(AppName.EMODEL, "workspace", workspace)
             StatusConstants.ATT_STATUS -> {
                 val statusId = entity.status
                 val statusDef = typeInfo.model.statuses.firstOrNull { it.id == statusId } ?: return statusId
                 val attValue = ctx.attValuesConverter.toAttValue(statusDef) ?: EmptyAttValue.INSTANCE
                 return DbStatusValue(statusDef, attValue)
             }
-
             ATT_PERMISSIONS -> permsValue
             RecordConstants.ATT_CONTENT -> getDefaultContent("")
             RecordConstants.ATT_PARENT -> additionalAtts[RecordConstants.ATT_PARENT]
@@ -669,6 +687,13 @@ class DbRecord(
     fun isCurrentUserHasReadPerms(): Boolean {
         if (AuthContext.isRunAsSystem() || ctx.getUpdatedInTxnIds().contains(extId)) {
             return true
+        }
+        val ws = workspace
+        if (!ws.isNullOrEmpty()) {
+            val runAs = AuthContext.getCurrentRunAsAuth()
+            if (!ctx.workspaceService.getUserWorkspaces(runAs.getUser(), runAs.getAuthorities()).contains(ws)) {
+                return false
+            }
         }
         return permsValue.getRecordPerms().hasReadPerms()
     }

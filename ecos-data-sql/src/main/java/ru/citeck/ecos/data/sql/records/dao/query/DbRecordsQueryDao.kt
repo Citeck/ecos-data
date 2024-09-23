@@ -16,6 +16,7 @@ import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
+import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.PredicateService
@@ -50,6 +51,9 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
     private val assocsService = daoCtx.assocsService
     private val dataService = daoCtx.dataService
 
+    private val dbWsService = dataService.getTableContext().getWorkspaceService()
+    private val workspaceService = daoCtx.workspaceService
+
     fun queryRecords(recsQuery: RecordsQuery): RecsQueryRes<DbRecord> {
 
         if (!dataService.isTableExists()) {
@@ -69,6 +73,7 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         if (language.isNotEmpty() && language != PredicateService.LANGUAGE_PREDICATE) {
             return RecsQueryRes()
         }
+        val isRunAsSystem = AuthContext.isRunAsSystem()
 
         var groupBy = recsQuery.groupBy
         // add support of legacy grouping with '&' as delimiter for attributes
@@ -130,6 +135,51 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
             predicate = Predicates.and(typePred, predicate)
         }
 
+        val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.getLocalId())
+        if (typeInfo?.workspaceScope == WorkspaceScope.PRIVATE) {
+            val workspacesForQuery: Collection<String>
+            if (isRunAsSystem) {
+                workspacesForQuery = recsQuery.workspaces
+            } else {
+                val runAs = AuthContext.getCurrentRunAsAuth()
+                val userWs = workspaceService.getUserWorkspaces(runAs.getUser(), runAs.getAuthorities())
+                if (recsQuery.workspaces.isEmpty()) {
+                    val wsToSearch = HashSet(userWs)
+                    wsToSearch.add("")
+                    workspacesForQuery = wsToSearch
+                } else {
+                    workspacesForQuery = recsQuery.workspaces.filter {
+                        it.isEmpty() || userWs.contains(it)
+                    }
+                    if (workspacesForQuery.isEmpty()) {
+                        return RecsQueryRes()
+                    }
+                }
+            }
+            if (workspacesForQuery.isNotEmpty()) {
+                val existingWsIds = dbWsService.getIdsForExistingWsInAnyOrder(workspacesForQuery)
+                val wsCondition = if (workspacesForQuery.contains("")) {
+                    Predicates.or(
+                        Predicates.empty(DbEntity.WORKSPACE),
+                        Predicates.inVals(DbEntity.WORKSPACE, existingWsIds)
+                    )
+                } else if (existingWsIds.isEmpty()) {
+                    return RecsQueryRes()
+                } else {
+                    Predicates.inVals(DbEntity.WORKSPACE, existingWsIds)
+                }
+                val andPred = if (predicate is AndPredicate) {
+                    predicate
+                } else {
+                    val andPred = AndPredicate()
+                    andPred.addPredicate(predicate)
+                    andPred
+                }
+                andPred.addPredicate(wsCondition)
+                predicate = andPred
+            }
+        }
+
         val page = recsQuery.page
 
         val groupByForQuery = groupBy.map { queryCtx.registerSelectAtt(it, true) }
@@ -138,7 +188,7 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         val runAsAuth = AuthContext.getCurrentRunAsAuth()
         val userAuthorities = DbRecordsUtils.getCurrentAuthorities(runAsAuth).toMutableSet()
         val delegationsList: MutableList<Pair<Set<Long>, Set<String>>> = ArrayList()
-        if (!AuthContext.isRunAsSystem() && predicateData.queryPermsPolicy != QueryPermsPolicy.PUBLIC) {
+        if (!isRunAsSystem && predicateData.queryPermsPolicy != QueryPermsPolicy.PUBLIC) {
             val delegations = daoCtx.delegationService.getActiveAuthDelegations(
                 runAsAuth.getUser(),
                 listOf(ecosTypeRef.getLocalId())

@@ -33,6 +33,7 @@ class DbEntity {
         const val CREATOR = "__creator"
         const val DELETED = "__deleted"
         const val TYPE = "__type"
+        const val WORKSPACE = "__workspace"
         const val STATUS = "__status"
         const val NAME = "__name"
         const val REF_ID = "__ref_id"
@@ -68,6 +69,8 @@ class DbEntity {
     @Constraints(NOT_NULL)
     var type: Long = -1
 
+    var workspace: Long? = null
+
     @Constraints(NOT_NULL)
     var status: String = ""
 
@@ -90,6 +93,7 @@ class DbEntity {
         newEntity.creator = creator
         newEntity.deleted = deleted
         newEntity.type = type
+        newEntity.workspace = workspace
         newEntity.status = status
         newEntity.name = name
         newEntity.attributes = LinkedHashMap(attributes)
@@ -114,6 +118,7 @@ class DbEntity {
             creator == other.creator &&
             deleted == other.deleted &&
             type == other.type &&
+            workspace == other.workspace &&
             status == other.status &&
             name == other.name
 
@@ -170,6 +175,7 @@ class DbEntity {
         result = 31 * result + creator.hashCode()
         result = 31 * result + deleted.hashCode()
         result = 31 * result + type.hashCode()
+        result = 31 * result + workspace.hashCode()
         result = 31 * result + status.hashCode()
         result = 31 * result + name.hashCode()
         result = 31 * result + attributes.hashCode()

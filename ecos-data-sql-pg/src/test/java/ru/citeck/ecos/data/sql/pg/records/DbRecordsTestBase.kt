@@ -52,6 +52,7 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.model.lib.utils.ModelUtils
+import ru.citeck.ecos.model.lib.workspace.WorkspaceService
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
@@ -211,6 +212,7 @@ abstract class DbRecordsTestBase {
     lateinit var thumbnailCtx: RecordsDaoTestCtx
 
     lateinit var delegationService: CustomDelegationService
+    lateinit var workspaceService: CustomWorkspaceService
 
     private var mainCtxInitialized = false
     private val registeredRecordsDao = ArrayList<RecordsDaoTestCtx>()
@@ -279,6 +281,7 @@ abstract class DbRecordsTestBase {
                 }
             }
             delegationService = CustomDelegationService()
+            workspaceService = CustomWorkspaceService()
 
             val numCounters = mutableMapOf<EntityRef, AtomicLong>()
             modelServiceFactory = object : ModelServiceFactory() {
@@ -332,6 +335,10 @@ abstract class DbRecordsTestBase {
 
                 override fun createDelegationService(): DelegationService {
                     return this@DbRecordsTestBase.delegationService
+                }
+
+                override fun createWorkspaceService(): WorkspaceService {
+                    return this@DbRecordsTestBase.workspaceService
                 }
 
                 override fun getEcosWebAppApi(): EcosWebAppApi {
@@ -767,6 +774,22 @@ abstract class DbRecordsTestBase {
     fun setQueryPermsPolicy(typeId: String, policy: QueryPermsPolicy) {
         val typeInfo = typesInfo[typeId] ?: error("Type is not found by id $typeId")
         registerType(typeInfo.copy { withQueryPermsPolicy(policy) })
+    }
+
+    class CustomWorkspaceService : WorkspaceService {
+
+        val usersWs = ConcurrentHashMap<String, Set<String>>()
+
+        fun setUserWorkspaces(user: String, workspaces: Set<String>) {
+            usersWs[user] = workspaces.filterTo(LinkedHashSet()) { it.isNotBlank() }
+        }
+
+        override fun getUserWorkspaces(user: String, authorities: Collection<String>): Set<String> {
+            return setOf(
+                *(usersWs[user]?.toTypedArray() ?: emptyArray()),
+                "user$$user"
+            )
+        }
     }
 
     class CustomDelegationService : DelegationService {

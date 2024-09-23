@@ -18,6 +18,7 @@ import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
+import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceService
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
@@ -900,6 +901,10 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         private val columnsByName = columns.associateBy { it.name }
         private val hasIdColumn = columnsByName.containsKey(DbEntity.ID)
         private val hasDeleteFlag = columnsByName.containsKey(DbEntity.DELETED)
+
+        override fun getWorkspaceService(): DbWorkspaceService {
+            return schemaCtx.workspaceService
+        }
 
         override fun getRecordRefsService(): DbRecordRefService {
             return schemaCtx.recordRefService

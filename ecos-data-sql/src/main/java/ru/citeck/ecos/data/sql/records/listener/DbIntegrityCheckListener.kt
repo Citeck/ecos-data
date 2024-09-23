@@ -23,7 +23,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         ) {
             RecordData(event.typeDef, event.aspects, created = true, isDraft = event.isDraft)
         }
-        txn.addAction(TxnActionType.BEFORE_COMMIT, 0f, false) {
+        txn.addAction(TxnActionType.BEFORE_COMMIT, 0f) {
             checkIntegrity(event.localRef, data)
         }
     }
@@ -54,7 +54,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         }
 
         if (isNewRecData.get()) {
-            txn.addAction(TxnActionType.BEFORE_COMMIT, 0f, false) {
+            txn.addAction(TxnActionType.BEFORE_COMMIT, 0f) {
                 checkIntegrity(event.localRef, data)
             }
         }

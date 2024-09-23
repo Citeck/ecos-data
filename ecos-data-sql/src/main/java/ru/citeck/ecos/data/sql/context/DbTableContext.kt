@@ -7,12 +7,15 @@ import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
+import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceService
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
 import kotlin.reflect.KClass
 
 interface DbTableContext {
+
+    fun getWorkspaceService(): DbWorkspaceService
 
     fun getPermsService(): DbEntityPermsService
 

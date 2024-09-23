@@ -75,6 +75,8 @@ class DbRecordsDao(
 
     private val listeners: MutableList<DbRecordsListener> = CopyOnWriteArrayList()
 
+    private var defaultContentStorage: EcosContentStorageConfig? = null
+
     fun uploadFile(
         ecosType: String? = null,
         name: String? = null,
@@ -174,8 +176,12 @@ class DbRecordsDao(
         return daoCtx.permsDao.getRecordPerms(record, user, authorities)
     }
 
+    @Synchronized
     fun setDefaultContentStorage(storage: EcosContentStorageConfig?) {
-        daoCtx.contentDao.setDefaultContentStorage(storage)
+        defaultContentStorage = storage
+        if (daoCtxInitialized.get()) {
+            daoCtx.contentDao.setDefaultContentStorage(storage)
+        }
     }
 
     override fun getId(): String {
@@ -228,8 +234,10 @@ class DbRecordsDao(
             remoteActionsClient,
             computedAttsComponent,
             serviceFactory,
-            permsComponent
+            permsComponent,
+            modelServices.workspaceService
         )
+        daoCtx.contentDao.setDefaultContentStorage(defaultContentStorage)
         daoCtxInitialized.set(true)
         listeners.forEach {
             if (it is DbRecordsDaoCtxAware) {
