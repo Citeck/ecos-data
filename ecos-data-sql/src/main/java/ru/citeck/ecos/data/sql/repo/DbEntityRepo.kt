@@ -17,6 +17,8 @@ interface DbEntityRepo {
 
     fun save(context: DbTableContext, entities: List<Map<String, Any?>>): List<Map<String, Any?>>
 
+    fun insertIfNoConflictByExtId(context: DbTableContext, entity: Map<String, Any?>): Long?
+
     fun delete(context: DbTableContext, entity: Map<String, Any?>)
 
     fun delete(context: DbTableContext, predicate: Predicate)

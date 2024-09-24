@@ -61,6 +61,11 @@ class DbMigrationService {
 
     fun runSchemaMigrations(context: DbSchemaContext) {
 
+        AuthContext.runAsSystem {
+            TxnContext.doInNewTxn(false) {
+                context.recordRefService.createTableIfNotExists()
+            }
+        }
         var version = context.getVersion()
         if (version == DbSchemaContext.NEW_SCHEMA_VERSION) {
             return

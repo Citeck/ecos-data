@@ -691,7 +691,7 @@ class DbRecord(
         val ws = workspace
         if (!ws.isNullOrEmpty()) {
             val runAs = AuthContext.getCurrentRunAsAuth()
-            if (!ctx.workspaceService.getUserWorkspaces(runAs.getUser(), runAs.getAuthorities()).contains(ws)) {
+            if (!ctx.workspaceService.getUserWorkspaces(runAs.getUser()).contains(ws)) {
                 return false
             }
         }

@@ -130,14 +130,24 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["multiAssocAtt", "aspect0:multiAssocAtt"])
+    @ValueSource(strings = ["multiAssocAtt", "aspect0:multiAssocAtt", "multiAuthorityAtt"])
     fun testWithMultipleAssoc(multiAssocName: String) {
 
         val targetRec0 = targetDao.createRecord("targetText" to "abc", "targetNum" to 10)
-        val targetRec1 = targetDao.createRecord("targetText" to "def", "targetNum" to 100)
+        val targetRec1 = targetDao.createRecord(
+            "targetText" to "def",
+            "targetNum" to 100,
+            "targetAssoc" to targetRec0,
+            "targetAuthority" to targetRec0
+        )
 
         val targetRec2 = targetDao.createRecord("targetText" to "hij", "targetNum" to 5)
-        val targetRec3 = targetDao.createRecord("targetText" to "klm", "targetNum" to 50)
+        val targetRec3 = targetDao.createRecord(
+            "targetText" to "klm",
+            "targetNum" to 50,
+            "targetAssoc" to targetRec2,
+            "targetAuthority" to targetRec0
+        )
 
         val record0 = createRecord(multiAssocName to listOf(targetRec0, targetRec1))
         val record1 = createRecord(multiAssocName to listOf(targetRec2, targetRec3))
@@ -158,12 +168,28 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
 
         assertThat(queryRes1).containsExactlyInAnyOrder(record0, record1)
 
-        val queryRes2 = records.query(baseQuery, mapOf("sum" to "sum(\"$multiAssocName.targetNum\")"))
+        val queryRes2 = records.query(
+            baseQuery.copy {
+                withQuery(Predicates.inVals("$multiAssocName.targetAssoc", listOf(targetRec0)))
+            }
+        ).getRecords()
+
+        assertThat(queryRes2).containsExactly(record0)
+
+        val queryRes3 = records.query(
+            baseQuery.copy {
+                withQuery(Predicates.inVals("$multiAssocName.targetAuthority", listOf(targetRec0)))
+            }
+        ).getRecords()
+
+        assertThat(queryRes3).containsExactly(record0, record1)
+
+        val queryRes4 = records.query(baseQuery, mapOf("sum" to "sum(\"$multiAssocName.targetNum\")"))
             .getRecords()
             .associate { it.getId() to it["sum"].asInt() }
 
-        assertThat(queryRes2[record0]).isEqualTo(110)
-        assertThat(queryRes2[record1]).isEqualTo(55)
+        assertThat(queryRes4[record0]).isEqualTo(110)
+        assertThat(queryRes4[record1]).isEqualTo(55)
 
         fun sortTest(asc: Boolean) {
             val queryRes = records.query(
@@ -187,13 +213,13 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         val value = records.getAtt(record0, "sum(\"$multiAssocName.targetNum\")?num").asInt()
         assertThat(value).isEqualTo(110)
 
-        val queryRes3 = records.query(
+        val queryRes5 = records.query(
             baseQuery.copy {
                 withQuery(Predicates.eq("sum(\"$multiAssocName.targetNum\")", 110))
             }
         ).getRecords()
 
-        assertThat(queryRes3).containsExactly(record0)
+        assertThat(queryRes5).containsExactly(record0)
     }
 
     @Test
@@ -470,6 +496,12 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
                     withConfig(ObjectData.create().set("typeRef", targetTypeRef.toString()))
                 },
                 AttributeDef.create {
+                    withId("multiAuthorityAtt")
+                    withType(AttributeType.AUTHORITY)
+                    withMultiple(true)
+                    withConfig(ObjectData.create().set("typeRef", targetTypeRef.toString()))
+                },
+                AttributeDef.create {
                     withId("childAssocAtt")
                     withType(AttributeType.ASSOC)
                     withConfig(
@@ -501,6 +533,14 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
                                     .build(),
                                 AttributeDef.create()
                                     .withId("targetText")
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("targetAssoc")
+                                    .withType(AttributeType.ASSOC)
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("targetAuthority")
+                                    .withType(AttributeType.AUTHORITY)
                                     .build(),
                                 AttributeDef.create()
                                     .withId("targetNum")

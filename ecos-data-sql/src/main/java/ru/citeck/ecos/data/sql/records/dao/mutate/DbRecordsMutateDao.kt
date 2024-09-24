@@ -320,7 +320,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             }
             workspaceRef = mutWorkspace.toEntityRef()
             if (!isRunAsSystem) {
-                val workspaces = workspaceService.getUserWorkspaces(currentRunAsUser, currentRunAsAuthorities)
+                val workspaces = workspaceService.getUserWorkspaces(currentRunAsUser)
                 if (!workspaces.contains(workspaceRef.getLocalId())) {
                     error("You can't create records in workspace $workspaceRef")
                 }

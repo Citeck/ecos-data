@@ -66,7 +66,7 @@ class DbRecordRefService(
                 val entity = DbRecordRefEntity()
                 val ref = fixEntityRef(refs[idx])
                 entity.extId = ref.toString()
-                val createdId = dataService.save(entity).id
+                val createdId = dataService.saveAtomicallyOrGetExistingByExtId(entity)
                 result[idx] = createdId
                 if (txnCache.size < TXN_CACHE_MAX_SIZE) {
                     txnCache[ref] = createdId

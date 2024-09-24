@@ -18,6 +18,7 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
+import ru.citeck.ecos.records3.record.dao.impl.proxy.RecordsDaoProxy
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.util.*
@@ -39,6 +40,7 @@ class DbFindQueryContext(
     }
 
     private val typeService = ctx.ecosTypeService
+    private val currentAppSrcIdPrefix = ctx.appName + EntityRef.APP_NAME_DELIMITER
 
     private val typeInfoData = HashMap<String, DbQueryTypeInfoData>()
     private val mainTypeInfo = getTypeInfoData(typeId)
@@ -186,7 +188,22 @@ class DbFindQueryContext(
         if (sourceId.isBlank()) {
             return null
         }
-        val targetDbDao = ctx.recordsService.getRecordsDao(sourceId, DbRecordsDao::class.java) ?: return null
+        var targetDbDao = ctx.recordsService.getRecordsDao(sourceId) ?: return null
+        var iterations = 3
+        while (targetDbDao is RecordsDaoProxy && iterations-- > 0) {
+            var targetId = targetDbDao.getTargetId()
+            if (targetId.contains(EntityRef.APP_NAME_DELIMITER)) {
+                if (!targetId.startsWith(currentAppSrcIdPrefix)) {
+                    return null
+                } else {
+                    targetId = targetId.substring(0, currentAppSrcIdPrefix.length)
+                }
+            }
+            targetDbDao = ctx.recordsService.getRecordsDao(targetId) ?: return null
+        }
+        if (targetDbDao !is DbRecordsDao) {
+            return null
+        }
         val recordsDaoCtx = targetDbDao.getRecordsDaoCtx()
 
         if (!recordsDaoCtx.dataService.getTableContext().isSameSchema(ctx.dataService.getTableContext())) {

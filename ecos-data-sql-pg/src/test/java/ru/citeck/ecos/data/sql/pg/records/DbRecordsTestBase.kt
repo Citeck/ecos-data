@@ -784,7 +784,7 @@ abstract class DbRecordsTestBase {
             usersWs[user] = workspaces.filterTo(LinkedHashSet()) { it.isNotBlank() }
         }
 
-        override fun getUserWorkspaces(user: String, authorities: Collection<String>): Set<String> {
+        override fun getUserWorkspaces(user: String): Set<String> {
             return setOf(
                 *(usersWs[user]?.toTypedArray() ?: emptyArray()),
                 "user$$user"

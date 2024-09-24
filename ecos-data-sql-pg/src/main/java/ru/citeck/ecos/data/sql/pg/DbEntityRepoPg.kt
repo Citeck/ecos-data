@@ -215,6 +215,44 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         )
     }
 
+    override fun insertIfNoConflictByExtId(context: DbTableContext, entity: Map<String, Any?>): Long? {
+
+        checkAuth(context)
+
+        val columns = context.getColumns().filter { entity.containsKey(it.name) }
+        val typesConverter = context.getTypesConverter()
+
+        val preparedValues = prepareValuesForDb(columns, typesConverter, listOf(entity))
+
+        val query = StringBuilder("INSERT INTO ")
+            .append(context.getTableRef().fullName)
+            .append(" (")
+
+        for (preparedValue in preparedValues) {
+            query.append("\"").append(preparedValue.name).append("\"").append(',')
+        }
+        query.setLength(query.length - 1)
+        query.append(") VALUES (")
+        for (preparedValue in preparedValues) {
+            query.append(preparedValue.placeholder).append(',')
+        }
+        query.setLength(query.length - 1)
+        query.append(")")
+
+        if (context.hasIdColumn()) {
+            query.append(" ON CONFLICT (${DbEntity.EXT_ID}) DO NOTHING RETURNING id")
+        }
+        query.append(";")
+
+        val values = arrayListOf<Any?>()
+        for (preparedValue in preparedValues) {
+            values.add(preparedValue.values[0])
+        }
+
+        val ids = context.getDataSource().update(query.toString(), values)
+        return ids.firstOrNull()
+    }
+
     override fun save(context: DbTableContext, entities: List<Map<String, Any?>>): List<Map<String, Any?>> {
         if (context.getColumns().isEmpty()) {
             error("Columns is empty")
@@ -250,13 +288,16 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         return getPermsColumn(context).isNotEmpty()
     }
 
+    private fun checkAuth(context: DbTableContext) {
+        if (isAuthEnabled(context) && AuthContext.getCurrentUser().isEmpty()) {
+            error("Current user is empty. Table: ${context.getTableRef()}")
+        }
+    }
+
     private fun saveImpl(context: DbTableContext, entities: List<Map<String, Any?>>): LongArray {
 
-        val tableRef = context.getTableRef()
+        checkAuth(context)
 
-        if (isAuthEnabled(context) && AuthContext.getCurrentUser().isEmpty()) {
-            error("Current user is empty. Table: $tableRef")
-        }
         val hasIdColumn = context.hasIdColumn()
 
         val entitiesToInsert = mutableListOf<EntityToInsert>()

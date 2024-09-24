@@ -433,6 +433,60 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return save(entity, emptyList())
     }
 
+    override fun saveAtomicallyOrGetExistingByExtId(entity: T): Long {
+
+        val entityMap = HashMap(entityMapper.convertToMap(entity))
+        entityMap.remove(DbEntity.ID)
+
+        repeat(3) {
+            val newId = TxnContext.doInNewTxn {
+                dataSource.withTransaction(false, true) {
+                    entityRepo.insertIfNoConflictByExtId(getTableContext(), entityMap)
+                }
+            }
+            if (newId != null) {
+                return newId
+            }
+            val extId = entityMap[DbEntity.EXT_ID] as? String
+            if (extId.isNullOrBlank()) {
+                error("Invalid entity without ${DbEntity.EXT_ID}")
+            }
+            val findQuery = DbFindQuery.create()
+                .withPredicate(Predicates.eq(DbEntity.EXT_ID, extId))
+                .build()
+
+            var entityId: Long? = null
+            var iterations = 5
+            while (entityId == null && iterations-- > 0) {
+                entityId = TxnContext.doInNewTxn {
+                    dataSource.withTransaction(true, true) {
+                        val queryRes = entityRepo.find(
+                            getTableContext(),
+                            findQuery,
+                            DbFindPage.FIRST,
+                            false
+                        ).entities.firstOrNull()
+                        if (queryRes != null) {
+                            queryRes[DbEntity.ID] as? Long
+                        } else {
+                            null
+                        }
+                    }
+                }
+                if (entityId == null) {
+                    Thread.sleep(400)
+                }
+            }
+            if (entityId != null) {
+                return entityId
+            }
+        }
+        error(
+            "Entity insertion failed. Table ${getTableContext().getTableRef()} " +
+                "entity extId: ${entityMap[DbEntity.EXT_ID]}"
+        )
+    }
+
     override fun save(entity: T, columns: List<DbColumnDef>): T {
         return save(listOf(entity), columns)[0]
     }

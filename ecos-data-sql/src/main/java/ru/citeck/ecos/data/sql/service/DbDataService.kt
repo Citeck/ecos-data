@@ -82,6 +82,8 @@ interface DbDataService<T : Any> {
 
     fun save(entity: T): T
 
+    fun saveAtomicallyOrGetExistingByExtId(entity: T): Long
+
     fun save(entities: Collection<T>): List<T>
 
     fun save(entities: Collection<T>, columns: List<DbColumnDef>): List<T>

@@ -42,6 +42,11 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         private const val TYPE_SRC_ID = "emodel/type"
         private const val TYPE_REF_ID_PREFIX = "$TYPE_SRC_ID@"
 
+        private val PROPS_WITH_REFS = setOf(
+            RecordConstants.ATT_CREATOR,
+            RecordConstants.ATT_MODIFIER
+        )
+
         private val log = KotlinLogging.logger {}
     }
 
@@ -142,7 +147,7 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
                 workspacesForQuery = recsQuery.workspaces
             } else {
                 val runAs = AuthContext.getCurrentRunAsAuth()
-                val userWs = workspaceService.getUserWorkspaces(runAs.getUser(), runAs.getAuthorities())
+                val userWs = workspaceService.getUserWorkspaces(runAs.getUser())
                 if (recsQuery.workspaces.isEmpty()) {
                     val wsToSearch = HashSet(userWs)
                     wsToSearch.add("")
@@ -703,7 +708,8 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
             val attDef = typeData.getAttribute(attId)
             var newPred = it
             if (attId != DbRecord.ATT_ASPECTS &&
-                newPred is ValuePredicate && DbRecordsUtils.isAssocLikeAttribute(attDef)
+                newPred is ValuePredicate &&
+                (DbRecordsUtils.isAssocLikeAttribute(attDef) || PROPS_WITH_REFS.contains(attId))
             ) {
                 newPred = ValuePredicate(
                     newPred.getAttribute(),
