@@ -24,7 +24,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             RecordData(event.typeDef, event.aspects, created = true, isDraft = event.isDraft)
         }
         txn.addAction(TxnActionType.BEFORE_COMMIT, 0f) {
-            checkIntegrity(event.localRef, data)
+            checkIntegrity(event.localRef, event.globalRef, data)
         }
     }
 
@@ -55,7 +55,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
 
         if (isNewRecData.get()) {
             txn.addAction(TxnActionType.BEFORE_COMMIT, 0f) {
-                checkIntegrity(event.localRef, data)
+                checkIntegrity(event.localRef, event.globalRef, data)
             }
         }
     }
@@ -68,7 +68,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         }
     }
 
-    private fun checkIntegrity(recordRef: EntityRef, data: RecordData) {
+    private fun checkIntegrity(localRef: EntityRef, globalRef: EntityRef, data: RecordData) {
 
         if (data.deleted || data.isDraft) {
             return
@@ -103,7 +103,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             return
         }
         val recordAtts = AuthContext.runAsSystem {
-            ctx.recordsService.getAtts(recordRef, attsForMandatoryCheck.associateWith { "$it?raw" })
+            ctx.recordsService.getAtts(localRef, attsForMandatoryCheck.associateWith { "$it?raw" })
         }.getAtts()
 
         val emptyMandatoryAtts = attsForMandatoryCheck.filter {
@@ -111,7 +111,8 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             value.isNull() || (value.isArray() || value.isObject() || value.isTextual()) && value.isEmpty()
         }
         if (emptyMandatoryAtts.isNotEmpty()) {
-            error("Mandatory attributes are empty: ${emptyMandatoryAtts.joinToString(", ")}")
+            error("Mandatory attributes are empty: ${emptyMandatoryAtts.joinToString(", ")} " +
+                "for record $globalRef")
         }
     }
 
