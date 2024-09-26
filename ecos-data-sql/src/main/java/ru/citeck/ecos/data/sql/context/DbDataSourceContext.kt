@@ -53,13 +53,7 @@ class DbDataSourceContext(
             DbSchemaContext(k, this, webAppApi)
         }
         if (newContextWasCreated.get()) {
-            if (webAppApi.isReady()) {
-                migrationService.runSchemaMigrations(result)
-            } else {
-                webAppApi.doBeforeAppReady {
-                    migrationService.runSchemaMigrations(result)
-                }
-            }
+            migrationService.runSchemaMigrations(result)
         }
         return result
     }

@@ -8,6 +8,10 @@ interface DbSchemaDao {
 
     fun addSchemaListener(schema: String, listener: DbSchemaListener)
 
+    fun isTableExists(dataSource: DbDataSource, tableRef: DbTableRef): Boolean
+
+    fun isSchemaExists(dataSource: DbDataSource, schema: String): Boolean
+
     fun getColumns(dataSource: DbDataSource, tableRef: DbTableRef): List<DbColumnDef>
 
     fun createTable(dataSource: DbDataSource, tableRef: DbTableRef, columns: List<DbColumnDef>)

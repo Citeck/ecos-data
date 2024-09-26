@@ -152,7 +152,7 @@ class DbRecordsAuthTest : DbRecordsTestBase() {
             }
         }
 
-        printQueryRes("SELECT * FROM \"records-test-schema\".\"ecos_authorities\"")
+        printQueryRes("SELECT * FROM \"records-test-schema\".\"ed_authorities\"")
     }
 
     @Test

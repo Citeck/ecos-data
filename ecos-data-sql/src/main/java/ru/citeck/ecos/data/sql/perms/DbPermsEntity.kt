@@ -16,7 +16,7 @@ class DbPermsEntity(
     var authorityId: Long
 ) {
     companion object {
-        const val TABLE = "ecos_read_perms"
+        const val TABLE = "ed_read_perms"
 
         const val ENTITY_REF_ID = "__entity_ref_id"
         const val AUTHORITY_ID = "__authority_id"

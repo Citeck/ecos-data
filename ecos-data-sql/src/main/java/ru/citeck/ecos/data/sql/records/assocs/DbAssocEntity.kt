@@ -13,8 +13,8 @@ import java.time.Instant
 class DbAssocEntity {
 
     companion object {
-        const val MAIN_TABLE = "ecos_associations"
-        const val DELETED_TABLE = "ecos_associations_deleted"
+        const val MAIN_TABLE = "ed_associations"
+        const val DELETED_TABLE = "ed_associations_deleted"
 
         const val NEW_REC_ID = -1L
 

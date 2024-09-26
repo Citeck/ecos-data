@@ -482,7 +482,7 @@ class DbRecordsDaoTest : DbRecordsTestBase() {
         val recordRef = EntityRef.valueOf(
             selectFieldFromDbTable(
                 "__ext_id",
-                tableRef.withTable("ecos_record_ref").fullName,
+                tableRef.withTable("ed_record_ref").fullName,
                 "id=$refId"
             ) as String
         )

@@ -14,7 +14,7 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 class DbSchemaMetaEntity {
 
     companion object {
-        const val TABLE = "ecos_schema_meta"
+        const val TABLE = "ed_schema_meta"
 
         const val NEW_REC_ID = -1L
 

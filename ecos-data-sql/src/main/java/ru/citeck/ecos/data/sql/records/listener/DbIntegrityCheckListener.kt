@@ -11,7 +11,7 @@ import ru.citeck.ecos.txn.lib.action.TxnActionType
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.util.concurrent.atomic.AtomicBoolean
 
-// todo: add checking of parent ref recursion based on ecos_associations
+// todo: add checking of parent ref recursion based on ed_associations
 class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAware {
 
     private lateinit var ctx: DbRecordsDaoCtx
@@ -111,8 +111,10 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             value.isNull() || (value.isArray() || value.isObject() || value.isTextual()) && value.isEmpty()
         }
         if (emptyMandatoryAtts.isNotEmpty()) {
-            error("Mandatory attributes are empty: ${emptyMandatoryAtts.joinToString(", ")} " +
-                "for record $globalRef")
+            error(
+                "Mandatory attributes are empty: ${emptyMandatoryAtts.joinToString(", ")} " +
+                    "for record $globalRef"
+            )
         }
     }
 

@@ -7,7 +7,7 @@ class DbContentDataEntity {
 
     companion object {
 
-        const val TABLE = "ecos_content_data"
+        const val TABLE = "ed_content_data"
 
         const val NEW_REC_ID = -1L
 

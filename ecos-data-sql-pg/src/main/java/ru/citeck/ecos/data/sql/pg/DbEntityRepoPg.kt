@@ -610,15 +610,14 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
     ): DbFindRes<Map<String, Any?>> {
 
         val columns = context.getColumns()
-        val typesConverter = context.getTypesConverter()
 
         if (columns.isEmpty()) {
             return DbFindRes(emptyList(), 0)
         }
-
         if (page.maxItems == 0) {
             return DbFindRes(emptyList(), getCount(context, query))
         }
+        val typesConverter = context.getTypesConverter()
 
         val permsColumn = getPermsColumn(context)
 

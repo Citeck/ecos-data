@@ -10,7 +10,9 @@ import java.time.Instant
 class DbTableMetaEntity {
 
     companion object {
-        const val TABLE = "ecos_data_table_meta"
+        const val TABLE = "ed_data_table_meta"
+
+        const val EXT_ID = "__ext_id"
     }
 
     @Constraints(PRIMARY_KEY)

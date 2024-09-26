@@ -286,7 +286,7 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
                 println("ORIG_TABLE")
                 printQueryRes("SELECT * FROM ${tableRef.fullName}")
                 println("REFS")
-                printQueryRes("SELECT * from \"${tableRef.schema}\".\"ecos_record_ref\";")
+                printQueryRes("SELECT * from \"${tableRef.schema}\".\"ed_record_ref\";")
             }
 
             println("===================== AFTER COMMIT ===============================")
@@ -294,7 +294,7 @@ class DbRecordsChildNodesTest : DbRecordsTestBase() {
             println("ORIG_TABLE")
             printQueryRes("SELECT * FROM ${tableRef.fullName}")
             println("REFS")
-            printQueryRes("SELECT * from \"${tableRef.schema}\".\"ecos_record_ref\";")
+            printQueryRes("SELECT * from \"${tableRef.schema}\".\"ed_record_ref\";")
 
             printQueryRes("SELECT * FROM ${tableRef.fullName}")
             val childRefs = records.getAtt(parentRec, "childAssoc[]?id").asList(EntityRef::class.java)

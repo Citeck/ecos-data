@@ -11,7 +11,7 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 class DbEcosAttributeEntity {
 
     companion object {
-        const val TABLE = "ecos_attributes"
+        const val TABLE = "ed_attributes"
 
         const val NEW_REC_ID = -1L
 

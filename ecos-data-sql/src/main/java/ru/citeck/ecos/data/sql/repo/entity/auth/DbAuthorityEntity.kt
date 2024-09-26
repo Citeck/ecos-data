@@ -12,7 +12,7 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 class DbAuthorityEntity {
 
     companion object {
-        const val TABLE = "ecos_authorities"
+        const val TABLE = "ed_authorities"
 
         const val ID = "id"
         const val EXT_ID = "__ext_id"

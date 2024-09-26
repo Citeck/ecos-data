@@ -12,7 +12,7 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 class DbWorkspaceEntity {
 
     companion object {
-        const val TABLE = "ecos_workspace"
+        const val TABLE = "ed_workspace"
 
         const val NEW_REC_ID = -1L
 

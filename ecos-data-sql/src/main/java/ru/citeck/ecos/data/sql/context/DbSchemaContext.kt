@@ -98,6 +98,14 @@ class DbSchemaContext(
         contentStorageService.resetColumnsCache()
     }
 
+    fun isSchemaExists(): Boolean {
+        return dataSourceCtx.schemaDao.isSchemaExists(dataSourceCtx.dataSource, schema)
+    }
+
+    fun isTableExists(tableRef: DbTableRef): Boolean {
+        return dataSourceCtx.schemaDao.isTableExists(dataSourceCtx.dataSource, tableRef)
+    }
+
     fun getVersion(): Int {
         return schemaMetaService.getValue(metaSchemaVersionKey, 0)
     }

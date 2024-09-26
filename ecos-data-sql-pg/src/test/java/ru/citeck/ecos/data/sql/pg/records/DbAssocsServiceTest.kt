@@ -40,8 +40,8 @@ class DbAssocsServiceTest : DbRecordsTestBase() {
         }
 
         printQueryRes("SELECT * FROM ${tableRef.fullName};")
-        printQueryRes("SELECT * FROM ${tableRef.withTable("ecos_associations").fullName};")
-        printQueryRes("SELECT * FROM ${tableRef.withTable("ecos_attributes").fullName};")
+        printQueryRes("SELECT * FROM ${tableRef.withTable("ed_associations").fullName};")
+        printQueryRes("SELECT * FROM ${tableRef.withTable("ed_attributes").fullName};")
     }
 
     @Test

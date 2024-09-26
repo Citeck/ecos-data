@@ -45,6 +45,23 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
         listeners.computeIfAbsent(schema) { CopyOnWriteArrayList() }.add(listener)
     }
 
+    override fun isTableExists(dataSource: DbDataSource, tableRef: DbTableRef): Boolean {
+        val query = """
+                SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = '${tableRef.schema}' AND tablename = '${tableRef.table}');
+        """.trimIndent()
+        return dataSource.query(query, emptyList()) { rs ->
+            rs.next()
+            rs.getBoolean(1)
+        }
+    }
+
+    override fun isSchemaExists(dataSource: DbDataSource, schema: String): Boolean {
+        return dataSource.query(
+            "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = '$schema')",
+            emptyList()
+        ) { it.next() && it.getBoolean(1) }
+    }
+
     override fun getColumns(dataSource: DbDataSource, tableRef: DbTableRef): List<DbColumnDef> {
 
         return dataSource.withMetaData { metaData ->
@@ -82,14 +99,9 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
     private fun createTableInSync(dataSource: DbDataSource, tableRef: DbTableRef, columns: List<DbColumnDef>) {
 
         if (tableRef.schema.isNotBlank()) {
-            dataSource.query(
-                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = '${tableRef.schema}')",
-                emptyList()
-            ) { rs ->
-                if (!rs.next() || !rs.getBoolean(1)) {
-                    dataSource.updateSchema("CREATE SCHEMA IF NOT EXISTS \"${tableRef.schema}\"")
-                    listeners[tableRef.schema]?.forEach { it.onSchemaCreated() }
-                }
+            if (!isSchemaExists(dataSource, tableRef.schema)) {
+                dataSource.updateSchema("CREATE SCHEMA IF NOT EXISTS \"${tableRef.schema}\"")
+                listeners[tableRef.schema]?.forEach { it.onSchemaCreated() }
             }
         }
 

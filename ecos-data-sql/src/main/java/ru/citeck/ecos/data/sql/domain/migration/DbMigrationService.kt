@@ -5,8 +5,10 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.domain.migration.domain.*
 import ru.citeck.ecos.data.sql.domain.migration.schema.*
+import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaEntity
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.txn.lib.TxnContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 class DbMigrationService {
 
@@ -61,33 +63,53 @@ class DbMigrationService {
 
     fun runSchemaMigrations(context: DbSchemaContext) {
 
-        AuthContext.runAsSystem {
-            TxnContext.doInNewTxn(false) {
-                context.recordRefService.createTableIfNotExists()
-            }
-        }
         var version = context.getVersion()
         if (version == DbSchemaContext.NEW_SCHEMA_VERSION) {
             return
         }
         val dataSource = context.dataSourceCtx.dataSource
+        val isNewSchema = AtomicBoolean()
+        if (version == 0) {
+            context.doInNewTxn {
+                if (!context.isSchemaExists()) {
+                    isNewSchema.set(true)
+                    context.setVersion(DbSchemaContext.NEW_SCHEMA_VERSION)
+                } else {
+                    val oldMetaTableRef = context.getTableRef("ecos_schema_meta")
+                    val newMetaTableRef = context.getTableRef(DbSchemaMetaEntity.TABLE)
+                    if (context.isTableExists(oldMetaTableRef) && !context.isTableExists(newMetaTableRef)) {
+                        val query = "ALTER TABLE ${oldMetaTableRef.fullName} RENAME TO \"${DbSchemaMetaEntity.TABLE}\";"
+                        log.info { query }
+                        dataSource.updateSchema(query)
+                        context.schemaMetaService.resetColumnsCache()
+                        version = context.getVersion()
+                        RenameEcosDataTables().run(context)
+                        context.resetColumnsCache()
+                    }
+                }
+                context.recordRefService.createTableIfNotExists()
+            }
+            if (isNewSchema.get()) {
+                return
+            }
+        }
+
         AuthContext.runAsSystem {
             while (version < DbSchemaContext.NEW_SCHEMA_VERSION) {
-                TxnContext.doInNewTxn(false) {
-                    dataSource.withTransaction(false) {
-                        val upgradeTo = version + 1
-                        schemaMigrations.forEach {
-                            if (it.getAppliedVersions() == upgradeTo) {
-                                log.info {
-                                    "Run domain migration: ${it::class.java.simpleName} " +
-                                        "for schema '${context.schema}'"
-                                }
-                                it.run(context)
-                                context.resetColumnsCache()
+                context.doInNewTxn {
+                    val upgradeTo = version + 1
+                    schemaMigrations.forEach {
+                        if (it.getAppliedVersions() == upgradeTo) {
+                            log.info {
+                                "Run schema migration: ${it::class.java.simpleName} " +
+                                    "for schema '${context.schema}'"
                             }
+                            it.run(context)
+                            context.resetColumnsCache()
                         }
-                        context.setVersion(++version)
                     }
+                    version = upgradeTo
+                    context.setVersion(version)
                 }
             }
         }
