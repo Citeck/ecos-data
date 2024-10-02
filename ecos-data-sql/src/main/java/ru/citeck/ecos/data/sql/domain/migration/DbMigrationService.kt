@@ -88,6 +88,7 @@ class DbMigrationService {
                     }
                 }
                 context.recordRefService.createTableIfNotExists()
+                context.assocsService.createTableIfNotExists()
             }
             if (isNewSchema.get()) {
                 return

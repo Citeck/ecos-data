@@ -14,12 +14,15 @@ class AddDeletedAssocsTable : DbSchemaMigration {
             return
         }
         val assocsTableRef = context.getTableRef(DbAssocEntity.MAIN_TABLE)
-        if (context.getColumns(DbAssocEntity.MAIN_TABLE).any { it.name == COLUMN_DELETED }) {
+        val currentColumns = context.getColumns(DbAssocEntity.MAIN_TABLE)
+        if (currentColumns.any { it.name == COLUMN_DELETED }) {
             val query = "ALTER TABLE ${assocsTableRef.fullName} DROP COLUMN \"$COLUMN_DELETED\";"
             context.dataSourceCtx.dataSource.updateSchema(query)
         }
-        val query = "ALTER TABLE ${assocsTableRef.fullName} ADD COLUMN id BIGSERIAL PRIMARY KEY;"
-        context.dataSourceCtx.dataSource.updateSchema(query)
+        if (currentColumns.none { it.name == "id" }) {
+            val query = "ALTER TABLE ${assocsTableRef.fullName} ADD COLUMN id BIGSERIAL PRIMARY KEY;"
+            context.dataSourceCtx.dataSource.updateSchema(query)
+        }
     }
 
     override fun getAppliedVersions(): Int {

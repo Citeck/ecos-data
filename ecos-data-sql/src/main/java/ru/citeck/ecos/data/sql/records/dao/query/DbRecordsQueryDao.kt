@@ -613,7 +613,7 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         queryCtx: DbFindQueryContext,
         predicate: AttributePredicate,
         assocJoinWithPredicates: MutableList<AssocJoinWithPredicate>
-    ): ValuePredicate? {
+    ): Predicate? {
 
         val srcAttName = attribute.substringBefore('.')
         val srcAttDef = typeData.getAttribute(srcAttName)
@@ -621,6 +621,16 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         if (srcAttDef == null || targetRecordsCtx == null) {
             return null
         }
+        if (!targetRecordsCtx.dataService.isTableExists()) {
+            return PredicateUtils.mapAttributePredicates(predicate, { pred ->
+                when (pred) {
+                    is ValuePredicate -> Predicates.alwaysFalse()
+                    is EmptyPredicate -> Predicates.alwaysTrue()
+                    else -> pred
+                }
+            }, onlyAnd = false, optimize = true, filterEmptyComposite = false)
+        }
+
         val assocTypeId = queryCtx.getAssocTargetTypeId(srcAttDef.id)
         val innerPredicate: AttributePredicate = predicate.copy()
         innerPredicate.setAtt(attribute.substringAfter('.'))

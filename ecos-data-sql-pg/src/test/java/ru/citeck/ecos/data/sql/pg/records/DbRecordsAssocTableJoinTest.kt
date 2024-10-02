@@ -129,6 +129,56 @@ class DbRecordsAssocTableJoinTest : DbRecordsTestBase() {
         assertThat(res4).isEqualTo(123)
     }
 
+    @Test
+    fun testWithNonExistentTargetTable() {
+
+        val rec0 = createRecord("textAtt" to "abc")
+        val rec1 = createRecord("textAtt" to "def")
+
+        // target table doesn't exist
+        val queryRes = records.query(
+            baseQuery.copy()
+                .withQuery(
+                    Predicates.or(
+                        Predicates.eq("textAtt", "abc"),
+                        Predicates.inVals("multiAssocAtt.targetAssoc", listOf(rec1)),
+                        Predicates.inVals("multiAssocAtt.targetText", listOf(rec1))
+                    )
+                ).build()
+        ).getRecords()
+
+        assertThat(queryRes).containsExactly(rec0)
+
+        val targetRef0 = targetDao.createRecord("targetText" to "ttt")
+
+        // target table exists but attribute 'targetAssoc' doesn't exist
+        val queryRes1 = records.query(
+            baseQuery.copy()
+                .withQuery(
+                    Predicates.or(
+                        Predicates.eq("textAtt", "abc"),
+                        Predicates.inVals("multiAssocAtt.targetAssoc", listOf(rec1))
+                    )
+                ).build()
+        ).getRecords()
+
+        assertThat(queryRes1).containsExactly(rec0)
+
+        val rec2 = createRecord("multiAssocAtt" to targetRef0)
+
+        val queryRes2 = records.query(
+            baseQuery.copy()
+                .withQuery(
+                    Predicates.or(
+                        Predicates.eq("textAtt", "abc"),
+                        Predicates.inVals("multiAssocAtt.targetText", listOf("ttt"))
+                    )
+                ).build()
+        ).getRecords()
+
+        assertThat(queryRes2).containsExactly(rec0, rec2)
+    }
+
     @ParameterizedTest
     @ValueSource(strings = ["multiAssocAtt", "aspect0:multiAssocAtt", "multiAuthorityAtt"])
     fun testWithMultipleAssoc(multiAssocName: String) {
