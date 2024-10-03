@@ -790,6 +790,10 @@ abstract class DbRecordsTestBase {
                 "user$$user"
             )
         }
+
+        override fun isUserManagerOf(user: String, workspace: String): Boolean {
+            return false
+        }
     }
 
     class CustomDelegationService : DelegationService {
