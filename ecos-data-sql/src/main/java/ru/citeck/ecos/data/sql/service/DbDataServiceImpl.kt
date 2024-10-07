@@ -42,7 +42,9 @@ import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
 import java.sql.SQLException
 import java.time.Instant
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.reflect.KClass
 
 class DbDataServiceImpl<T : Any> : DbDataService<T> {
@@ -80,6 +82,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     private var schemaVersion: Int = -1
     private var schemaVersionNextUpdateMs = 0L
     private val useLastSchemaVersion: Boolean
+
+    private val schemaMigrationLock = ReentrantLock()
 
     constructor(
         entityType: Class<T>,
@@ -656,8 +660,31 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return tableRef
     }
 
-    @Synchronized
     private fun runMigrationsInTxn(
+        expectedColumns: List<DbColumnDef>,
+        mock: Boolean,
+        diff: Boolean
+    ): List<String> {
+
+        if (mock) {
+            return runMigrationsInLock(expectedColumns, mock = true, diff)
+        }
+        if (!diff) {
+            error("Full migration without mock doesn't supported")
+        }
+
+        // todo: use locking only when schema migration required
+        if (!schemaMigrationLock.tryLock(10, TimeUnit.SECONDS)) {
+            error("Schema updated in another thread. Table: " + tableCtx.getTableRef())
+        }
+        try {
+            return runMigrationsInLock(expectedColumns, mock = false, diff = true)
+        } finally {
+            schemaMigrationLock.unlock()
+        }
+    }
+
+    private fun runMigrationsInLock(
         expectedColumns: List<DbColumnDef>,
         mock: Boolean,
         diff: Boolean
