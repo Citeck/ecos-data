@@ -16,6 +16,7 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
+import ru.citeck.ecos.webapp.api.content.EcosContentWriterMeta
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.io.InputStream
@@ -45,8 +46,8 @@ class DbContentServiceImpl(
         content: (EcosContentWriter) -> Unit
     ): DbEcosContentData {
 
-        val nnName = (name ?: "").ifBlank { UUID.randomUUID().toString() }
-        val nnMimeType = (mimeType ?: "").ifBlank { MimeTypes.APP_BIN_TEXT }
+        var nnName = (name ?: "").ifBlank { UUID.randomUUID().toString() }
+        var nnMimeType = (mimeType ?: "").ifBlank { MimeTypes.APP_BIN_TEXT }
         val nnEncoding = encoding ?: ""
 
         var sha256 = ""
@@ -59,12 +60,19 @@ class DbContentServiceImpl(
         val storageConfig = storage?.config ?: ObjectData.create()
 
         val dataKey = contentStorageService.uploadContent(storageRef, storageConfig) { output ->
-            val writer = EcosContentWriterImpl(output)
+            val writer = EcosContentWriterImpl(
+                EcosContentWriterMeta.create()
+                    .withName(nnName)
+                    .withMimeType(MimeTypes.parseOrBin(nnMimeType))
+                    .build(),
+                output
+            )
             content.invoke(writer)
-            writer.getOutputStream().flush()
-            val meta = writer.finish()
-            sha256 = meta.getSha256()
-            size = meta.getSize()
+            val writerMeta = writer.finish()
+            sha256 = writerMeta.sha256
+            size = writerMeta.size
+            nnMimeType = writerMeta.mimeType.toString()
+            nnName = writerMeta.name
         }
 
         if (sha256.isEmpty() || size <= 0L) {

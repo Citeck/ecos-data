@@ -9,7 +9,10 @@ import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-class EcosContentWriterImpl(output: OutputStream) : EcosContentWriter {
+class EcosContentWriterImpl(
+    private var meta: EcosContentWriterMeta,
+    output: OutputStream
+) : EcosContentWriter {
 
     private val sha256Digest = MessageDigest.getInstance("SHA-256")
     private val contentSize = AtomicLong()
@@ -17,19 +20,26 @@ class EcosContentWriterImpl(output: OutputStream) : EcosContentWriter {
     private val outputStream = OutputStreamProxy(output)
 
     private val finished = AtomicBoolean()
-    private lateinit var meta: EcosContentWriterMeta
+
+    override fun getMeta(): EcosContentWriterMeta {
+        return meta
+    }
+
+    override fun setMeta(meta: EcosContentWriterMeta) {
+        this.meta = meta
+    }
 
     override fun finish(): EcosContentWriterMeta {
         if (finished.compareAndSet(false, true)) {
             if (contentSize.get() == 0L) {
                 error("Empty content")
             }
-            val sha256 = ByteUtils.toHexString(sha256Digest.digest())
-            meta = object : EcosContentWriterMeta {
-                override fun getSha256() = sha256
-                override fun getSize(): Long = contentSize.get()
-            }
+            this.meta = this.meta.copy()
+                .withSha256(ByteUtils.toHexString(sha256Digest.digest()))
+                .withSize(contentSize.get())
+                .build()
         }
+        outputStream.flush()
         return meta
     }
 
