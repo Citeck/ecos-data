@@ -198,6 +198,7 @@ class DbEcosModelService(
             AttributeType.PERSON -> DbColumnType.LONG
             AttributeType.AUTHORITY_GROUP -> DbColumnType.LONG
             AttributeType.AUTHORITY -> DbColumnType.LONG
+            AttributeType.OPTIONS,
             AttributeType.TEXT -> DbColumnType.TEXT
             AttributeType.MLTEXT -> DbColumnType.TEXT
             AttributeType.NUMBER -> DbColumnType.DOUBLE

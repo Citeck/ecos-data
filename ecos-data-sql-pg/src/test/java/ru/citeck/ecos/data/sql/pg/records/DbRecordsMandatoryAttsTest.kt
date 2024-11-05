@@ -41,6 +41,7 @@ class DbRecordsMandatoryAttsTest : DbRecordsTestBase() {
             AttributeType.AUTHORITY_GROUP -> EntityRef.valueOf("authority-group@ECOS_ADMINISTRATORS")
             AttributeType.AUTHORITY -> EntityRef.valueOf("person@admin")
             AttributeType.TEXT -> "text"
+            AttributeType.OPTIONS -> "option"
             AttributeType.MLTEXT -> MLText("abcd")
             AttributeType.NUMBER -> 123
             AttributeType.BOOLEAN -> false
