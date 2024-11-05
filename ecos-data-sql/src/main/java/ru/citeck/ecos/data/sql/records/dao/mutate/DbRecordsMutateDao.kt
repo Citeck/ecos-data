@@ -570,8 +570,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         )
 
         recAttributes.forEach { att, newValue ->
-            val attDef = typeAttColumnsByAtt[att]
-            if (attDef != null && DbRecordsUtils.isAssocLikeAttribute(attDef.attribute)) {
+            val attDef: EcosAttColumnDef = typeAttColumnsByAtt[att] ?: return@forEach
+            if (DbRecordsUtils.isAssocLikeAttribute(attDef.attribute)) {
                 if (!allAssocsValues.containsKey(att)) {
                     val valuesBefore = if (isNewEntity) {
                         emptyList()
@@ -608,6 +608,11 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                         !newValuesStrings.contains(it)
                     }
                     assocValuesContainer.removeAll(removed)
+                }
+            } else if (attDef.attribute.type == AttributeType.OPTIONS && recAttributes.has(att)) {
+                val value = recAttributes[att]
+                if (value.isTextual() && value.asText().isEmpty()) {
+                    recAttributes[att] = DataValue.NULL
                 }
             }
         }

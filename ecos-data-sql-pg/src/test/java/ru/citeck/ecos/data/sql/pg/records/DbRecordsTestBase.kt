@@ -39,6 +39,7 @@ import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.api.EcosModelAppApi
 import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.aspect.repo.AspectsRepo
+import ru.citeck.ecos.model.lib.attributes.dto.AttOptionValue
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.delegation.dto.AuthDelegation
@@ -537,6 +538,10 @@ abstract class DbRecordsTestBase {
         }
 
         computedAttsComponent = object : DbComputedAttsComponent {
+            override fun getAttOptions(record: Any, config: ObjectData): List<AttOptionValue> {
+                return modelServiceFactory.computedAttsService.getAttOptions(record, config)
+            }
+
             override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: EntityRef): ObjectData {
                 return modelServiceFactory.computedAttsService.computeAttsToStore(value, isNewRecord, typeRef)
             }

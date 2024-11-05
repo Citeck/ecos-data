@@ -4,6 +4,7 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
@@ -38,6 +39,10 @@ class DbEmptyRecord(private val ctx: DbRecordsDaoCtx) : AttValue {
         )
     }
 
+    override fun getType(): Any {
+        return ctx.config.typeRef
+    }
+
     override fun getDisplayName(): Any {
         if (EntityRef.isEmpty(ctx.config.typeRef)) {
             return ""
@@ -65,6 +70,13 @@ class DbEmptyRecord(private val ctx: DbRecordsDaoCtx) : AttValue {
 
         override fun isAssociation(): Boolean {
             return DbRecordsUtils.isAssocLikeAttribute(def)
+        }
+
+        override fun getOptions(): List<*>? {
+            if (def.type == AttributeType.OPTIONS) {
+                return ctx.computedAttsComponent?.getAttOptions(this@DbEmptyRecord, def.config)
+            }
+            return null
         }
 
         override fun getTitle(): MLText {

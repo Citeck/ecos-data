@@ -40,7 +40,7 @@ import kotlin.collections.LinkedHashMap
 import kotlin.collections.LinkedHashSet
 
 class DbRecord(
-    private val ctx: DbRecordsDaoCtx,
+    internal val ctx: DbRecordsDaoCtx,
     val entity: DbEntity,
     queryCtx: DbFindQueryContext? = null,
     private val isGroupEntity: Boolean = false
@@ -292,7 +292,7 @@ class DbRecord(
         defaultContentAtt = getDefaultContentAtt()
 
         attTypes.forEach { (attId, attType) ->
-            recData[attId] = convertValue(attId, attType, recData[attId])
+            recData[attId] = convertValue(attId, attType, allAttDefs[attId], recData[attId])
         }
         val assocInnerKeys = recData.keys.filter { it.contains('.') }
         if (assocInnerKeys.isEmpty() || assocsTypes.isEmpty()) {
@@ -310,7 +310,7 @@ class DbRecord(
                 val keySecond = key.substring(dotIdx + 1)
                 val innerAttDef = getInnerAssocAtts(keyFirst)[keySecond]
                 val convertedData = if (innerAttDef != null) {
-                    convertValue(keySecond, innerAttDef.type, data)
+                    convertValue(keySecond, innerAttDef.type, innerAttDef, data)
                 } else {
                     data
                 }
@@ -321,7 +321,7 @@ class DbRecord(
         this.additionalAtts = recData
     }
 
-    private fun convertValue(attId: String, attType: AttributeType, value: Any?): Any? {
+    private fun convertValue(attId: String, attType: AttributeType, attDef: AttributeDef?, value: Any?): Any? {
         if (DbRecordsUtils.isEntityRefAttribute(attType)) {
             if (attId == ATT_ASPECTS) {
                 val fullAspects = LinkedHashSet<String>()
@@ -360,11 +360,21 @@ class DbRecord(
                     return convertContentAtt(value, attId, attId == defaultContentAtt)
                 }
 
+                AttributeType.OPTIONS -> {
+                    return convertOptionsAtt(value as? String, attDef)
+                }
+
                 else -> {
                 }
             }
         }
         return value
+    }
+
+    private fun convertOptionsAtt(value: String?, attDef: AttributeDef?): Any? {
+        value ?: return null
+        attDef ?: return null
+        return DbOptionsAttValue(this, attDef, value)
     }
 
     private fun convertContentAtt(value: Any?, attId: String, isDefaultContentAtt: Boolean): Any? {

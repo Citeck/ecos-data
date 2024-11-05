@@ -5,7 +5,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.pg.ContentUtils
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -21,15 +23,32 @@ class DbRecordsMandatoryAttsTest : DbRecordsTestBase() {
     @EnumSource(AttributeType::class)
     fun differentTypesTest(type: AttributeType) {
 
+        val attConfig = if (type == AttributeType.OPTIONS) {
+            ObjectData.create()
+                .set("source", "values")
+                .set(
+                    "values",
+                    DataValue.createArr().add(
+                        DataValue.createObj()
+                            .set("label", "option")
+                            .set("value", "option")
+                    )
+                )
+        } else {
+            ObjectData.create()
+        }
+
         registerAtts(
             listOf(
                 AttributeDef.create {
                     withId("notMandatory")
                     withType(type)
+                    withConfig(attConfig)
                 },
                 AttributeDef.create {
                     withId("mandatory")
                     withType(type)
+                    withConfig(attConfig)
                     withMandatory(true)
                 }
             )
@@ -41,6 +60,7 @@ class DbRecordsMandatoryAttsTest : DbRecordsTestBase() {
             AttributeType.AUTHORITY_GROUP -> EntityRef.valueOf("authority-group@ECOS_ADMINISTRATORS")
             AttributeType.AUTHORITY -> EntityRef.valueOf("person@admin")
             AttributeType.TEXT -> "text"
+            AttributeType.OPTIONS -> "option"
             AttributeType.MLTEXT -> MLText("abcd")
             AttributeType.NUMBER -> 123
             AttributeType.BOOLEAN -> false

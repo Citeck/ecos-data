@@ -4,6 +4,7 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 
@@ -39,6 +40,13 @@ class DbRecordAttEdge(
 
     override fun isMultiple(): Boolean {
         return def.multiple
+    }
+
+    override fun getOptions(): List<*>? {
+        if (def.type == AttributeType.OPTIONS) {
+            return rec.ctx.computedAttsComponent?.getAttOptions(rec, def.config)
+        }
+        return null
     }
 
     override fun getTitle(): MLText {

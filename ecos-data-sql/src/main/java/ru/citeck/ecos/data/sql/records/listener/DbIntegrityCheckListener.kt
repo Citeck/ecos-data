@@ -5,7 +5,9 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
 import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.txn.lib.action.TxnActionType
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -98,15 +100,33 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             if (attributeDef.mandatory) {
                 attsForMandatoryCheck.add(attributeDef.id)
             }
+            if (attributeDef.type == AttributeType.OPTIONS) {
+                val options = ctx.computedAttsComponent?.getAttOptions(localRef, attributeDef.config) ?: continue
+                val currentValue = ctx.recordsService.getAtt(
+                    localRef,
+                    attributeDef.id + ScalarType.STR_SCHEMA
+                ).asText()
+                if (currentValue.isNotEmpty() && options.all { it.value != currentValue }) {
+                    error(
+                        "Invalid value '$currentValue' of options attribute: ${attributeDef.id} " +
+                            "for record '$globalRef'. " +
+                            "Allowed values: ${options.joinToString(", ") { it.value }}"
+                    )
+                }
+            }
         }
-        if (attsForMandatoryCheck.isEmpty()) {
+        checkMandatoryAtts(localRef, globalRef, attsForMandatoryCheck)
+    }
+
+    private fun checkMandatoryAtts(localRef: EntityRef, globalRef: EntityRef, attsToCheck: Set<String>) {
+        if (attsToCheck.isEmpty()) {
             return
         }
         val recordAtts = AuthContext.runAsSystem {
-            ctx.recordsService.getAtts(localRef, attsForMandatoryCheck.associateWith { "$it?raw" })
+            ctx.recordsService.getAtts(localRef, attsToCheck.associateWith { it + ScalarType.RAW_SCHEMA })
         }.getAtts()
 
-        val emptyMandatoryAtts = attsForMandatoryCheck.filter {
+        val emptyMandatoryAtts = attsToCheck.filter {
             val value = recordAtts[it]
             value.isNull() || (value.isArray() || value.isObject() || value.isTextual()) && value.isEmpty()
         }
