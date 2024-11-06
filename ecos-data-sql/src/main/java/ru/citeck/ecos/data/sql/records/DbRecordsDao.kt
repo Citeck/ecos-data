@@ -14,6 +14,7 @@ import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
+import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler
 import ru.citeck.ecos.data.sql.records.listener.*
 import ru.citeck.ecos.data.sql.records.perms.DbPermsComponent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsContext
@@ -24,7 +25,9 @@ import ru.citeck.ecos.data.sql.remote.DbRecordsRemoteActionsClient
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.model.lib.ModelServiceFactory
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.value.AttValue
@@ -147,6 +150,10 @@ class DbRecordsDao(
     }
 
     override fun delete(recordIds: List<String>): List<DelStatus> {
+        return delete(recordIds, true)
+    }
+
+    private fun delete(recordIds: List<String>, notifyParent: Boolean): List<DelStatus> {
 
         if (!config.deletable) {
             error("Records DAO is not deletable. Records can't be deleted: '$recordIds'")
@@ -160,11 +167,24 @@ class DbRecordsDao(
                     }
                 }
             }
-            daoCtx.deleteDao.delete(recordIds, daoCtx.getRecsCurrentlyInDeletion())
+            daoCtx.deleteDao.delete(recordIds, daoCtx.getRecsCurrentlyInDeletion(), notifyParent)
         }
     }
 
     override fun mutate(record: LocalRecordAtts): String {
+        if (record.id.isNotEmpty() &&
+            record.getAtt(RecMutAssocHandler.MUTATION_FROM_PARENT_FLAG).asBoolean() &&
+            record.hasAtt(RecordConstants.ATT_PARENT) &&
+            record.getAtt(RecordConstants.ATT_PARENT).isNull()
+        ) {
+            val entity = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
+                dataService.findByExtId(record.id, emptyMap())
+            }
+            if (entity != null) {
+                delete(listOf(record.id), false)
+                return record.id
+            }
+        }
         return daoCtx.mutateDao.mutate(record)
     }
 

@@ -11,6 +11,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
@@ -21,6 +22,77 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.lang.RuntimeException
 
 class DbRecordsChildNodesTest : DbRecordsTestBase() {
+
+    @Test
+    fun removeChildAssocTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("childAssoc")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                    withConfig(ObjectData.create("""{"child":true}"""))
+                }
+            )
+        )
+
+        setQueryPermsPolicy(QueryPermsPolicy.OWN)
+        registerType(
+            TypeInfo.create()
+                .withId("child-type")
+                .withParentRef(REC_TEST_TYPE_REF)
+                .withQueryPermsPolicy(QueryPermsPolicy.OWN)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create {
+                                    withId("text")
+                                }
+                            )
+                        ).build()
+                )
+                .build()
+        )
+
+        val parent = createRecord()
+
+        fun createChild(): EntityRef {
+            val ref = createRecord(
+                "_type" to "emodel/type@child-type",
+                "_parent" to parent,
+                "_parentAtt" to "childAssoc"
+            )
+            return ref
+        }
+
+        val child0 = createChild()
+        val child1 = createChild()
+        val child2 = createChild()
+        val child3 = createChild()
+
+        records.mutateAtt(parent, "att_add_childAssoc", listOf(child0, child1, child2, child3))
+
+        val notExistsAtt = RecordConstants.ATT_NOT_EXISTS + "?bool"
+        fun assertAssocs(expectedChildren: List<EntityRef>) {
+            val childrenRefs = records.getAtt(parent, "childAssoc[]?id").asList(EntityRef::class.java)
+            assertThat(childrenRefs).containsExactlyElementsOf(expectedChildren)
+            records.getAtts(childrenRefs, listOf(notExistsAtt)).map {
+                assertThat(it[notExistsAtt].asBoolean()).isFalse()
+            }
+        }
+
+        assertAssocs(listOf(child0, child1, child2, child3))
+
+        records.delete(child1)
+        assertThat(records.getAtt(child1, notExistsAtt).asBoolean()).isTrue()
+        assertAssocs(listOf(child0, child2, child3))
+
+        records.mutateAtt(parent, "att_rem_childAssoc", child2)
+        assertThat(records.getAtt(child2, notExistsAtt).asBoolean()).isTrue()
+        assertAssocs(listOf(child0, child3))
+    }
 
     @Test
     fun createChildrenPermsTest() {
