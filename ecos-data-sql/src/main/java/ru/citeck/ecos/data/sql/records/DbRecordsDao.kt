@@ -350,6 +350,10 @@ class DbRecordsDao(
     }
 
     override fun delete(recordIds: List<String>): List<DelStatus> {
+        return delete(recordIds, true)
+    }
+
+    private fun delete(recordIds: List<String>, notifyParent: Boolean): List<DelStatus> {
 
         if (!config.deletable) {
             error("Records DAO is not deletable. Records can't be deleted: '$recordIds'")
@@ -363,7 +367,7 @@ class DbRecordsDao(
                     }
                 }
             }
-            daoCtx.deleteDao.delete(recordIds, getRecsCurrentlyInDeletion())
+            daoCtx.deleteDao.delete(recordIds, getRecsCurrentlyInDeletion(), notifyParent)
         }
     }
 
@@ -411,6 +415,19 @@ class DbRecordsDao(
     }
 
     override fun mutate(record: LocalRecordAtts): String {
+        if (record.id.isNotEmpty() &&
+            record.getAtt(RecMutAssocHandler.MUTATION_FROM_PARENT_FLAG).asBoolean() &&
+            record.hasAtt(RecordConstants.ATT_PARENT) &&
+            record.getAtt(RecordConstants.ATT_PARENT).isNull()
+        ) {
+            val entity = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
+                dataService.findByExtId(record.id, emptyMap())
+            }
+            if (entity != null) {
+                delete(listOf(record.id), false)
+                return record.id
+            }
+        }
         if (!config.updatable) {
             error("Records DAO is not mutable. Record can't be mutated: '${record.id}'")
         }
