@@ -478,6 +478,8 @@ class DbRecord(
             return newList as T
         } else if ((nnValue is ObjectNode || nnValue is ArrayNode) && attTypes[attribute] == AttributeType.JSON) {
             return nnValue as T
+        } else if (nnValue is DbOptionsAttValue) {
+            return nnValue.asText() as T
         } else if (
             nnValue::class.java.isPrimitive ||
             nnValue::class.java.isEnum ||

@@ -122,5 +122,17 @@ class DbRecordsOptionsAttTest : DbRecordsTestBase() {
 
         val optionsAttFromAtt2 = records.getAtt(rec0.withLocalId(""), "_edge.optionsAtt.options[]?json")
         assertThat(optionsAttFromAtt2).isEqualTo(expectedOptionsAtt)
+
+        val rec1 = createRecord("optionsValues" to "value0")
+        val rec1Json = records.getAtt(rec1, "?json")
+        assertThat(rec1Json["optionsValues"]).isEqualTo(DataValue.createStr("value0"))
+
+        // copy test
+        val rec2 = records.mutate(rec1, mapOf("id" to "new-id"))
+        val rec2Json = records.getAtt(rec2, "?json")
+        assertThat(rec2Json["optionsValues"]).isEqualTo(DataValue.createStr("value0"))
+
+        val rec11Json = records.getAtt(rec1, "?json")
+        assertThat(rec11Json["optionsValues"]).isEqualTo(DataValue.createStr("value0"))
     }
 }
