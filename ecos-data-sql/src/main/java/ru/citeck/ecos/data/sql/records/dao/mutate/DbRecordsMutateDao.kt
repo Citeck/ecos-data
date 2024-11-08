@@ -762,8 +762,11 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             typeAttColumns
         )
 
-        if (entityToMutate.equals(entityBeforeMutation, AUDIT_ATTS) && changedAssocs.isEmpty()) {
-            return entityBeforeMutation
+        if (changedAssocs.isEmpty()) {
+            val equalsIgnoredAtts = if (disableAudit) emptySet() else AUDIT_ATTS
+            if (entityToMutate.equals(entityBeforeMutation, equalsIgnoredAtts)) {
+                return entityBeforeMutation
+            }
         }
 
         val recAfterSave = dataService.save(entityToMutate, fullColumns)
