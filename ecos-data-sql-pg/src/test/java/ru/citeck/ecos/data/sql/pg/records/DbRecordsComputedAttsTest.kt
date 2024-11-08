@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttDef
@@ -11,10 +12,132 @@ import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttType
 import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
+import ru.citeck.ecos.records2.RecordConstants
+import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 
 class DbRecordsComputedAttsTest : DbRecordsTestBase() {
+
+    @Test
+    fun metaAttsTest() {
+
+        fun createPersonAtt(att: String, storing: ComputedAttStoringType): AttributeDef {
+            return AttributeDef.create()
+                .withId("custom$att$storing")
+                .withType(AttributeType.PERSON)
+                .withComputed(
+                    ComputedAttDef.create()
+                        .withType(ComputedAttType.ATTRIBUTE)
+                        .withConfig(
+                            ObjectData.create()
+                                .set("attribute", att)
+                        )
+                        .withStoringType(storing)
+                        .build()
+                ).build()
+        }
+
+        fun createDateTimeAtt(att: String, storing: ComputedAttStoringType): AttributeDef {
+            return AttributeDef.create()
+                .withId("custom$att$storing")
+                .withType(AttributeType.DATETIME)
+                .withComputed(
+                    ComputedAttDef.create()
+                        .withType(ComputedAttType.ATTRIBUTE)
+                        .withConfig(
+                            ObjectData.create()
+                                .set("attribute", att)
+                        )
+                        .withStoringType(storing)
+                        .build()
+                ).build()
+        }
+
+        registerAtts(
+            listOf(
+                createPersonAtt(RecordConstants.ATT_CREATOR, ComputedAttStoringType.ON_CREATE),
+                createPersonAtt(RecordConstants.ATT_CREATOR, ComputedAttStoringType.ON_MUTATE),
+                createPersonAtt(RecordConstants.ATT_MODIFIER, ComputedAttStoringType.ON_CREATE),
+                createPersonAtt(RecordConstants.ATT_MODIFIER, ComputedAttStoringType.ON_MUTATE),
+                createDateTimeAtt(RecordConstants.ATT_CREATED, ComputedAttStoringType.ON_CREATE),
+                createDateTimeAtt(RecordConstants.ATT_CREATED, ComputedAttStoringType.ON_MUTATE),
+                createDateTimeAtt(RecordConstants.ATT_MODIFIED, ComputedAttStoringType.ON_CREATE),
+                createDateTimeAtt(RecordConstants.ATT_MODIFIED, ComputedAttStoringType.ON_MUTATE),
+                AttributeDef.create()
+                    .withId("text")
+                    .build()
+            )
+        )
+
+        fun assertMetaAtts(
+            rec: EntityRef,
+            expCreatorOnCreate: String,
+            expCreatorOnMutate: String,
+            expModifierOnCreate: String,
+            expModifierOnMutate: String
+        ) {
+            val atts = records.getAtts(
+                rec,
+                mapOf(
+                    "customCreatorOnCreate" to "custom_creatorON_CREATE?id",
+                    "customCreatorOnMutate" to "custom_creatorON_MUTATE?id",
+                    "customModifierOnCreate" to "custom_modifierON_CREATE?id",
+                    "customModifierOnMutate" to "custom_modifierON_MUTATE?id",
+                    "customCreatedOnCreate" to "custom_createdON_CREATE?str",
+                    "customCreatedOnMutate" to "custom_createdON_MUTATE?str",
+                    "customModifiedOnCreate" to "custom_modifiedON_CREATE?str",
+                    "customModifiedOnMutate" to "custom_modifiedON_MUTATE?str",
+                    "created" to "_created?str",
+                    "modified" to "_modified?str",
+                )
+            )
+            fun assertPersonRef(attKey: String, expectedId: String) {
+                val ref = atts[attKey].asText().toEntityRef()
+                val desc = "attKey: $attKey expectedId: $expectedId"
+                assertThat(ref.getAppName()).describedAs(desc).isEqualTo(AppName.EMODEL)
+                assertThat(ref.getSourceId()).describedAs(desc).isEqualTo("person")
+                assertThat(ref.getLocalId()).describedAs(desc).isEqualTo(expectedId)
+            }
+            assertPersonRef("customCreatorOnCreate", expCreatorOnCreate)
+            assertPersonRef("customCreatorOnMutate", expCreatorOnMutate)
+            assertPersonRef("customModifierOnCreate", expModifierOnCreate)
+            assertPersonRef("customModifierOnMutate", expModifierOnMutate)
+
+            assertThat(atts["customCreatedOnCreate"]).isEqualTo(atts["created"])
+            assertThat(atts["customCreatedOnMutate"]).isEqualTo(atts["created"])
+            assertThat(atts["customModifiedOnCreate"]).isEqualTo(atts["created"])
+            assertThat(atts["customModifiedOnMutate"]).isEqualTo(atts["modified"])
+        }
+
+        val rec0 = createRecord()
+        assertMetaAtts(
+            rec0,
+            expCreatorOnCreate = "system",
+            expCreatorOnMutate = "system",
+            expModifierOnCreate = "system",
+            expModifierOnMutate = "system"
+        )
+
+        val rec1 = AuthContext.runAs("customUser") { createRecord() }
+        assertMetaAtts(
+            rec1,
+            expCreatorOnCreate = "customUser",
+            expCreatorOnMutate = "customUser",
+            expModifierOnCreate = "customUser",
+            expModifierOnMutate = "customUser"
+        )
+        AuthContext.runAs("customUser") {
+            records.mutateAtt(rec0, "text", "value")
+        }
+        assertMetaAtts(
+            rec0,
+            expCreatorOnCreate = "system",
+            expCreatorOnMutate = "system",
+            expModifierOnCreate = "system",
+            expModifierOnMutate = "customUser"
+        )
+    }
 
     @Test
     fun docNumTest() {

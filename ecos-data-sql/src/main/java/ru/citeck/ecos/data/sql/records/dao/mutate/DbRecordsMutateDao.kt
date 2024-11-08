@@ -65,6 +65,13 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         private const val ASPECT_VERSIONABLE_DATA = "${DbRecord.ASPECT_VERSIONABLE}-data"
 
+        private val AUDIT_ATTS = setOf(
+            RecordConstants.ATT_CREATED,
+            RecordConstants.ATT_CREATOR,
+            RecordConstants.ATT_MODIFIED,
+            RecordConstants.ATT_MODIFIER,
+        )
+
         private val log = KotlinLogging.logger {}
     }
 
@@ -714,6 +721,18 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             }
         }
 
+        if (!disableAudit) {
+            val auditIgnoredAtts = typeInfo.model.systemAttributes.mapTo(HashSet()) { it.id }
+            if (!entityToMutate.equals(entityBeforeMutation, auditIgnoredAtts)) {
+                if (isNewEntity) {
+                    entityToMutate.created = nowInstant
+                    entityToMutate.creator = currentUserRefId
+                }
+                entityToMutate.modified = nowInstant
+                entityToMutate.modifier = currentUserRefId
+            }
+        }
+
         val computedAttsComponent = computedAttsComponent
         if (computedAttsComponent != null) {
             dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
@@ -743,20 +762,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             typeAttColumns
         )
 
-        if (entityToMutate == entityBeforeMutation && changedAssocs.isEmpty()) {
+        if (entityToMutate.equals(entityBeforeMutation, AUDIT_ATTS) && changedAssocs.isEmpty()) {
             return entityBeforeMutation
-        }
-
-        if (!disableAudit) {
-            val auditIgnoredAtts = typeInfo.model.systemAttributes.mapTo(HashSet()) { it.id }
-            if (!entityToMutate.equals(entityBeforeMutation, auditIgnoredAtts)) {
-                if (isNewEntity) {
-                    entityToMutate.created = nowInstant
-                    entityToMutate.creator = currentUserRefId
-                }
-                entityToMutate.modified = nowInstant
-                entityToMutate.modifier = currentUserRefId
-            }
         }
 
         val recAfterSave = dataService.save(entityToMutate, fullColumns)

@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Index
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 import ru.citeck.ecos.data.sql.repo.entity.legacy.DbLegacyEntity0
 import ru.citeck.ecos.data.sql.repo.entity.legacy.DbLegacyTypes
+import ru.citeck.ecos.records2.RecordConstants
 import java.time.Instant
 
 @Indexes(
@@ -112,10 +113,10 @@ class DbEntity {
             refId == other.refId &&
             extId == other.extId &&
             updVersion == other.updVersion &&
-            modified == other.modified &&
-            modifier == other.modifier &&
-            created == other.created &&
-            creator == other.creator &&
+            (ignoredAtts.contains(RecordConstants.ATT_MODIFIED) || modified == other.modified) &&
+            (ignoredAtts.contains(RecordConstants.ATT_MODIFIER) || modifier == other.modifier) &&
+            (ignoredAtts.contains(RecordConstants.ATT_CREATED) || created == other.created) &&
+            (ignoredAtts.contains(RecordConstants.ATT_CREATOR) || creator == other.creator) &&
             deleted == other.deleted &&
             type == other.type &&
             workspace == other.workspace &&
