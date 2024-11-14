@@ -35,9 +35,7 @@ import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.predicate.PredicateUtils
-import ru.citeck.ecos.records2.predicate.model.Predicate
-import ru.citeck.ecos.records2.predicate.model.Predicates
-import ru.citeck.ecos.records2.predicate.model.ValuePredicate
+import ru.citeck.ecos.records2.predicate.model.*
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
 import java.sql.SQLException
@@ -915,7 +913,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                     if (expressions.containsKey(pred.getAttribute())) {
                         pred
                     } else {
-                        Predicates.alwaysFalse()
+                        getPredicateForMissingColumn(pred)
                     }
                 } else if (pred is ValuePredicate && pred.getType() == ValuePredicate.Type.IN) {
                     val value = pred.getValue()
@@ -934,6 +932,19 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         ) ?: Predicates.alwaysTrue()
 
         return PredicateUtils.optimize(columnsPred)
+    }
+
+    private fun getPredicateForMissingColumn(predicate: AttributePredicate): Predicate {
+        if (predicate is EmptyPredicate) {
+            return Predicates.alwaysTrue()
+        }
+        if (predicate is ValuePredicate
+            && predicate.getType() == ValuePredicate.Type.EQ
+            && predicate.getValue().isNull()
+        ) {
+            return Predicates.alwaysTrue()
+        }
+        return Predicates.alwaysFalse()
     }
 
     private fun setColumns(columns: List<DbColumnDef>?) {
