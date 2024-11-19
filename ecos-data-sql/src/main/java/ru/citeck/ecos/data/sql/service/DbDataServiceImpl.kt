@@ -938,9 +938,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         if (predicate is EmptyPredicate) {
             return Predicates.alwaysTrue()
         }
-        if (predicate is ValuePredicate
-            && predicate.getType() == ValuePredicate.Type.EQ
-            && predicate.getValue().isNull()
+        if (predicate is ValuePredicate &&
+            predicate.getType() == ValuePredicate.Type.EQ &&
+            predicate.getValue().isNull()
         ) {
             return Predicates.alwaysTrue()
         }

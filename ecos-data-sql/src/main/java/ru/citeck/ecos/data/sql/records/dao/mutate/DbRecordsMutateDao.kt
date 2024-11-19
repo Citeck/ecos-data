@@ -620,6 +620,14 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 val value = recAttributes[att]
                 if (value.isTextual() && value.asText().isEmpty()) {
                     recAttributes[att] = DataValue.NULL
+                } else if (value.isArray() && value.any { !it.isTextual() || it.asText().isEmpty() }) {
+                    val valueWithoutEmptyValues = DataValue.createArr()
+                    for (element in value) {
+                        if (element.isTextual() && element.asText().isNotEmpty()) {
+                            valueWithoutEmptyValues.add(element)
+                        }
+                    }
+                    recAttributes[att] = valueWithoutEmptyValues
                 }
             }
         }

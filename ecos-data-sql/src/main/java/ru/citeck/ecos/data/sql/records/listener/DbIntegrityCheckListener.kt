@@ -101,17 +101,26 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
                 attsForMandatoryCheck.add(attributeDef.id)
             }
             if (attributeDef.type == AttributeType.OPTIONS) {
-                val options = ctx.computedAttsComponent?.getAttOptions(localRef, attributeDef.config) ?: continue
+                val options = ctx.computedAttsComponent?.getAttOptions(localRef, attributeDef.config)
+                    ?.mapTo(HashSet()) { it.value } ?: continue
                 val currentValue = ctx.recordsService.getAtt(
                     localRef,
-                    attributeDef.id + ScalarType.STR_SCHEMA
-                ).asText()
-                if (currentValue.isNotEmpty() && options.all { it.value != currentValue }) {
-                    error(
-                        "Invalid value '$currentValue' of options attribute: ${attributeDef.id} " +
-                            "for record '$globalRef'. " +
-                            "Allowed values: ${options.joinToString(", ") { it.value }}"
-                    )
+                    attributeDef.id + "[]" + ScalarType.STR_SCHEMA
+                ).asStrList()
+                if (currentValue.isNotEmpty()) {
+                    val invalidValues = currentValue.filter { !options.contains(it) }
+                    if (invalidValues.isNotEmpty()) {
+                        val invalidValuesMsg = if (invalidValues.size == 1) {
+                            "Invalid value '${invalidValues[0]}'"
+                        } else {
+                            "Invalid values [${invalidValues.joinToString(", ") { "\"$it\"" }}]"
+                        }
+                        error(
+                            "$invalidValuesMsg of options attribute: ${attributeDef.id} " +
+                                "for record '$globalRef'. " +
+                                "Allowed values: ${options.joinToString(", ")}"
+                        )
+                    }
                 }
             }
         }

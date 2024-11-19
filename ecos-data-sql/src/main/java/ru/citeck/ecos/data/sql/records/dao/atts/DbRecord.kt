@@ -361,9 +361,19 @@ class DbRecord(
                 }
 
                 AttributeType.OPTIONS -> {
-                    return convertOptionsAtt(value as? String, attDef)
+                    if (value is Collection<*>) {
+                        val result = ArrayList<DbOptionsAttValue>()
+                        for (element in value) {
+                            val attValue = convertOptionsAtt(element as? String, attDef)
+                            if (attValue != null) {
+                                result.add(attValue)
+                            }
+                        }
+                        return result
+                    } else {
+                        return convertOptionsAtt(value as? String, attDef)
+                    }
                 }
-
                 else -> {
                 }
             }
@@ -371,7 +381,7 @@ class DbRecord(
         return value
     }
 
-    private fun convertOptionsAtt(value: String?, attDef: AttributeDef?): Any? {
+    private fun convertOptionsAtt(value: String?, attDef: AttributeDef?): DbOptionsAttValue? {
         value ?: return null
         attDef ?: return null
         return DbOptionsAttValue(this, attDef, value)
@@ -589,7 +599,7 @@ class DbRecord(
                         result.add(newValue)
                     }
                 }
-                value
+                result
             } else if (value is DbContentValue) {
                 if (ctx.recContentHandler.isContentDbDataAware()) {
                     value.contentData.getDbId()

@@ -1,8 +1,9 @@
 package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
@@ -14,8 +15,9 @@ import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttType
 
 class DbRecordsOptionsAttTest : DbRecordsTestBase() {
 
-    @Test
-    fun test() {
+    @ParameterizedTest
+    @ValueSource(booleans = [true, false])
+    fun test(multiple: Boolean) {
 
         val optionValues = DataValue.create(
             """
@@ -59,6 +61,7 @@ class DbRecordsOptionsAttTest : DbRecordsTestBase() {
                 AttributeDef.create()
                     .withId("optionsValues")
                     .withType(AttributeType.OPTIONS)
+                    .withMultiple(multiple)
                     .withConfig(
                         ObjectData.create()
                             .set("source", "values")
@@ -67,6 +70,7 @@ class DbRecordsOptionsAttTest : DbRecordsTestBase() {
                 AttributeDef.create()
                     .withId("optionsAtt")
                     .withType(AttributeType.OPTIONS)
+                    .withMultiple(multiple)
                     .withConfig(
                         ObjectData.create()
                             .set("source", "attribute")
@@ -75,7 +79,7 @@ class DbRecordsOptionsAttTest : DbRecordsTestBase() {
                 AttributeDef.create()
                     .withId("attWithOptions")
                     .withType(AttributeType.JSON)
-                    .withMultiple(true)
+                    .withMultiple(multiple)
                     .withComputed(
                         ComputedAttDef.create()
                             .withType(ComputedAttType.SCRIPT)
@@ -125,14 +129,25 @@ class DbRecordsOptionsAttTest : DbRecordsTestBase() {
 
         val rec1 = createRecord("optionsValues" to "value0")
         val rec1Json = records.getAtt(rec1, "?json")
-        assertThat(rec1Json["optionsValues"]).isEqualTo(DataValue.createStr("value0"))
+        if (multiple) {
+            assertThat(rec1Json["optionsValues"]).isEqualTo(DataValue.createArr().add(DataValue.createStr("value0")))
+        } else {
+            assertThat(rec1Json["optionsValues"]).isEqualTo(DataValue.createStr("value0"))
+        }
 
         // copy test
         val rec2 = records.mutate(rec1, mapOf("id" to "new-id"))
         val rec2Json = records.getAtt(rec2, "?json")
-        assertThat(rec2Json["optionsValues"]).isEqualTo(DataValue.createStr("value0"))
-
+        if (multiple) {
+            assertThat(rec2Json["optionsValues"]).isEqualTo(DataValue.createArr().add(DataValue.createStr("value0")))
+        } else {
+            assertThat(rec2Json["optionsValues"]).isEqualTo(DataValue.createStr("value0"))
+        }
         val rec11Json = records.getAtt(rec1, "?json")
-        assertThat(rec11Json["optionsValues"]).isEqualTo(DataValue.createStr("value0"))
+        if (multiple) {
+            assertThat(rec11Json["optionsValues"]).isEqualTo(DataValue.createArr().add(DataValue.createStr("value0")))
+        } else {
+            assertThat(rec11Json["optionsValues"]).isEqualTo(DataValue.createStr("value0"))
+        }
     }
 }
