@@ -5,6 +5,7 @@ import org.apache.commons.dbcp2.BasicDataSource
 import org.apache.commons.dbcp2.managed.BasicManagedDataSource
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
+import org.mockito.Mockito
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
@@ -339,7 +340,7 @@ abstract class DbRecordsTestBase {
                 }
 
                 override fun createWorkspaceService(): WorkspaceService {
-                    return this@DbRecordsTestBase.workspaceService
+                    return this@DbRecordsTestBase.workspaceService.service
                 }
 
                 override fun getEcosWebAppApi(): EcosWebAppApi {
@@ -781,23 +782,23 @@ abstract class DbRecordsTestBase {
         registerType(typeInfo.copy { withQueryPermsPolicy(policy) })
     }
 
-    class CustomWorkspaceService : WorkspaceService {
+    class CustomWorkspaceService {
 
         val usersWs = ConcurrentHashMap<String, Set<String>>()
+        val service: WorkspaceService by lazy {
+            val workspaceService = Mockito.mock(WorkspaceService::class.java)
+            Mockito.`when`(workspaceService.getUserWorkspaces(Mockito.anyString())).thenAnswer {
+                val user = it.getArgument<String>(0)
+                setOf(
+                    *(usersWs[user]?.toTypedArray() ?: emptyArray()),
+                    "user$$user"
+                )
+            }
+            workspaceService
+        }
 
         fun setUserWorkspaces(user: String, workspaces: Set<String>) {
             usersWs[user] = workspaces.filterTo(LinkedHashSet()) { it.isNotBlank() }
-        }
-
-        override fun getUserWorkspaces(user: String): Set<String> {
-            return setOf(
-                *(usersWs[user]?.toTypedArray() ?: emptyArray()),
-                "user$$user"
-            )
-        }
-
-        override fun isUserManagerOf(user: String, workspace: String): Boolean {
-            return false
         }
     }
 
