@@ -27,6 +27,7 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
+import ru.citeck.ecos.records3.record.atts.schema.utils.AttStrUtils
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
@@ -224,8 +225,8 @@ class DbRecord(
                             attTypes[it.name] = AttributeType.ASSOC
                         }
                     }
-
                     else -> {
+                        // do nothing
                     }
                 }
             }
@@ -292,9 +293,13 @@ class DbRecord(
         defaultContentAtt = getDefaultContentAtt()
 
         attTypes.forEach { (attId, attType) ->
-            recData[attId] = convertValue(attId, attType, allAttDefs[attId], recData[attId])
+            if (attId == ATT_ASPECTS || recData.containsKey(attId)) {
+                recData[attId] = convertValue(attId, attType, allAttDefs[attId], recData[attId])
+            }
         }
-        val assocInnerKeys = recData.keys.filter { it.contains('.') }
+        val assocInnerKeys = recData.keys.filter {
+            AttStrUtils.indexOf(it, '.') != -1
+        }
         if (assocInnerKeys.isEmpty() || assocsTypes.isEmpty()) {
             assocsInnerAdditionalAtts = emptyMap()
         } else {
@@ -302,7 +307,7 @@ class DbRecord(
 
             for (key in assocInnerKeys) {
                 val data = recData[key]
-                val dotIdx = key.indexOf('.')
+                val dotIdx = AttStrUtils.indexOf(key, '.')
                 val keyFirst = key.substring(0, dotIdx)
                 if (recData[keyFirst] is EntityRef) {
                     continue
@@ -323,7 +328,7 @@ class DbRecord(
 
     private fun convertValue(attId: String, attType: AttributeType, attDef: AttributeDef?, value: Any?): Any? {
         if (DbRecordsUtils.isEntityRefAttribute(attType)) {
-            if (attId == ATT_ASPECTS) {
+            return if (attId == ATT_ASPECTS) {
                 val fullAspects = LinkedHashSet<String>()
                 typeInfo.aspects.forEach {
                     fullAspects.add(it.ref.getLocalId())
@@ -338,9 +343,9 @@ class DbRecord(
                         fullAspects.add(refs.getLocalId())
                     }
                 }
-                return DbAspectsValue(fullAspects)
-            } else if (value != null) {
-                return toEntityRef(value)
+                DbAspectsValue(fullAspects)
+            } else {
+                toEntityRef(value)
             }
         } else {
             when (attType) {
@@ -361,7 +366,7 @@ class DbRecord(
                 }
 
                 AttributeType.OPTIONS -> {
-                    if (value is Collection<*>) {
+                    return if (value is Collection<*>) {
                         val result = ArrayList<DbOptionsAttValue>()
                         for (element in value) {
                             val attValue = convertOptionsAtt(element as? String, attDef)
@@ -369,12 +374,13 @@ class DbRecord(
                                 result.add(attValue)
                             }
                         }
-                        return result
+                        result
                     } else {
-                        return convertOptionsAtt(value as? String, attDef)
+                        convertOptionsAtt(value as? String, attDef)
                     }
                 }
                 else -> {
+                    // do nothing
                 }
             }
         }
@@ -408,7 +414,8 @@ class DbRecord(
         }
     }
 
-    private fun toEntityRef(value: Any): Any {
+    private fun toEntityRef(value: Any?): Any {
+        value ?: return EntityRef.EMPTY
         return when (value) {
             is Iterable<*> -> {
                 val result = ArrayList<Any>()
@@ -419,7 +426,6 @@ class DbRecord(
                 }
                 result
             }
-
             is Long -> assocMapping[value] ?: error("Ref doesn't found for id $value")
             else -> error("Unexpected ref value type: ${value::class}")
         }
@@ -464,48 +470,53 @@ class DbRecord(
             return null as T
         }
         val nnValue: Any = value
-        if (value is Map<*, *>) {
-            if (value.isEmpty() || value.keys.first() !is String) {
-                return value
-            }
-            nnValue as Map<String, Any?>
-            val newMap = LinkedHashMap<String, Any?>()
-            nnValue.forEach { (k, v) ->
-                val filtered = filterUnknownJsonTypes(attribute, v)
-                if (filtered != Unit) {
-                    newMap[k] = filtered
+        return when {
+            value is Map<*, *> -> {
+                if (value.isEmpty() || value.keys.first() !is String) {
+                    return value
                 }
-            }
-            return newMap as T
-        } else if (nnValue is List<Any?>) {
-            val newList = ArrayList<Any?>()
-            nnValue.forEach {
-                val filtered = filterUnknownJsonTypes(attribute, it)
-                if (filtered != Unit) {
-                    newList.add(filtered)
+                nnValue as Map<String, Any?>
+                val newMap = LinkedHashMap<String, Any?>()
+                nnValue.forEach { (k, v) ->
+                    val filtered = filterUnknownJsonTypes(attribute, v)
+                    if (filtered != Unit) {
+                        newMap[k] = filtered
+                    }
                 }
+                newMap as T
             }
-            return newList as T
-        } else if ((nnValue is ObjectNode || nnValue is ArrayNode) && attTypes[attribute] == AttributeType.JSON) {
-            return nnValue as T
-        } else if (nnValue is DbOptionsAttValue) {
-            return nnValue.asText() as T
-        } else if (
+            nnValue is List<Any?> -> {
+                val newList = ArrayList<Any?>()
+                nnValue.forEach {
+                    val filtered = filterUnknownJsonTypes(attribute, it)
+                    if (filtered != Unit) {
+                        newList.add(filtered)
+                    }
+                }
+                newList as T
+            }
+            (nnValue is ObjectNode || nnValue is ArrayNode) && attTypes[attribute] == AttributeType.JSON -> {
+                nnValue as T
+            }
+            nnValue is DbOptionsAttValue -> {
+                nnValue.asText() as T
+            }
             nnValue::class.java.isPrimitive ||
-            nnValue::class.java.isEnum ||
-            nnValue is Boolean ||
-            nnValue is Number ||
-            nnValue is Char ||
-            nnValue is String ||
-            nnValue is EntityRef ||
-            nnValue is Date ||
-            nnValue is Temporal ||
-            nnValue is ByteArray ||
-            nnValue is MLText
-        ) {
-            return value
+                nnValue::class.java.isEnum ||
+                nnValue is Boolean ||
+                nnValue is Number ||
+                nnValue is Char ||
+                nnValue is String ||
+                nnValue is EntityRef ||
+                nnValue is Date ||
+                nnValue is Temporal ||
+                nnValue is ByteArray ||
+                nnValue is MLText
+            -> {
+                value
+            }
+            else -> Unit as T
         }
-        return Unit as T
     }
 
     override fun asJson(): Any {
@@ -534,8 +545,8 @@ class DbRecord(
     fun getAttsForOperations(): Map<String, Any?> {
 
         fun getValueForOperations(attribute: String, value: Any?, attDef: AttributeDef): Any? {
-            if (attribute != ATT_ASPECTS && DbRecordsUtils.isAssocLikeAttribute(attDef)) {
-                return DbAssocAttValuesContainer(
+            return if (attribute != ATT_ASPECTS && DbRecordsUtils.isAssocLikeAttribute(attDef)) {
+                DbAssocAttValuesContainer(
                     ctx,
                     value,
                     DbRecordsUtils.isChildAssocAttribute(attDef),
@@ -558,7 +569,7 @@ class DbRecord(
                     is DbAspectsValue -> value.getAspectRefs()
                     else -> filterUnknownJsonTypes(attribute, value)
                 }
-                return DataValue.create(resValue).asJavaObj()
+                DataValue.create(resValue).asJavaObj()
             }
         }
 
@@ -641,7 +652,8 @@ class DbRecord(
         val value = additionalAtts[fixedName] ?: return false
         return when (value) {
             is String -> value != ""
-            is Collection<*> -> !value.isEmpty()
+            is Collection<*> -> value.isNotEmpty()
+            is EntityRef -> value.isNotEmpty()
             else -> true
         }
     }
@@ -744,7 +756,7 @@ class DbRecord(
                 return null
             }
             val recordRef = additionalAtts[attContentRef]
-            if (recordRef !is EntityRef) {
+            if (recordRef !is EntityRef || recordRef.isEmpty()) {
                 return null
             }
             val contentAttPath = attributeWithContent.substringAfter(".")

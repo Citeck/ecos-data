@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -23,6 +24,66 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
     companion object {
         private const val taskIdField = "taskId"
         private const val amountField = "amount"
+    }
+
+    @Test
+    fun testWithPropOfAssoc() {
+
+        val targetTypeRef = ModelUtils.getTypeRef("target")
+        val targetDao = createRecordsDao(
+            tableRef.withTable("target"),
+            targetTypeRef,
+            "target"
+        )
+        registerType(
+            TypeInfo.create()
+                .withId(targetTypeRef.getLocalId())
+                .withSourceId("target")
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("name")
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("number")
+                                    .withType(AttributeType.NUMBER)
+                                    .build()
+                            )
+                        ).build()
+                ).build()
+        )
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("assoc")
+                    .withType(AttributeType.ASSOC)
+                    .withConfig(ObjectData.create().set("typeRef", targetTypeRef))
+                    .build()
+            )
+        )
+
+        val target0 = targetDao.createRecord("name" to "abc", "number" to 123)
+
+        createRecord("assoc" to target0)
+        createRecord()
+
+        val queryRes = records.query(
+            baseQuery.copy()
+                .withGroupBy(listOf("assoc"))
+                .build(),
+            mapOf(
+                "assocAlias" to "assoc{disp:?disp,value:?assoc}",
+                "sumAlias" to "sum(assoc.number)"
+            )
+        ).getRecords()
+
+        assertThat(queryRes).hasSize(2)
+        val nonNullRec = queryRes.first { it.getAtt("$.assocAlias.value").asText() == target0.toString() }
+        assertThat(nonNullRec.getAtt("$.assocAlias.disp").asText()).isEqualTo("abc")
+        val nullRec = queryRes.first { it !== nonNullRec }
+        assertThat(nullRec.getAtt("$.assocAlias")).isEqualTo(DataValue.NULL)
     }
 
     @Test

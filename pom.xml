@@ -18,7 +18,7 @@
 
     <properties>
 
-        <revision>1.55.6</revision>
+        <revision>1.55.7</revision>
 
         <ecos.commons.version>3.5.0</ecos.commons.version>
         <ecos.records.version>3.73.0</ecos.records.version>
