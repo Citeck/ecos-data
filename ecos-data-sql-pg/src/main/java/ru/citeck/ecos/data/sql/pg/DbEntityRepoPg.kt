@@ -1554,6 +1554,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                             queryParams.add(queryParam)
                         } else if (columnDef.type == DbColumnType.BOOLEAN) {
                             appendRecordColumnName(query, table, attribute)
+                            query.append(' ')
                             if (value.asBoolean()) {
                                 query.append(IS_TRUE)
                             } else {
