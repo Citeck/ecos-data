@@ -1,8 +1,11 @@
 package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
@@ -17,9 +20,10 @@ class DbRecordsChildrenDeleteTest : DbRecordsTestBase() {
         private const val CHILD_TYPE_ID = "child_type"
         private const val CHILD_SRC_ID = "child_src_id"
     }
+    private lateinit var childCtx: RecordsDaoTestCtx
 
-    @Test
-    fun test() {
+    @BeforeEach
+    fun beforeEach() {
 
         registerType(
             TypeInfo.create {
@@ -70,29 +74,51 @@ class DbRecordsChildrenDeleteTest : DbRecordsTestBase() {
             }
         )
 
-        val childCtx = createRecordsDao(
+        childCtx = createRecordsDao(
             DEFAULT_TABLE_REF.withTable("child_nodes"),
             ModelUtils.getTypeRef(CHILD_TYPE_ID),
             CHILD_SRC_ID
         )
+    }
+
+    @Test
+    fun deleteWithoutPermsForChild() {
 
         val parentRef = createRecord()
-        val children = (0 until 10).map {
+        val childRef = childCtx.createRecord(
+            "test" to "abc-value",
+            "_parent" to parentRef,
+            "_parentAtt" to "childAssoc"
+        )
+
+        assertExists(true, parentRef, childRef)
+
+        setAuthoritiesWithWritePerms(parentRef, "parent-owner")
+        childCtx.setAuthoritiesWithWritePerms(childRef, "child-owner")
+
+        AuthContext.runAs("unknown") {
+            assertCantDelete(parentRef)
+            assertCantDelete(childRef)
+        }
+        AuthContext.runAs("parent-owner") {
+            assertCantDelete(childRef)
+            records.delete(parentRef)
+            // if we have permissions to delete parent, then permissions for children shouldn't be checked
+            assertExists(false, parentRef, childRef)
+        }
+    }
+
+    @Test
+    fun test() {
+
+        val parentRef = createRecord()
+        val children = (0 until 105).map {
             childCtx.createRecord(
+                "id" to "id-$it",
                 "test" to "abc-$it",
                 "_parent" to parentRef,
                 "_parentAtt" to "childAssoc"
             )
-        }
-
-        fun assertExists(expectedExists: Boolean, vararg refs: EntityRef) {
-            for (ref in refs) {
-                if (expectedExists) {
-                    assertThat(records.getAtt(ref, "_notExists?bool").asBoolean()).describedAs(ref.toString()).isFalse
-                } else {
-                    assertThat(records.getAtt(ref, "_notExists?bool").asBoolean()).describedAs(ref.toString()).isTrue
-                }
-            }
         }
 
         assertExists(true, parentRef, *children.toTypedArray())
@@ -146,5 +172,21 @@ class DbRecordsChildrenDeleteTest : DbRecordsTestBase() {
         assertExists(true, *parentWithChildren.toTypedArray())
         records.delete(parentWithChildren[0])
         assertExists(false, *parentWithChildren.toTypedArray())
+    }
+
+    private fun assertExists(expectedExists: Boolean, vararg refs: EntityRef) {
+        for (ref in refs) {
+            if (expectedExists) {
+                assertThat(records.getAtt(ref, "_notExists?bool").asBoolean()).describedAs(ref.toString()).isFalse
+            } else {
+                assertThat(records.getAtt(ref, "_notExists?bool").asBoolean()).describedAs(ref.toString()).isTrue
+            }
+        }
+    }
+
+    private fun assertCantDelete(ref: EntityRef) {
+        assertThrows<Exception> {
+            records.delete(ref)
+        }
     }
 }

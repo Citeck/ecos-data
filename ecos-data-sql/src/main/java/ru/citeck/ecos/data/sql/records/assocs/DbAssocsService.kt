@@ -213,27 +213,47 @@ class DbAssocsService(
         if (force) {
             dataService.forceDelete(predicate)
         } else {
-            fun findNext(): List<DbAssocEntity> {
-                return dataService.find(
-                    predicate,
-                    emptyList(),
-                    DbFindPage(0, 100),
-                    true
-                ).entities
-            }
-
-            var searchRes = findNext()
-            while (searchRes.isNotEmpty()) {
+            forEachAssocEntity(predicate, 100) { entities ->
                 deletedDataService.save(
-                    searchRes.map {
+                    entities.map {
                         val entity = it.copy()
                         entity.id = DbAssocEntity.NEW_REC_ID
                         entity
                     }
                 )
-                dataService.forceDelete(searchRes)
-                searchRes = findNext()
+                dataService.forceDelete(entities)
+                false
             }
+        }
+    }
+
+    fun forEachAssoc(predicate: Predicate, action: (List<DbAssocDto>) -> Boolean) {
+        forEachAssocEntity(predicate, 100) { action(mapToDto(it)) }
+    }
+
+    fun forEachAssoc(predicate: Predicate, batchSize: Int, action: (List<DbAssocDto>) -> Boolean) {
+        forEachAssocEntity(predicate, batchSize) { action(mapToDto(it)) }
+    }
+
+    private fun forEachAssocEntity(predicate: Predicate, batchSize: Int, action: (List<DbAssocEntity>) -> Boolean) {
+
+        val sort = listOf(DbFindSort(DbAssocEntity.ID, true))
+        val page = DbFindPage(0, batchSize)
+
+        var searchRes = dataService.find(predicate, sort, page, true).entities
+        while (searchRes.isNotEmpty()) {
+            if (action.invoke(searchRes)) {
+                break
+            }
+            searchRes = dataService.find(
+                Predicates.and(
+                    predicate,
+                    Predicates.gt(DbAssocEntity.ID, searchRes.last().id)
+                ),
+                sort,
+                page,
+                true
+            ).entities
         }
     }
 

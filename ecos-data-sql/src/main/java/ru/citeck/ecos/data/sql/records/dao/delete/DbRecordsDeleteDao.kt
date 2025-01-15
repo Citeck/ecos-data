@@ -2,7 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao.delete
 
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
-import ru.citeck.ecos.data.sql.records.DbRecordsUtils
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.OperationType
@@ -11,6 +11,7 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.dao.delete.DelStatus
 import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -125,19 +126,23 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
         }
 
         val meta = ctx.getEntityMeta(entity)
-        val childrenIdsToDelete = LinkedHashSet<Long>()
-        meta.allAttributes.forEach {
-            if (DbRecordsUtils.isChildAssocAttribute(it.value)) {
-                DbAttValueUtils.collectLongValues(entity.attributes[it.key], childrenIdsToDelete)
+
+        // if user has permissions to delete node, then child assocs may be deleted in system context
+        AuthContext.runAsSystem {
+            ctx.assocsService.forEachAssoc(
+                Predicates.and(
+                    Predicates.eq(DbAssocEntity.SOURCE_ID, entity.refId),
+                    Predicates.eq(DbAssocEntity.CHILD, true)
+                )
+            ) { assocs ->
+                val refsToDelete = ctx.recordRefService.getEntityRefsByIds(assocs.map { it.targetId })
+                ctx.recordsService.delete(refsToDelete)
+                false
             }
         }
 
         ctx.remoteActionsClient?.deleteRemoteAssocs(ctx.tableCtx, meta.globalRef, isForceDeletion)
 
-        if (childrenIdsToDelete.isNotEmpty()) {
-            val refsToDelete = ctx.recordRefService.getEntityRefsByIds(childrenIdsToDelete.toList())
-            ctx.recordsService.delete(refsToDelete)
-        }
         if (isForceDeletion) {
             meta.allAttributes.forEach { (attId, attDef) ->
                 if (attDef.type == AttributeType.CONTENT) {
