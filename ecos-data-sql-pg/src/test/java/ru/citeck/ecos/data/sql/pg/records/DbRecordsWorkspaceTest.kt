@@ -5,23 +5,28 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
+import ru.citeck.ecos.commons.data.DataValue
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.data.SimpleAuthData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
+import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 
 class DbRecordsWorkspaceTest : DbRecordsTestBase() {
 
     companion object {
         @JvmStatic
-        fun getTestVariants(): List<Array<*>> {
+        fun getRecCreateTestVariants(): List<Array<*>> {
             return listOf(
                 *WorkspaceScope.entries.map { arrayOf(it, true) }.toTypedArray(),
                 *WorkspaceScope.entries.map { arrayOf(it, false) }.toTypedArray()
@@ -29,9 +34,129 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
         }
     }
 
+    @Test
+    fun createChildTest() {
+
+        registerType(
+            TypeInfo.create()
+                .withId(REC_TEST_TYPE_ID)
+                .withWorkspaceScope(WorkspaceScope.PRIVATE)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("text")
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("children")
+                                    .withType(AttributeType.ASSOC)
+                                    .withConfig(ObjectData.create().set("child", true))
+                                    .build()
+                            )
+                        ).build()
+                ).build()
+        )
+
+        val privateWsChildTypeId = "private-ws-child-type"
+
+        registerType(
+            TypeInfo.create()
+                .withId(privateWsChildTypeId)
+                .withSourceId(privateWsChildTypeId)
+                .withWorkspaceScope(WorkspaceScope.PRIVATE)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(listOf(AttributeDef.create().withId("text").build()))
+                        .build()
+                ).build()
+        )
+
+        val privateWsChildCtx = createRecordsDao(
+            DEFAULT_TABLE_REF.withTable("private_ws_child_nodes"),
+            ModelUtils.getTypeRef(privateWsChildTypeId),
+            privateWsChildTypeId
+        )
+
+        val publicWsChildTypeId = "public-ws-child-type"
+
+        registerType(
+            TypeInfo.create()
+                .withId(publicWsChildTypeId)
+                .withSourceId(publicWsChildTypeId)
+                .withWorkspaceScope(WorkspaceScope.PUBLIC)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(listOf(AttributeDef.create().withId("text").build()))
+                        .build()
+                ).build()
+        )
+
+        val publicWsChildCtx = createRecordsDao(
+            DEFAULT_TABLE_REF.withTable("public_ws_child_nodes"),
+            ModelUtils.getTypeRef(publicWsChildTypeId),
+            publicWsChildTypeId
+        )
+
+        fun getAtt(rec: EntityRef, att: String) = records.getAtt(rec, att)
+        fun getWsId(rec: EntityRef) = getAtt(rec, "_workspace?localId").asText()
+        fun getWsRef(rec: EntityRef) = getAtt(rec, "_workspace?id").asText().toEntityRef()
+
+        val testWsId = "test-ws"
+
+        val mainRec = createRecord(
+            "text" to "mainRec",
+            "_workspace" to testWsId
+        )
+        assertThat(getWsId(mainRec)).isEqualTo(testWsId)
+        assertThat(getWsRef(mainRec)).isEqualTo(EntityRef.create("emodel", "workspace", testWsId))
+
+        val publicChildWithoutParent = publicWsChildCtx.createRecord("text" to "test")
+        assertThat(getAtt(publicChildWithoutParent, "_workspace?id")).isEqualTo(DataValue.NULL)
+        assertThat(getAtt(publicChildWithoutParent, "_workspace?localId")).isEqualTo(DataValue.NULL)
+
+        val publicChildWithParent = publicWsChildCtx.createRecord(
+            "text" to "test",
+            "_parent" to mainRec,
+            "_parentAtt" to "children"
+        )
+
+        assertThat(getWsId(publicChildWithParent)).isEqualTo(testWsId)
+
+        assertThrows<RuntimeException> {
+            privateWsChildCtx.createRecord("text" to "test")
+        }
+        val pwsChild0 = privateWsChildCtx.createRecord("text" to "test", "_workspace" to "child-ws")
+        assertThat(getWsId(pwsChild0)).isEqualTo("child-ws")
+
+        assertThrows<RuntimeException> {
+            privateWsChildCtx.createRecord(
+                "text" to "test",
+                "_workspace" to "child-ws",
+                "_parent" to mainRec,
+                "_parentAtt" to "children"
+            )
+        }
+
+        val pwsChild1 = privateWsChildCtx.createRecord(
+            "text" to "test",
+            "_workspace" to testWsId,
+            "_parent" to mainRec,
+            "_parentAtt" to "children"
+        )
+        assertThat(getWsId(pwsChild1)).isEqualTo(testWsId)
+
+        val pwsChild2 = privateWsChildCtx.createRecord(
+            "text" to "test",
+            "_parent" to mainRec,
+            "_parentAtt" to "children"
+        )
+        assertThat(getWsId(pwsChild2)).isEqualTo(testWsId)
+    }
+
     @ParameterizedTest
-    @MethodSource("getTestVariants")
-    fun test(scope: WorkspaceScope, asSystem: Boolean) {
+    @MethodSource("getRecCreateTestVariants")
+    fun recCreateTest(scope: WorkspaceScope, asSystem: Boolean) {
         registerType(
             TypeInfo.create {
                 withId(REC_TEST_TYPE_ID)

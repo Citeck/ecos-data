@@ -43,7 +43,9 @@ import ru.citeck.ecos.model.lib.workspace.WorkspaceService
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
+import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.time.Instant
@@ -317,16 +319,48 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
         var workspaceRef = EntityRef.EMPTY
-        if (isNewEntity && typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
-            val mutWorkspace = record.getAtt(RecordConstants.ATT_WORKSPACE).asText()
-            if (mutWorkspace.isEmpty()) {
+        if (isNewEntity) {
+            var parentWsId = ""
+            val parentRef = record.getAtt(RecordConstants.ATT_PARENT).asText().toEntityRef()
+            if (parentRef.isNotEmpty() && parentRef.getAppName() != AppName.ALFRESCO) {
+                val parentAtts = AuthContext.runAsSystem {
+                    daoCtx.recordsService.getAtts(parentRef, OnCreateParentAtts::class.java)
+                }
+                /*
+                // todo
+                if (parentAtts.notExists) {
+                    error(
+                        "Parent record doesn't exists: '$parentRef'. " +
+                            "Child record with type ${typeInfo.id} can't be created"
+                    )
+                }*/
+                parentWsId = parentAtts.workspace
+            }
+            var mutWorkspaceId = record.getAtt(RecordConstants.ATT_WORKSPACE).asText().toEntityRef().getLocalId()
+            if (typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
+                if (mutWorkspaceId.isBlank()) {
+                    mutWorkspaceId = parentWsId
+                } else if (parentRef.isNotEmpty() && mutWorkspaceId != parentWsId) {
+                    error(
+                        "Child and parent workspaces doesn't match. " +
+                            "Parent: $parentRef Parent ws: $parentWsId Child ws: $mutWorkspaceId Child type: ${typeInfo.id}"
+                    )
+                }
+            } else {
+                mutWorkspaceId = parentWsId
+            }
+            if (typeInfo.workspaceScope == WorkspaceScope.PRIVATE && mutWorkspaceId.isEmpty()) {
                 error(
                     "You should provide ${RecordConstants.ATT_WORKSPACE} attribute to create new record " +
                         "with private workspace scope. Type: '${typeInfo.id}'"
                 )
             }
-            workspaceRef = mutWorkspace.toEntityRef()
-            if (!isRunAsSystem) {
+            workspaceRef = if (mutWorkspaceId.isNotBlank()) {
+                EntityRef.create(AppName.EMODEL, "workspace", mutWorkspaceId)
+            } else {
+                EntityRef.EMPTY
+            }
+            if (!isRunAsSystem && workspaceRef.isNotEmpty()) {
                 val workspaces = workspaceService.getUserWorkspaces(currentRunAsUser)
                 if (!workspaces.contains(workspaceRef.getLocalId())) {
                     error("You can't create records in workspace $workspaceRef")
@@ -374,35 +408,33 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         }
 
         var recordPerms = DbRecordPermsContext(DbRecordAllowedAllPerms)
-        if (!isNewEntity && !isRunAsSystem) {
-            if (!daoCtx.getUpdatedInTxnIds().contains(entityToMutate.extId)) {
-                recordPerms = permsDao.getRecordPerms(entityToMutate.extId, currentRunAsUser, currentRunAsAuthorities)
-                if (!recordPerms.hasWritePerms()) {
-                    if (isMutationFromChild && recordPerms.getAdditionalPerms().contains("create-children")) {
-                        val deniedAtts = HashSet<String>()
-                        record.attributes.forEach { k, _ ->
-                            if (k != RecMutAssocHandler.MUTATION_FROM_CHILD_FLAG) {
-                                if (!k.startsWith(OperationType.ATT_ADD.prefix)) {
+        if (!isNewEntity && !isRunAsSystem && !daoCtx.getUpdatedInTxnIds().contains(entityToMutate.extId)) {
+            recordPerms = permsDao.getRecordPerms(entityToMutate.extId, currentRunAsUser, currentRunAsAuthorities)
+            if (!recordPerms.hasWritePerms()) {
+                if (isMutationFromChild && recordPerms.getAdditionalPerms().contains("create-children")) {
+                    val deniedAtts = HashSet<String>()
+                    record.attributes.forEach { k, _ ->
+                        if (k != RecMutAssocHandler.MUTATION_FROM_CHILD_FLAG) {
+                            if (!k.startsWith(OperationType.ATT_ADD.prefix)) {
+                                deniedAtts.add(k)
+                            } else {
+                                val assocName = k.substring(OperationType.ATT_ADD.prefix.length)
+                                val attDef = typeInfo.model.attributes.find { it.id == assocName }
+                                if (attDef == null || attDef.type != AttributeType.ASSOC || !attDef.config["child"].asBoolean()) {
                                     deniedAtts.add(k)
-                                } else {
-                                    val assocName = k.substring(OperationType.ATT_ADD.prefix.length)
-                                    val attDef = typeInfo.model.attributes.find { it.id == assocName }
-                                    if (attDef == null || attDef.type != AttributeType.ASSOC || !attDef.config["child"].asBoolean()) {
-                                        deniedAtts.add(k)
-                                    }
                                 }
                             }
                         }
-                        if (deniedAtts.isNotEmpty()) {
-                            error(
-                                "Permissions Denied. " +
-                                    "You can't change attributes $deniedAtts " +
-                                    "for record '${daoCtx.getGlobalRef(record.id)}'"
-                            )
-                        }
-                    } else {
-                        error("Permissions Denied. You can't change record '${daoCtx.getGlobalRef(record.id)}'")
                     }
+                    if (deniedAtts.isNotEmpty()) {
+                        error(
+                            "Permissions Denied. " +
+                                "You can't change attributes $deniedAtts " +
+                                "for record '${daoCtx.getGlobalRef(record.id)}'"
+                        )
+                    }
+                } else {
+                    error("Permissions Denied. You can't change record '${daoCtx.getGlobalRef(record.id)}'")
                 }
             }
         }
@@ -500,7 +532,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             recAttributes[mainContentAtt] = contentValue
             recAttributes.remove(RecordConstants.ATT_CONTENT)
 
-            val hasCustomNameAtt = typeInfo.model.attributes.find { it.id == ATT_CUSTOM_NAME } != null
+            val hasCustomNameAtt = typeInfo.model.attributes.any { it.id == ATT_CUSTOM_NAME }
             if (hasCustomNameAtt && recAttributes[ATT_CUSTOM_NAME].isEmpty()) {
                 contentAttToExtractName = mainContentAtt
             }
@@ -979,4 +1011,11 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         }
         return notEmptyColumns
     }
+
+    private class OnCreateParentAtts(
+        @AttName(RecordConstants.ATT_WORKSPACE + ScalarType.LOCAL_ID_SCHEMA + "!")
+        val workspace: String,
+        @AttName(RecordConstants.ATT_NOT_EXISTS + ScalarType.BOOL_SCHEMA + "!")
+        val notExists: Boolean
+    )
 }

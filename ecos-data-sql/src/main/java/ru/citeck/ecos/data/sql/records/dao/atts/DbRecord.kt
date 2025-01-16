@@ -680,7 +680,13 @@ class DbRecord(
             RecordConstants.ATT_CREATED, "cm:created" -> entity.created
             RecordConstants.ATT_MODIFIER -> toEntityRef(entity.modifier)
             RecordConstants.ATT_CREATOR -> toEntityRef(entity.creator)
-            RecordConstants.ATT_WORKSPACE -> EntityRef.create(AppName.EMODEL, "workspace", workspace)
+            RecordConstants.ATT_WORKSPACE -> {
+                if (workspace.isNullOrBlank()) {
+                    EntityRef.EMPTY
+                } else {
+                    EntityRef.create(AppName.EMODEL, "workspace", workspace)
+                }
+            }
             StatusConstants.ATT_STATUS -> {
                 val statusId = entity.status
                 val statusDef = typeInfo.model.statuses.firstOrNull { it.id == statusId } ?: return statusId
