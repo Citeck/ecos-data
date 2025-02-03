@@ -1,14 +1,14 @@
 package ru.citeck.ecos.data.sql.records.listener
 
-import ru.citeck.ecos.commons.data.DataValue
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
-import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
@@ -32,12 +32,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         val data = txn.getData(
             TxnDataKey(event.localRef)
         ) {
-            val valueByAtt = if (event.record is DbRecord) {
-                event.record.getAttsForCopy()
-            } else {
-                emptyMap()
-            }
-            RecordData(event.typeDef, event.aspects, valueByAtt, created = true, isDraft = event.isDraft)
+            RecordData(event.typeDef, event.aspects, created = true, isDraft = event.isDraft)
         }
         txn.addAction(TxnActionType.BEFORE_COMMIT, 0f) {
             checkIntegrity(event.localRef, event.globalRef, data)
@@ -52,7 +47,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             TxnDataKey(event.localRef)
         ) {
             isNewRecData.set(true)
-            RecordData(event.typeDef, event.aspects, event.after, isDraft = event.isDraft)
+            RecordData(event.typeDef, event.aspects, isDraft = event.isDraft)
         }
         data.typeInfo = event.typeDef
         data.aspectsInfo = event.aspects
@@ -145,7 +140,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             }
         }
         checkMandatoryAtts(localRef, globalRef, attsForMandatoryCheck)
-        checkUniqueAtts(localRef, globalRef, attsForUniqueCheck, data.valueByAtt)
+        checkUniqueAtts(localRef, globalRef, attsForUniqueCheck)
     }
 
     private fun checkMandatoryAtts(localRef: EntityRef, globalRef: EntityRef, attsToCheck: Set<String>) {
@@ -171,38 +166,44 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
     private fun checkUniqueAtts(
         localRef: EntityRef,
         globalRef: EntityRef,
-        attsToCheck: Set<String>,
-        valueByAtt: Map<String, Any?>
+        attsToCheck: Set<String>
     ) {
         if (attsToCheck.isEmpty()) {
             return
         }
 
-        val predicates = attsToCheck.mapNotNull { key ->
-            valueByAtt[key]?.let { value ->
-                Predicates.eq(key, value)
+        val valueByAtt = ctx.recordsService.getAtts(localRef, attsToCheck).getAtts()
+        val notNullValueByAtt = ObjectData.create()
+        valueByAtt.forEach { key, value ->
+            if (value.isNotNull() && value.isNotEmpty()) {
+                notNullValueByAtt[key] = value
             }
         }
 
-        if (predicates.isNotEmpty()) {
-            val query = RecordsQuery.create {
-                withSourceId(localRef.getSourceId())
-                withLanguage(PredicateService.LANGUAGE_PREDICATE)
-                withQuery(Predicates.or(predicates))
-            }
-            val foundRecords = AuthContext.runAsSystem {
-                ctx.recordsService.query(query, attsToCheck).getRecords()
-            }
+        val predicates = notNullValueByAtt.map { key, value ->
+            Predicates.eq(key, value)
+        }
+        if (predicates.isEmpty()) {
+            return
+        }
 
-            if (foundRecords.isNotEmpty() && (foundRecords.size > 1 || foundRecords.first().getId() != localRef)) {
-                val notUniqueAtt = attsToCheck.find { key ->
-                    val value = valueByAtt[key]
-                    value != null && foundRecords.any { record -> record[key] == DataValue.of(value) }
-                }
-                error(
-                    "Attribute $notUniqueAtt is not unique in $globalRef"
+        val query = RecordsQuery.create {
+            withSourceId(localRef.getSourceId())
+            withLanguage(PredicateService.LANGUAGE_PREDICATE)
+            withQuery(
+                Predicates.and(
+                    Predicates.or(predicates),
+                    Predicates.notEq(RecordConstants.ATT_ID, localRef.getLocalId())
                 )
-            }
+            )
+            withMaxItems(1)
+        }
+        val foundRecord = ctx.recordsService.queryOne(query, attsToCheck)
+
+        if (foundRecord != null) {
+            error(
+                "$globalRef has non-unique attributes $notNullValueByAtt"
+            )
         }
     }
 
@@ -223,7 +224,6 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
     private class RecordData(
         var typeInfo: TypeInfo,
         var aspectsInfo: List<AspectInfo>,
-        val valueByAtt: Map<String, Any?>,
         val changedAtts: MutableSet<String> = LinkedHashSet(),
         var created: Boolean = false,
         var isDraft: Boolean = false,

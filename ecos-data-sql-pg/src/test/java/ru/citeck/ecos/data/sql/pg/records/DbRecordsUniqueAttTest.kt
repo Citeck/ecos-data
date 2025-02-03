@@ -52,7 +52,7 @@ class DbRecordsUniqueAttTest : DbRecordsTestBase() {
                 UNIQUE_ATT to "unique att"
             )
         }
-        assertThat(ex.message).contains("Attribute $UNIQUE_ATT is not unique in")
+        assertThat(ex.message).contains("has non-unique attributes {\"uniqueAtt\":\"unique att\"}")
 
         var record = createRecord(
             NOT_UNIQUE_ATT to "not unique att",
@@ -68,7 +68,7 @@ class DbRecordsUniqueAttTest : DbRecordsTestBase() {
                 UNIQUE_ATT to "unique att"
             )
         }
-        assertThat(ex.message).contains("Attribute $UNIQUE_ATT is not unique in $record")
+        assertThat(ex.message).contains("$record has non-unique attributes {\"uniqueAtt\":\"unique att\"}")
 
         val updatedRecord = updateRecord(
             record,
