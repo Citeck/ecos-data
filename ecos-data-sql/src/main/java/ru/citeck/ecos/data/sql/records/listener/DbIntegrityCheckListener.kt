@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.records.listener
 
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
@@ -7,7 +8,11 @@ import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.records2.RecordConstants
+import ru.citeck.ecos.records2.predicate.PredicateService
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
+import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.txn.lib.action.TxnActionType
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -15,6 +20,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 // todo: add checking of parent ref recursion based on ed_associations
 class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAware {
+
+    companion object {
+        private const val CONFIG_PARAM_UNIQUE = "unique"
+    }
 
     private lateinit var ctx: DbRecordsDaoCtx
 
@@ -95,10 +104,16 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             data.changedAtts
         }
         val attsForMandatoryCheck = mutableSetOf<String>()
+        val attsForUniqueCheck = mutableSetOf<String>()
         for (attributeId in changedAtts) {
             val attributeDef = attsById[attributeId] ?: continue
             if (attributeDef.mandatory) {
                 attsForMandatoryCheck.add(attributeDef.id)
+            }
+            if (attributeDef.type == AttributeType.TEXT && !attributeDef.multiple &&
+                attributeDef.config[CONFIG_PARAM_UNIQUE].asBoolean()
+            ) {
+                attsForUniqueCheck.add(attributeDef.id)
             }
             if (attributeDef.type == AttributeType.OPTIONS) {
                 val options = ctx.computedAttsComponent?.getAttOptions(localRef, attributeDef.config)
@@ -125,6 +140,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             }
         }
         checkMandatoryAtts(localRef, globalRef, attsForMandatoryCheck)
+        checkUniqueAtts(localRef, globalRef, attsForUniqueCheck)
     }
 
     private fun checkMandatoryAtts(localRef: EntityRef, globalRef: EntityRef, attsToCheck: Set<String>) {
@@ -143,6 +159,50 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             error(
                 "Mandatory attributes are empty: ${emptyMandatoryAtts.joinToString(", ")} " +
                     "for record $globalRef"
+            )
+        }
+    }
+
+    private fun checkUniqueAtts(
+        localRef: EntityRef,
+        globalRef: EntityRef,
+        attsToCheck: Set<String>
+    ) {
+        if (attsToCheck.isEmpty()) {
+            return
+        }
+
+        val valueByAtt = ctx.recordsService.getAtts(localRef, attsToCheck).getAtts()
+        val notNullValueByAtt = ObjectData.create()
+        valueByAtt.forEach { key, value ->
+            if (value.isNotNull() && value.isNotEmpty()) {
+                notNullValueByAtt[key] = value
+            }
+        }
+
+        val predicates = notNullValueByAtt.map { key, value ->
+            Predicates.eq(key, value)
+        }
+        if (predicates.isEmpty()) {
+            return
+        }
+
+        val query = RecordsQuery.create {
+            withSourceId(localRef.getSourceId())
+            withLanguage(PredicateService.LANGUAGE_PREDICATE)
+            withQuery(
+                Predicates.and(
+                    Predicates.or(predicates),
+                    Predicates.notEq(RecordConstants.ATT_ID, localRef.getLocalId())
+                )
+            )
+            withMaxItems(1)
+        }
+        val foundRecord = ctx.recordsService.queryOne(query, attsToCheck)
+
+        if (foundRecord != null) {
+            error(
+                "$globalRef has non-unique attributes $notNullValueByAtt"
             )
         }
     }
