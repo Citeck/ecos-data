@@ -259,6 +259,10 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     entity = DbEntity()
                 }
             } else {
+                if (record.id.isEmpty() && !isRunAsSystem) {
+                    error("Record with id: '$extId' already exists. The id must be unique.")
+                }
+
                 val aspects = entity.attributes[DbRecord.ATT_ASPECTS]
                 if (aspects != null && aspects is Collection<*>) {
                     val aspectIds = aspects.mapNotNull { it as? Long }
