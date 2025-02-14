@@ -537,6 +537,60 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         test("min(num)", 1.0)
     }
 
+    @Test
+    fun testWithMetaFieldToLoad() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("assoc")
+                    .withType(AttributeType.ASSOC)
+                    .build()
+            )
+        )
+        createRecord()
+        val rec1 = createRecord()
+        createRecord("assoc" to rec1)
+        createRecord("assoc" to rec1)
+        createRecord("assoc" to rec1)
+
+        val recs0 = records.query(
+            baseQuery.copy()
+                .withGroupBy(listOf("assoc"))
+                .build(),
+            listOf(
+                "count(*)",
+                "assoc?localId"
+            )
+        ).getRecords().map { it.getAtts() }.associate {
+            it["assoc?localId"].asText() to it["count(*)"].asInt()
+        }
+
+        assertThat(recs0).hasSize(2)
+        assertThat(recs0[""]).isEqualTo(2)
+        assertThat(recs0[rec1.getLocalId()]).isEqualTo(3)
+
+        createRecord()
+
+        val recs1 = records.query(
+            baseQuery.copy()
+                .withGroupBy(listOf("assoc"))
+                .build(),
+            listOf(
+                "count(*)",
+                "assoc?localId",
+                "_creator{id:?id,disp:?disp}",
+                "_modifier{id:?id,disp:?disp}"
+            )
+        ).getRecords().map { it.getAtts() }.associate {
+            it["assoc?localId"].asText() to it["count(*)"].asInt()
+        }
+
+        assertThat(recs1).hasSize(2)
+        assertThat(recs1[""]).isEqualTo(3)
+        assertThat(recs1[rec1.getLocalId()]).isEqualTo(3)
+    }
+
     open class TaskIdWithCount(
         val taskId: String,
         @AttName("count(*)")

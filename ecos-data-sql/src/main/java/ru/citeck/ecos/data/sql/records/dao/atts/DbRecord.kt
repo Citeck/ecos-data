@@ -665,6 +665,14 @@ class DbRecord(
         return super.getAs(type)
     }
 
+    private fun metaAssocIdToRef(id: Long): EntityRef {
+        return if (id < 0L) {
+            EntityRef.EMPTY
+        } else {
+            assocMapping[id] ?: error("Ref doesn't found for id $id")
+        }
+    }
+
     override fun getAtt(name: String): Any? {
         if (assocsInnerAdditionalAtts.containsKey(name)) {
             return if (!isCurrentUserHasAttReadPerms(name)) {
@@ -678,8 +686,8 @@ class DbRecord(
             ATT_NAME -> displayName
             RecordConstants.ATT_MODIFIED, "cm:modified" -> entity.modified
             RecordConstants.ATT_CREATED, "cm:created" -> entity.created
-            RecordConstants.ATT_MODIFIER -> toEntityRef(entity.modifier)
-            RecordConstants.ATT_CREATOR -> toEntityRef(entity.creator)
+            RecordConstants.ATT_MODIFIER -> metaAssocIdToRef(entity.modifier)
+            RecordConstants.ATT_CREATOR -> metaAssocIdToRef(entity.creator)
             RecordConstants.ATT_WORKSPACE -> {
                 if (workspace.isNullOrBlank()) {
                     EntityRef.EMPTY
