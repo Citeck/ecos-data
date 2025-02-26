@@ -23,7 +23,11 @@ class OperatorToken(val type: Type) : ExpressionToken {
         }
 
         fun valueOf(value: String): OperatorToken {
-            return OperatorToken(Type.values().first { it.value.equals(value, true) })
+            return OperatorToken(
+                Type.entries.firstOrNull {
+                    it.value.equals(value, true)
+                } ?: error("Unknown operator value: '$value'")
+            )
         }
 
         fun getIdxAfterOperator(value: String, fromIdx: Int): Int {
@@ -121,10 +125,7 @@ class OperatorToken(val type: Type) : ExpressionToken {
             return false
         }
         other as OperatorToken
-        if (type != other.type) {
-            return false
-        }
-        return true
+        return type == other.type
     }
 
     override fun hashCode(): Int {

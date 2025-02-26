@@ -1422,6 +1422,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         } else {
                             value.asDouble()
                         }
+                    } else if (value.isBoolean()) {
+                        value.asBoolean()
                     } else {
                         value.asText()
                     }

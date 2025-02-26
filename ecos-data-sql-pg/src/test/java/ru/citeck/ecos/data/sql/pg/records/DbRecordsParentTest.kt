@@ -7,9 +7,54 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsParentTest : DbRecordsTestBase() {
+
+    @Test
+    fun compareParentAttWithCurrentRecAttTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create { withId("text") },
+                AttributeDef.create { withId("text2") },
+                AttributeDef.create {
+                    withId("childAssoc")
+                    withType(AttributeType.ASSOC)
+                    withConfig(ObjectData.create().set("child", true))
+                }
+            )
+        )
+
+        val rec0 = createRecord("text" to "abc", "text2" to "abc")
+        val rec1 = createRecord("text" to "abc", "_parent" to rec0, "_parentAtt" to "childAssoc")
+        val rec2 = createRecord("text" to "abc", "_parent" to rec0, "_parentAtt" to "childAssoc")
+        val rec3 = createRecord("text" to "def", "_parent" to rec0, "_parentAtt" to "childAssoc")
+        val rec4 = createRecord("text" to "hij", "_parent" to rec0, "_parentAtt" to "childAssoc")
+        val rec5 = createRecord("_parent" to rec0, "_parentAtt" to "childAssoc")
+
+        fun assertParentQuery(query: Predicate, vararg expected: EntityRef) {
+            val records = records.query(
+                baseQuery.copy()
+                    .withSortBy(emptyList())
+                    .withQuery(
+                        Predicates.and(
+                            Predicates.eq("_parent._type", REC_TEST_TYPE_REF),
+                            query
+                        )
+                    ).build()
+            ).getRecords()
+            assertThat(records).containsExactlyInAnyOrderElementsOf(expected.asList())
+        }
+        assertParentQuery(Predicates.eq("(_parent.text = text)", true), rec1, rec2)
+        assertParentQuery(Predicates.eq("(_parent.text = coalesce(text, ''))", true), rec1, rec2)
+        assertParentQuery(Predicates.eq("(_parent.text <> coalesce(text, ''))", true), rec3, rec4, rec5)
+        assertParentQuery(Predicates.eq("(_parent.text = coalesce(text, ''))", false), rec3, rec4, rec5)
+        assertParentQuery(Predicates.eq("(_parent.text = text)", false), rec3, rec4)
+        assertParentQuery(Predicates.eq("(_parent.text <> text)", false), rec1, rec2)
+    }
 
     @Test
     fun test() {

@@ -18,7 +18,12 @@ class ExpressionParserTest {
         }
 
         fun assertExpr(expression: String, expected: ExpressionToken) {
-            assertThat(ExpressionParser.parse(expression)).describedAs(expression).isEqualTo(expected)
+            val parseRes = try {
+                ExpressionParser.parse(expression)
+            } catch (e: Throwable) {
+                throw RuntimeException("Expression parsing error: '$expression'", e)
+            }
+            assertThat(parseRes).describedAs(expression).isEqualTo(expected)
         }
 
         assertInvalidExpr("*")
@@ -67,7 +72,7 @@ class ExpressionParserTest {
             )
         )
 
-        for (operatorType in OperatorToken.Type.values()) {
+        for (operatorType in OperatorToken.Type.entries) {
             assertExpr(
                 "(a ${operatorType.value} b)",
                 GroupToken(
@@ -151,6 +156,26 @@ class ExpressionParserTest {
             "(someFunc(\"someColumn1\",\"someColumn2\") " +
                 "* 'someString'+ \"SomeColumn\" * 123 / (abc + 23*qqqqQ+ (Qq + count(*))))",
             expected0
+        )
+
+        assertExpr(
+            "(_parent.text = text)",
+            GroupToken(
+                ColumnToken("_parent.text"),
+                OperatorToken(OperatorToken.Type.EQUAL),
+                ColumnToken("text")
+            )
+        )
+        assertExpr(
+            "(_parent.text <> coalesce(text,''))",
+            GroupToken(
+                ColumnToken("_parent.text"),
+                OperatorToken(OperatorToken.Type.NOT_EQUAL),
+                FunctionToken(
+                    "coalesce",
+                    listOf(ColumnToken("text"), ScalarToken(""))
+                )
+            )
         )
     }
 }
