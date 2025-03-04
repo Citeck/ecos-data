@@ -35,6 +35,57 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
     }
 
     @Test
+    fun changeWsScopeTest() {
+
+        fun registerType(privateWsScope: Boolean) {
+            registerType(
+                TypeInfo.create()
+                    .withId(REC_TEST_TYPE_ID)
+                    .withWorkspaceScope(if (privateWsScope) WorkspaceScope.PRIVATE else WorkspaceScope.PUBLIC)
+                    .withModel(
+                        TypeModelDef.create()
+                            .withAttributes(
+                                listOf(
+                                    AttributeDef.create()
+                                        .withId("text")
+                                        .build()
+                                )
+                            ).build()
+                    ).build()
+            )
+        }
+
+        registerType(false)
+
+        fun assertWs(rec: EntityRef, expected: String?) {
+            val ws = records.getAtt(rec, RecordConstants.ATT_WORKSPACE + "?id")
+            if (expected == null) {
+                assertThat(ws).isEqualTo(DataValue.NULL)
+            } else {
+                assertThat(ws.isTextual()).isTrue()
+                val wsRef = EntityRef.valueOf(ws.asText())
+                assertThat(wsRef.getAppName()).isEqualTo(AppName.EMODEL)
+                assertThat(wsRef.getSourceId()).isEqualTo("workspace")
+                assertThat(wsRef.getLocalId()).isEqualTo(expected)
+            }
+        }
+
+        val rec0 = createRecord("text" to "abc")
+
+        assertWs(rec0, null)
+        assertThat(records.query(baseQuery).getRecords()).contains(rec0)
+        assertThat(records.query(baseQuery.copy().withWorkspaces(listOf("default")).build()).getRecords()).contains(rec0)
+        assertThat(records.query(baseQuery.copy().withWorkspaces(listOf("unknown")).build()).getRecords()).contains(rec0)
+
+        registerType(true)
+
+        assertWs(rec0, "default")
+        assertThat(records.query(baseQuery).getRecords()).contains(rec0)
+        assertThat(records.query(baseQuery.copy().withWorkspaces(listOf("default")).build()).getRecords()).contains(rec0)
+        assertThat(records.query(baseQuery.copy().withWorkspaces(listOf("unknown")).build()).getRecords()).isEmpty()
+    }
+
+    @Test
     fun createChildTest() {
 
         registerType(

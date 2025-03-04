@@ -18,7 +18,7 @@ class DbWorkspaceService(
         schemaCtx
     )
 
-    fun getWorkspaceNameById(id: Long): String {
+    fun getWorkspaceExtIdById(id: Long): String {
         return dataService.findById(id)?.extId ?: ""
     }
 

@@ -24,6 +24,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
@@ -59,6 +60,8 @@ class DbRecord(
         const val ASSOC_SRC_ATT_PREFIX = "assoc_src_"
 
         const val ASPECT_VERSIONABLE = "versionable"
+
+        const val WS_DEFAULT = "default"
 
         val ATTS_MAPPING = mapOf(
             "id" to DbEntity.EXT_ID,
@@ -158,7 +161,7 @@ class DbRecord(
     private val workspace: String? by lazy {
         val wsId = entity.workspace
         if (wsId != null) {
-            ctx.dataService.getTableContext().getWorkspaceService().getWorkspaceNameById(wsId)
+            ctx.dataService.getTableContext().getWorkspaceService().getWorkspaceExtIdById(wsId)
         } else {
             null
         }
@@ -431,8 +434,13 @@ class DbRecord(
         }
     }
 
-    fun getWorkspaceName(): String? {
-        return workspace
+    fun getWorkspaceId(): String? {
+        val finalWorkspace = workspace
+        return if (finalWorkspace.isNullOrBlank() && typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
+            WS_DEFAULT
+        } else {
+            finalWorkspace
+        }
     }
 
     fun getTypeInfo(): TypeInfo {
@@ -689,10 +697,11 @@ class DbRecord(
             RecordConstants.ATT_MODIFIER -> metaAssocIdToRef(entity.modifier)
             RecordConstants.ATT_CREATOR -> metaAssocIdToRef(entity.creator)
             RecordConstants.ATT_WORKSPACE -> {
-                if (workspace.isNullOrBlank()) {
+                val workspaceId = getWorkspaceId()
+                if (workspaceId.isNullOrBlank()) {
                     EntityRef.EMPTY
                 } else {
-                    EntityRef.create(AppName.EMODEL, "workspace", workspace)
+                    EntityRef.create(AppName.EMODEL, "workspace", workspaceId)
                 }
             }
             StatusConstants.ATT_STATUS -> {
@@ -737,7 +746,7 @@ class DbRecord(
             return true
         }
         val ws = workspace
-        if (!ws.isNullOrEmpty()) {
+        if (!ws.isNullOrEmpty() && ws != WS_DEFAULT) {
             val runAs = AuthContext.getCurrentRunAsAuth()
             if (!ctx.workspaceService.getUserWorkspaces(runAs.getUser()).contains(ws)) {
                 return false

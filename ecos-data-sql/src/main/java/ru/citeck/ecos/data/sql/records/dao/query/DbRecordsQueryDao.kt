@@ -163,11 +163,17 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
             }
             if (workspacesForQuery.isNotEmpty()) {
                 val existingWsIds = dbWsService.getIdsForExistingWsInAnyOrder(workspacesForQuery)
-                val wsCondition = if (workspacesForQuery.contains("")) {
-                    Predicates.or(
-                        Predicates.empty(DbEntity.WORKSPACE),
-                        Predicates.inVals(DbEntity.WORKSPACE, existingWsIds)
-                    )
+                val wsCondition = if (workspacesForQuery.contains("") ||
+                    workspacesForQuery.contains(DbRecord.WS_DEFAULT)
+                ) {
+                    if (existingWsIds.isEmpty()) {
+                        Predicates.empty(DbEntity.WORKSPACE)
+                    } else {
+                        Predicates.or(
+                            Predicates.empty(DbEntity.WORKSPACE),
+                            Predicates.inVals(DbEntity.WORKSPACE, existingWsIds)
+                        )
+                    }
                 } else if (existingWsIds.isEmpty()) {
                     return RecsQueryRes()
                 } else {
