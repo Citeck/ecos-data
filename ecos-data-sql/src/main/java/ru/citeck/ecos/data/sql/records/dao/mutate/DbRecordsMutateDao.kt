@@ -50,7 +50,6 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.time.Instant
 import java.util.*
-import java.util.regex.Pattern
 import kotlin.system.measureTimeMillis
 
 class DbRecordsMutateDao : DbRecordsDaoCtxAware {
@@ -71,10 +70,6 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             RecordConstants.ATT_MODIFIER,
         )
 
-        private const val MAX_LENGTH_ID = 128
-        private const val VALID_ID_PATTERN_TXT = """^(\w+|\w[\w$/.-]+\w)$"""
-        private val VALID_ID_PATTERN = Pattern.compile(VALID_ID_PATTERN_TXT)
-
         private val log = KotlinLogging.logger {}
     }
 
@@ -94,12 +89,21 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
     private lateinit var entityPermsService: DbEntityPermsService
 
+    private lateinit var allowedRecordIdPattern: String
+    private lateinit var allowedRecordIdRegex: Regex
+    private var recordIdMaxLength = 100
+
     private val recsPrepareToCommitTxnKey = Any()
 
     override fun setRecordsDaoCtx(recordsDaoCtx: DbRecordsDaoCtx) {
 
         daoCtx = recordsDaoCtx
         config = daoCtx.config
+
+        allowedRecordIdPattern = config.allowedRecordIdPattern
+        allowedRecordIdRegex = allowedRecordIdPattern.toRegex()
+        recordIdMaxLength = config.recordIdMaxLength
+
         dataService = daoCtx.dataService
         recordRefService = daoCtx.recordRefService
         ecosTypeService = daoCtx.ecosTypeService
@@ -294,11 +298,11 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         if (customExtId.isNotBlank() && entityToMutate.extId != customExtId) {
 
             if (entityToMutate.id == DbEntity.NEW_REC_ID) {
-                if (!VALID_ID_PATTERN.matcher(customExtId).matches()) {
-                    error("Invalid id: '$customExtId'. Valid pattern: '$VALID_ID_PATTERN_TXT'")
+                if (!allowedRecordIdRegex.matches(customExtId)) {
+                    error("Invalid id: '$customExtId'. Valid pattern: '$allowedRecordIdPattern'")
                 }
-                if (customExtId.length > MAX_LENGTH_ID) {
-                    error("Invalid id: '$customExtId'. Max length $MAX_LENGTH_ID")
+                if (customExtId.length > recordIdMaxLength) {
+                    error("Invalid id: '$customExtId'. Max length $recordIdMaxLength")
                 }
                 entityToMutate.extId = customExtId
             } else {

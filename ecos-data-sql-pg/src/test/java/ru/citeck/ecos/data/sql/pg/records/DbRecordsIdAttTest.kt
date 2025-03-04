@@ -144,31 +144,11 @@ class DbRecordsIdAttTest : DbRecordsTestBase() {
         }
         assertThat(ex.message).contains("Invalid id: '8LChLp53383qxUpdO2KAZagSs8wmN9qDxiSc1ryxB8i34X2nPZ8QNdc31r342IhiAB5UpQFxiC9NCu6uWNSmkL8EdXMX09KQG1rRMHwW26ZWC8DLE1s3bWCC340Ngo4oz'. Max length 128")
 
-        ex = assertThrows<Exception> {
-            AuthContext.runAs("user") {
-                createRecord(
-                    RecordConstants.ATT_ID to "...1"
-                )
-            }
+        // valid id
+        AuthContext.runAs("user") {
+            createRecord(RecordConstants.ATT_ID to "...1")
+            createRecord(RecordConstants.ATT_ID to "///1")
+            createRecord(RecordConstants.ATT_ID to "-abc-")
         }
-        assertThat(ex.message).contains("Invalid id: '...1'. Valid pattern: '^(\\w+|\\w[\\w$/.-]+\\w)$'")
-
-        ex = assertThrows<Exception> {
-            AuthContext.runAs("user") {
-                createRecord(
-                    RecordConstants.ATT_ID to "///1"
-                )
-            }
-        }
-        assertThat(ex.message).contains("Invalid id: '///1'. Valid pattern: '^(\\w+|\\w[\\w$/.-]+\\w)$'")
-
-        ex = assertThrows<Exception> {
-            AuthContext.runAs("user") {
-                createRecord(
-                    RecordConstants.ATT_ID to "-abc-"
-                )
-            }
-        }
-        assertThat(ex.message).contains("Invalid id: '-abc-'. Valid pattern: '^(\\w+|\\w[\\w$/.-]+\\w)$'")
     }
 }

@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.records
 
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import java.util.regex.Pattern
 
 data class DbRecordsDaoConfig(
     val id: String,
@@ -10,12 +11,15 @@ data class DbRecordsDaoConfig(
     val deletable: Boolean,
     val queryMaxItems: Int,
     val authEnabled: Boolean,
-    val enableTotalCount: Boolean
+    val enableTotalCount: Boolean,
+    val allowedRecordIdPattern: String,
+    val recordIdMaxLength: Int
 ) {
 
     companion object {
 
         private val VALID_ID_PATTERN = "[\\w-]+".toRegex()
+        private val DEFAULT = create().buildUnchecked()
 
         @JvmStatic
         fun create(): Builder {
@@ -44,6 +48,8 @@ data class DbRecordsDaoConfig(
         var queryMaxItems: Int = 10000
         var authEnabled: Boolean = false
         var enableTotalCount: Boolean = true
+        var allowedRecordIdPattern: String = """^[\w$/.-]+$"""
+        var recordIdMaxLength: Int = 128
 
         constructor(base: DbRecordsDaoConfig) : this() {
             this.id = base.id
@@ -54,6 +60,8 @@ data class DbRecordsDaoConfig(
             this.queryMaxItems = base.queryMaxItems
             this.authEnabled = base.authEnabled
             this.enableTotalCount = base.enableTotalCount
+            this.allowedRecordIdPattern = base.allowedRecordIdPattern
+            this.recordIdMaxLength = base.recordIdMaxLength
         }
 
         fun withId(id: String?): Builder {
@@ -96,10 +104,29 @@ data class DbRecordsDaoConfig(
             return this
         }
 
+        fun withAllowedRecordIdPattern(allowedRecordIdPattern: String?): Builder {
+            this.allowedRecordIdPattern = allowedRecordIdPattern ?: DEFAULT.allowedRecordIdPattern
+            return this
+        }
+
+        fun withRecordIdMaxLength(recordIdMaxLength: Int?): Builder {
+            this.recordIdMaxLength = recordIdMaxLength ?: DEFAULT.recordIdMaxLength
+            return this
+        }
+
         fun build(): DbRecordsDaoConfig {
             if (!VALID_ID_PATTERN.matches(id)) {
                 error("Invalid records DAO id - '$id'. Valid pattern: $VALID_ID_PATTERN")
             }
+            try {
+                Pattern.compile(allowedRecordIdPattern)
+            } catch (e: Throwable) {
+                throw RuntimeException("Invalid allowedRecordIdPattern: '$allowedRecordIdPattern'", e)
+            }
+            return buildUnchecked()
+        }
+
+        internal fun buildUnchecked(): DbRecordsDaoConfig {
             return DbRecordsDaoConfig(
                 id,
                 typeRef,
@@ -108,7 +135,9 @@ data class DbRecordsDaoConfig(
                 deletable,
                 queryMaxItems,
                 authEnabled,
-                enableTotalCount
+                enableTotalCount,
+                allowedRecordIdPattern,
+                recordIdMaxLength
             )
         }
     }
