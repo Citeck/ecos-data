@@ -567,11 +567,16 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
                             attDef == null &&
                             newPred.getAttribute().contains("(")
                         ) {
-                            newPred = ValuePredicate(
-                                queryCtx.registerConditionAtt(newPred.getAttribute()),
-                                newPred.getType(),
-                                newPred.getValue()
-                            )
+                            val newAtt = queryCtx.registerConditionAtt(newPred.getAttribute())
+                            newPred = if (newAtt.isBlank()) {
+                                Predicates.alwaysFalse()
+                            } else {
+                                ValuePredicate(
+                                    newAtt,
+                                    newPred.getType(),
+                                    newPred.getValue()
+                                )
+                            }
                         }
                         newPred
                     }

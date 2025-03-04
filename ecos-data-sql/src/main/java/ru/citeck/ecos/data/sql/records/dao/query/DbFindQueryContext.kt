@@ -101,7 +101,7 @@ class DbFindQueryContext(
 
     fun registerConditionAtt(attribute: String): String {
         if (attribute.contains('(')) {
-            return expressionsCtx.register(attribute, true) ?: ""
+            return expressionsCtx.register(attribute, false) ?: ""
         }
         return DbRecord.ATTS_MAPPING.getOrDefault(attribute, attribute)
     }

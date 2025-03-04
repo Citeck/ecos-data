@@ -7,11 +7,46 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsParentTest : DbRecordsTestBase() {
+
+    @Test
+    fun compareNonExistentParentAttWithCurrentRecAttTest() {
+        registerAtts(
+            listOf(
+                // AttributeDef.create { withId("text") },
+                AttributeDef.create {
+                    withId("childAssoc")
+                    withType(AttributeType.ASSOC)
+                    withConfig(ObjectData.create().set("child", true))
+                }
+            )
+        )
+
+        val rec0 = createRecord("text" to "")
+        val rec1 = createRecord("text" to "", "_parent" to rec0, "_parentAtt" to "childAssoc")
+
+        val query = baseQuery.copy()
+            .withSortBy(emptyList())
+            .withQuery(
+                Predicates.and(
+                    Predicates.eq("_parent._type", REC_TEST_TYPE_REF),
+                    Predicates.or(
+                        Predicates.eq("(_parent.text = text)", false),
+                        Predicates.and(
+                            Predicates.notEmpty(RecordConstants.ATT_PARENT),
+                            Predicates.empty("unknownAtt")
+                        )
+                    )
+                )
+            ).build()
+
+        assertThat(records.query(query).getRecords()).containsExactly(rec1)
+    }
 
     @Test
     fun compareParentAttWithCurrentRecAttTest() {

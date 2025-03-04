@@ -91,10 +91,18 @@ class DbExpressionAttsContext(
                     token
                 }
                 if (resToken.name.contains('.')) {
-                    val newName = queryContext.prepareAssocSelectJoin(resToken.name, true)
-                    ColumnToken(newName ?: "")
+                    val newName = queryContext.prepareAssocSelectJoin(resToken.name, false)
+                    if (newName.isNullOrBlank()) {
+                        NullToken
+                    } else {
+                        ColumnToken(newName)
+                    }
                 } else {
-                    resToken
+                    if (!queryContext.getTableContext().hasColumn(resToken.name)) {
+                        NullToken
+                    } else {
+                        resToken
+                    }
                 }
             } else if (token is FunctionToken) {
                 if (token.name == "startOfMonth" || token.name == "endOfMonth") {
