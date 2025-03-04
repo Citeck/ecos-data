@@ -50,10 +50,7 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.time.Instant
 import java.util.*
-import kotlin.collections.ArrayList
-import kotlin.collections.HashSet
-import kotlin.collections.LinkedHashMap
-import kotlin.collections.LinkedHashSet
+import java.util.regex.Pattern
 import kotlin.system.measureTimeMillis
 
 class DbRecordsMutateDao : DbRecordsDaoCtxAware {
@@ -73,6 +70,10 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             RecordConstants.ATT_MODIFIED,
             RecordConstants.ATT_MODIFIER,
         )
+
+        private const val MAX_LENGTH_ID = 128
+        private const val VALID_ID_PATTERN_TXT = """^(\w+|\w[\w$/.-]+\w)$"""
+        private val VALID_ID_PATTERN = Pattern.compile(VALID_ID_PATTERN_TXT)
 
         private val log = KotlinLogging.logger {}
     }
@@ -293,6 +294,12 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         if (customExtId.isNotBlank() && entityToMutate.extId != customExtId) {
 
             if (entityToMutate.id == DbEntity.NEW_REC_ID) {
+                if (!VALID_ID_PATTERN.matcher(customExtId).matches()) {
+                    error("Invalid id: '$customExtId'. Valid pattern: '$VALID_ID_PATTERN_TXT'")
+                }
+                if (customExtId.length > MAX_LENGTH_ID) {
+                    error("Invalid id: '$customExtId'. Max length $MAX_LENGTH_ID")
+                }
                 entityToMutate.extId = customExtId
             } else {
                 dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
