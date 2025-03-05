@@ -48,7 +48,7 @@ data class DbRecordsDaoConfig(
         var queryMaxItems: Int = 10000
         var authEnabled: Boolean = false
         var enableTotalCount: Boolean = true
-        var allowedRecordIdPattern: String = """^[\w$/.-]+$"""
+        var allowedRecordIdPattern: String = """^(\w+|\w[\w$/.-]+\w)$"""
         var recordIdMaxLength: Int = 128
 
         constructor(base: DbRecordsDaoConfig) : this() {
