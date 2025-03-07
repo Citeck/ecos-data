@@ -8,7 +8,6 @@ import ru.citeck.ecos.data.sql.service.expression.token.ExpressionToken
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records3.record.atts.schema.resolver.AttContext
 import ru.citeck.ecos.records3.record.atts.value.AttValue
-import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.txn.lib.TxnContext
 
 class DbRecordsAttsDao(
@@ -57,7 +56,7 @@ class DbRecordsAttsDao(
 
                     if (record == null || !record.isCurrentUserHasReadPerms()) {
                         log.trace { "[Get record atts] User doesn't have permissions for $id or record doesn't exists" }
-                        EmptyAttValue.INSTANCE
+                        NonExistentDbRecord(id)
                     } else {
                         log.trace { "[Get record atts] Record $id available and will be returned from getRecordAtts" }
                         record
