@@ -14,6 +14,7 @@ import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
 import ru.citeck.ecos.data.sql.records.DbRecordsControlAtts
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocRefsDiff
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.computed.DbComputedAttsComponent
@@ -41,7 +42,9 @@ import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.model.lib.workspace.WorkspaceService
 import ru.citeck.ecos.records2.RecordConstants
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
+import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
 import ru.citeck.ecos.txn.lib.TxnContext
@@ -284,6 +287,38 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     }
                     permsDao.updatePermissions(listOf(record.id))
                     return entity
+                }
+                if (record.attributes.has(DbRecordsControlAtts.UPDATE_WORKSPACE)) {
+                    if (!isRunAsSystemOrAdmin) {
+                        error("Workspace update allowed only for admin. Record: $record sourceId: '${config.id}'")
+                    }
+                    val updateToWorkspace = record.attributes[DbRecordsControlAtts.UPDATE_WORKSPACE].asText()
+                    assocsService.forEachAssoc(
+                        predicate = Predicates.and(
+                            Predicates.eq(DbAssocEntity.SOURCE_ID, entity.refId),
+                            Predicates.eq(DbAssocEntity.CHILD, true)
+                        ),
+                        batchSize = 100
+                    ) { children ->
+                        val childrenMutAtts = recordRefService.getEntityRefsByIds(children.map { it.targetId }).map {
+                            val atts = RecordAtts(it)
+                            atts.setAtt(DbRecordsControlAtts.UPDATE_WORKSPACE, updateToWorkspace)
+                            atts
+                        }
+                        daoCtx.recordsService.mutate(childrenMutAtts)
+                        false
+                    }
+                    val newWs = if (updateToWorkspace.isBlank()) {
+                        null
+                    } else {
+                        wsDbService.getOrCreateId(updateToWorkspace)
+                    }
+                    return if (entity.workspace != newWs) {
+                        entity.workspace = newWs
+                        dataService.save(entity)
+                    } else {
+                        entity
+                    }
                 }
             }
             entity

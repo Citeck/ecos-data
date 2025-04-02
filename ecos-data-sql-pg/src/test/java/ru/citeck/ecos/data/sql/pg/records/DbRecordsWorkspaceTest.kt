@@ -8,7 +8,9 @@ import org.junit.jupiter.params.provider.MethodSource
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.context.lib.auth.AuthRole
 import ru.citeck.ecos.context.lib.auth.data.SimpleAuthData
+import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
@@ -32,6 +34,62 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
                 *WorkspaceScope.entries.map { arrayOf(it, false) }.toTypedArray()
             )
         }
+    }
+
+    @Test
+    fun updateWorkspaceTest() {
+
+        val dao = registerType()
+            .withAttributes(
+                AttributeDef.create()
+                    .withId("children")
+                    .withType(AttributeType.ASSOC)
+                    .withMultiple(true)
+                    .withConfig(ObjectData.create().set("child", true))
+            )
+            .withWorkspaceScope(WorkspaceScope.PRIVATE).register()
+
+        val ws0 = "workspace-0"
+        val attWs = RecordConstants.ATT_WORKSPACE
+
+        fun assertWs(rec: EntityRef, expectedWs: String) {
+            assertThat(records.getAtt(rec, "$attWs?localId").asText()).isEqualTo(expectedWs)
+        }
+
+        val parent = dao.createRecord(attWs to ws0)
+        assertWs(parent, ws0)
+        val child0 = dao.createRecord(
+            attWs to ws0,
+            RecordConstants.ATT_PARENT to parent,
+            RecordConstants.ATT_PARENT_ATT to "children"
+        )
+        assertWs(child0, ws0)
+        val child1 = dao.createRecord(
+            attWs to ws0,
+            RecordConstants.ATT_PARENT to parent,
+            RecordConstants.ATT_PARENT_ATT to "children"
+        )
+        assertWs(child1, ws0)
+
+        val ws1 = "workspace-1"
+        workspaceService.setUserWorkspaces("admin", setOf(ws0, ws1))
+        workspaceService.setUserWorkspaces("user", setOf(ws0, ws1))
+        dao.setAuthoritiesWithWritePerms(parent, AuthRole.ADMIN, "user")
+
+        updateRecord(parent, "__updateWorkspace" to ws1)
+        listOf(parent, child0, child1).forEach { assertWs(it, ws1) }
+
+        AuthContext.runAs("admin", listOf(AuthRole.ADMIN)) {
+            updateRecord(parent, "__updateWorkspace" to ws0)
+            listOf(parent, child0, child1).forEach { assertWs(it, ws0) }
+        }
+
+        AuthContext.runAs("user") {
+            assertThrows<RuntimeException> {
+                updateRecord(parent, "__updateWorkspace" to ws1)
+            }
+        }
+        listOf(parent, child0, child1).forEach { assertWs(it, ws0) }
     }
 
     @Test

@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql.pg.records
+package ru.citeck.ecos.data.sql.pg.records.commons
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.commons.dbcp2.BasicDataSource
@@ -10,6 +10,7 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.commons.mime.MimeTypes
+import ru.citeck.ecos.commons.utils.NameUtils
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
@@ -719,6 +720,26 @@ abstract class DbRecordsTestBase {
             error("num-template id is blank")
         }
         this.numTemplates[numTemplate.id] = numTemplate
+    }
+
+    fun registerType(): TypeRegistration {
+        val mainSrcId = mainCtx.dao.getId()
+        return TypeRegistration(
+            REC_TEST_TYPE_ID,
+            mainSrcId
+        ) {
+            registerType(it)
+            if (it.sourceId == mainSrcId) {
+                mainCtx
+            } else {
+                val tableRef = DEFAULT_TABLE_REF.withTable(NameUtils.escape(it.sourceId))
+                registeredRecordsDao.find { testDao ->
+                    testDao.dao.getId() == it.sourceId
+                        && testDao.tableRef == tableRef
+                        && testDao.typeRef.getLocalId() == it.id
+                } ?: createRecordsDao(tableRef, ModelUtils.getTypeRef(it.id), it.sourceId)
+            }
+        }
     }
 
     fun registerType(typeDef: String) {
