@@ -642,7 +642,7 @@ abstract class DbRecordsTestBase {
         TxnContext.doInTxn {
             dataSource.connection.use { conn ->
                 val tables = ArrayList<String>()
-                conn.metaData.getTables(null, null, "", arrayOf("TABLE")).use { res ->
+                conn.metaData.getTables(null, null, "%", arrayOf("TABLE")).use { res ->
                     while (res.next()) {
                         tables.add("\"${res.getString("TABLE_SCHEM")}\".\"${res.getString("TABLE_NAME")}\"")
                     }
