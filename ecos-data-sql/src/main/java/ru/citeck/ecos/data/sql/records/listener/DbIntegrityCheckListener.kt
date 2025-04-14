@@ -201,8 +201,16 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         val foundRecord = ctx.recordsService.queryOne(query, attsToCheck)
 
         if (foundRecord != null) {
+            val recordAtts = foundRecord.getAtts()
+            val notUniqueAtts = ObjectData.create()
+            recordAtts.forEach { key, value ->
+                if (value.isNotNull() && notNullValueByAtt[key] == value) {
+                    notUniqueAtts[key] = value
+                }
+            }
+
             error(
-                "$globalRef has non-unique attributes $notNullValueByAtt"
+                "$globalRef has non-unique attributes $notUniqueAtts"
             )
         }
     }

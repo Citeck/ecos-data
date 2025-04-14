@@ -13,6 +13,8 @@ class DbRecordsUniqueAttTest : DbRecordsTestBase() {
     companion object {
         private const val NOT_UNIQUE_ATT = "notUniqueAtt"
         private const val UNIQUE_ATT = "uniqueAtt"
+        private const val UNIQUE_ATT_1 = "uniqueAtt_1"
+        private const val UNIQUE_ATT_2 = "uniqueAtt_2"
         private const val MULTIPLE_UNIQUE_ATT = "multipleUniqueAtt"
     }
 
@@ -26,6 +28,20 @@ class DbRecordsUniqueAttTest : DbRecordsTestBase() {
                 },
                 AttributeDef.create {
                     withId(UNIQUE_ATT)
+                    withType(AttributeType.TEXT)
+                    withConfig(
+                        ObjectData.create().set("unique", true)
+                    )
+                },
+                AttributeDef.create {
+                    withId(UNIQUE_ATT_1)
+                    withType(AttributeType.TEXT)
+                    withConfig(
+                        ObjectData.create().set("unique", true)
+                    )
+                },
+                AttributeDef.create {
+                    withId(UNIQUE_ATT_2)
                     withType(AttributeType.TEXT)
                     withConfig(
                         ObjectData.create().set("unique", true)
@@ -85,5 +101,29 @@ class DbRecordsUniqueAttTest : DbRecordsTestBase() {
 
         val attListValue = records.getAtt(record, "$MULTIPLE_UNIQUE_ATT[]?str").asStrList()
         assertThat(attListValue).isEqualTo(listOf("text1", "text2"))
+
+        record = createRecord(
+            UNIQUE_ATT to "value 1",
+            UNIQUE_ATT_1 to "value 1",
+            UNIQUE_ATT_2 to "value 1"
+        )
+
+        ex = assertThrows<Exception> {
+            createRecord(
+                UNIQUE_ATT to "value 1",
+                UNIQUE_ATT_1 to "value 2",
+                UNIQUE_ATT_2 to "value 2"
+            )
+        }
+        assertThat(ex.message).contains("has non-unique attributes {\"uniqueAtt\":\"value 1\"}")
+
+        ex = assertThrows<Exception> {
+            createRecord(
+                UNIQUE_ATT to "value 1",
+                UNIQUE_ATT_1 to "value 1",
+                UNIQUE_ATT_2 to "value 2"
+            )
+        }
+        assertThat(ex.message).contains("has non-unique attributes {\"uniqueAtt\":\"value 1\",\"uniqueAtt_1\":\"value 1\"}")
     }
 }
