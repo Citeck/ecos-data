@@ -734,9 +734,9 @@ abstract class DbRecordsTestBase {
             } else {
                 val tableRef = DEFAULT_TABLE_REF.withTable(NameUtils.escape(it.sourceId))
                 registeredRecordsDao.find { testDao ->
-                    testDao.dao.getId() == it.sourceId
-                        && testDao.tableRef == tableRef
-                        && testDao.typeRef.getLocalId() == it.id
+                    testDao.dao.getId() == it.sourceId &&
+                        testDao.tableRef == tableRef &&
+                        testDao.typeRef.getLocalId() == it.id
                 } ?: createRecordsDao(tableRef, ModelUtils.getTypeRef(it.id), it.sourceId)
             }
         }

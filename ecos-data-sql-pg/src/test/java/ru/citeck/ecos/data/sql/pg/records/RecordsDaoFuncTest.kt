@@ -2,8 +2,10 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 
 class RecordsDaoFuncTest : DbRecordsTestBase() {
 
@@ -50,5 +52,24 @@ class RecordsDaoFuncTest : DbRecordsTestBase() {
         ).getRecords().map { it.getAtt("srcId").asText() }
 
         assertThat(queryRes).containsExactlyInAnyOrder("emodel/test", "emodel/aaaa", "eproc/bbb", "eproc/bbbbbb", "")
+    }
+
+    @Test
+    fun concatTest() {
+
+        registerType()
+            .withAttributes(
+                AttributeDef.create().withId("text"),
+                AttributeDef.create().withId("num").withType(AttributeType.NUMBER)
+            ).register()
+
+        val rec = createRecord("text" to "value", "num" to 10)
+
+        fun assertValue(att: String, expected: Any?) {
+            assertThat(records.getAtt(rec, att)).isEqualTo(DataValue.of(expected))
+        }
+
+        assertValue("concat('aa','bb', text)", "aabbvalue")
+        assertValue("concat_ws('-','bb', text, num)", "bb-value-10")
     }
 }

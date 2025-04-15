@@ -370,6 +370,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
         var workspaceRef = EntityRef.EMPTY
         if (isNewEntity) {
+            val isPrivateWsScope = typeInfo.workspaceScope == WorkspaceScope.PRIVATE
             var parentWsId = ""
             val parentRef = record.getAtt(RecordConstants.ATT_PARENT).asText().toEntityRef()
             if (parentRef.isNotEmpty() && parentRef.getAppName() != AppName.ALFRESCO) {
@@ -387,7 +388,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 parentWsId = parentAtts.workspace
             }
             var mutWorkspaceId = record.getAtt(RecordConstants.ATT_WORKSPACE).asText().toEntityRef().getLocalId()
-            if (typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
+            if (isPrivateWsScope) {
                 if (mutWorkspaceId.isBlank()) {
                     mutWorkspaceId = parentWsId
                 } else if (parentRef.isNotEmpty() && mutWorkspaceId != parentWsId) {
@@ -399,7 +400,10 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             } else {
                 mutWorkspaceId = parentWsId
             }
-            if (typeInfo.workspaceScope == WorkspaceScope.PRIVATE && mutWorkspaceId.isEmpty()) {
+            if (isPrivateWsScope && mutWorkspaceId.isEmpty() && typeInfo.defaultWorkspace.isNotBlank()) {
+                mutWorkspaceId = typeInfo.defaultWorkspace
+            }
+            if (isPrivateWsScope && mutWorkspaceId.isEmpty()) {
                 error(
                     "You should provide ${RecordConstants.ATT_WORKSPACE} attribute to create new record " +
                         "with private workspace scope. Type: '${typeInfo.id}'"
@@ -505,7 +509,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         if (isNewEntity) {
             val globalRef = daoCtx.getGlobalRef(entityToMutate.extId)
             entityToMutate.refId = recordRefService.getOrCreateIdByEntityRefs(listOf(globalRef))[0]
-            if (workspaceRef.isNotEmpty()) {
+            if (workspaceRef.isNotEmpty() && workspaceRef.getLocalId() != DbRecord.WS_DEFAULT) {
                 entityToMutate.workspace = wsDbService.getOrCreateId(workspaceRef.getLocalId())
             }
         }

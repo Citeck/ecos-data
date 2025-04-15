@@ -93,6 +93,34 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
     }
 
     @Test
+    fun defaultWorkspaceTest() {
+
+        registerType()
+            .withWorkspaceScope(WorkspaceScope.PRIVATE)
+            .withAttributes(AttributeDef.create().withId("text"))
+            .register()
+
+        assertThrows<Exception> {
+            createRecord("text" to "abc")
+        }
+        fun assertWs(rec: EntityRef, expected: String) {
+            assertThat(records.getAtt(rec, "_workspace?localId").asText()).isEqualTo(expected)
+        }
+
+        val rec0 = createRecord("text" to "abc", "_workspace" to "abc")
+        assertWs(rec0, "abc")
+
+        registerType()
+            .withWorkspaceScope(WorkspaceScope.PRIVATE)
+            .withAttributes(AttributeDef.create().withId("text"))
+            .withDefaultWorkspace("def-ws")
+            .register()
+
+        val rec1 = createRecord("text" to "abc")
+        assertWs(rec1, "def-ws")
+    }
+
+    @Test
     fun changeWsScopeTest() {
 
         fun registerType(privateWsScope: Boolean) {

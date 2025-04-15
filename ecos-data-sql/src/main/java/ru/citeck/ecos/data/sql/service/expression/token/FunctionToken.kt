@@ -38,7 +38,7 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
         val STRING_FUNCTIONS = setOf(
             "btrim", "char_length", "character_length", "initcap", "length", "lower",
             "lpad", "ltrim", "position", "repeat", "replace", "rpad", "rtrim", "strpos",
-            "substring", "translate", "trim", "upper", "substringBefore"
+            "substring", "translate", "trim", "upper", "substringBefore", "concat", "concat_ws"
         )
         val OTHER_FUNCTIONS = setOf(
             "coalesce",

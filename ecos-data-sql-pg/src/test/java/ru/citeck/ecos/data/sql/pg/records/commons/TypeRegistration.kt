@@ -12,10 +12,16 @@ class TypeRegistration(
 ) {
 
     private var workspaceScope: WorkspaceScope = WorkspaceScope.PUBLIC
+    private var defaultWorkspace: String = ""
     private var attributes: List<AttributeDef> = emptyList()
 
     fun withWorkspaceScope(workspaceScope: WorkspaceScope): TypeRegistration {
         this.workspaceScope = workspaceScope
+        return this
+    }
+
+    fun withDefaultWorkspace(defaultWorkspace: String): TypeRegistration {
+        this.defaultWorkspace = defaultWorkspace
         return this
     }
 
@@ -35,13 +41,18 @@ class TypeRegistration(
     }
 
     fun register(): DbRecordsTestBase.RecordsDaoTestCtx {
-        return register(TypeInfo.create()
-            .withId(typeId)
-            .withSourceId(sourceId)
-            .withWorkspaceScope(workspaceScope)
-            .withModel(TypeModelDef.create()
-                .withAttributes(attributes)
-                .build())
-            .build())
+        return register(
+            TypeInfo.create()
+                .withId(typeId)
+                .withSourceId(sourceId)
+                .withWorkspaceScope(workspaceScope)
+                .withDefaultWorkspace(defaultWorkspace)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(attributes)
+                        .build()
+                )
+                .build()
+        )
     }
 }
