@@ -7,6 +7,9 @@ import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
+import ru.citeck.ecos.records2.RecordConstants
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbRecordsUniqueAttTest : DbRecordsTestBase() {
 
@@ -19,7 +22,7 @@ class DbRecordsUniqueAttTest : DbRecordsTestBase() {
     }
 
     @Test
-    fun test() {
+    fun mainTest() {
         registerAtts(
             listOf(
                 AttributeDef.create {
@@ -125,5 +128,100 @@ class DbRecordsUniqueAttTest : DbRecordsTestBase() {
             )
         }
         assertThat(ex.message).contains("has non-unique attributes {\"uniqueAtt\":\"value 1\",\"uniqueAtt_1\":\"value 1\"}")
+    }
+
+    @Test
+    fun `uniqueAtt with private workspace scope test`() {
+        val privateWSTypeDao = registerType()
+            .withAttributes(
+                AttributeDef.create {
+                    withId(NOT_UNIQUE_ATT)
+                    withType(AttributeType.TEXT)
+                },
+                AttributeDef.create {
+                    withId(UNIQUE_ATT)
+                    withType(AttributeType.TEXT)
+                    withConfig(
+                        ObjectData.create().set("unique", true)
+                    )
+                }
+            )
+            .withWorkspaceScope(WorkspaceScope.PRIVATE).register()
+
+        val ws0 = "workspace-0"
+        val ws1 = "workspace-1"
+
+        var record0 = privateWSTypeDao.createRecord(
+            RecordConstants.ATT_WORKSPACE to ws0,
+            NOT_UNIQUE_ATT to "value",
+            UNIQUE_ATT to "unique value"
+        )
+        assertWs(record0, ws0)
+
+        val record1 = privateWSTypeDao.createRecord(
+            RecordConstants.ATT_WORKSPACE to ws1,
+            NOT_UNIQUE_ATT to "value",
+            UNIQUE_ATT to "unique value"
+        )
+        assertWs(record1, ws1)
+
+        var ex = assertThrows<Exception> {
+            privateWSTypeDao.createRecord(
+                RecordConstants.ATT_WORKSPACE to ws0,
+                NOT_UNIQUE_ATT to "value",
+                UNIQUE_ATT to "unique value"
+            )
+        }
+        assertThat(ex.message).contains("has non-unique attributes {\"uniqueAtt\":\"unique value\"}")
+
+        ex = assertThrows<Exception> {
+            privateWSTypeDao.createRecord(
+                RecordConstants.ATT_WORKSPACE to ws1,
+                NOT_UNIQUE_ATT to "value",
+                UNIQUE_ATT to "unique value"
+            )
+        }
+        assertThat(ex.message).contains("has non-unique attributes {\"uniqueAtt\":\"unique value\"}")
+    }
+
+    @Test
+    fun `uniqueAtt with public workspace scope test`() {
+        val publicWSTypeDao = registerType()
+            .withAttributes(
+                AttributeDef.create {
+                    withId(NOT_UNIQUE_ATT)
+                    withType(AttributeType.TEXT)
+                },
+                AttributeDef.create {
+                    withId(UNIQUE_ATT)
+                    withType(AttributeType.TEXT)
+                    withConfig(
+                        ObjectData.create().set("unique", true)
+                    )
+                }
+            )
+            .withWorkspaceScope(WorkspaceScope.PUBLIC).register()
+
+        val ws0 = "workspace-0"
+
+        val record0 = publicWSTypeDao.createRecord(
+            RecordConstants.ATT_WORKSPACE to ws0,
+            NOT_UNIQUE_ATT to "value",
+            UNIQUE_ATT to "unique value"
+        )
+        assertWs(record0, "")
+
+        val ex = assertThrows<Exception> {
+            publicWSTypeDao.createRecord(
+                RecordConstants.ATT_WORKSPACE to ws0,
+                NOT_UNIQUE_ATT to "value",
+                UNIQUE_ATT to "unique value"
+            )
+        }
+        assertThat(ex.message).contains("has non-unique attributes {\"uniqueAtt\":\"unique value\"}")
+    }
+
+    private fun assertWs(rec: EntityRef, expectedWs: String) {
+        assertThat(records.getAtt(rec, "${RecordConstants.ATT_WORKSPACE}?localId").asText()).isEqualTo(expectedWs)
     }
 }

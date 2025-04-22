@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.records.listener
 
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.commons.utils.StringUtils
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
@@ -8,6 +9,7 @@ import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.model.Predicates
@@ -140,7 +142,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             }
         }
         checkMandatoryAtts(localRef, globalRef, attsForMandatoryCheck)
-        checkUniqueAtts(localRef, globalRef, attsForUniqueCheck)
+        checkUniqueAtts(data, localRef, globalRef, attsForUniqueCheck)
     }
 
     private fun checkMandatoryAtts(localRef: EntityRef, globalRef: EntityRef, attsToCheck: Set<String>) {
@@ -164,6 +166,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
     }
 
     private fun checkUniqueAtts(
+        data: RecordData,
         localRef: EntityRef,
         globalRef: EntityRef,
         attsToCheck: Set<String>
@@ -187,17 +190,25 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             return
         }
 
-        val query = RecordsQuery.create {
-            withSourceId(localRef.getSourceId())
-            withLanguage(PredicateService.LANGUAGE_PREDICATE)
-            withQuery(
+        val queryBuilder = RecordsQuery.create()
+            .withSourceId(localRef.getSourceId())
+            .withLanguage(PredicateService.LANGUAGE_PREDICATE)
+            .withQuery(
                 Predicates.and(
                     Predicates.or(predicates),
                     Predicates.notEq(RecordConstants.ATT_ID, localRef.getLocalId())
                 )
             )
-            withMaxItems(1)
+            .withMaxItems(1)
+
+        if (data.typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
+            val workspace = ctx.recordsService.getAtt(localRef, "${RecordConstants.ATT_WORKSPACE}?localId").asText()
+            if (StringUtils.isNotBlank(workspace)) {
+                queryBuilder.withWorkspaces(listOf(workspace))
+            }
         }
+
+        val query = queryBuilder.build()
         val foundRecord = ctx.recordsService.queryOne(query, attsToCheck)
 
         if (foundRecord != null) {
