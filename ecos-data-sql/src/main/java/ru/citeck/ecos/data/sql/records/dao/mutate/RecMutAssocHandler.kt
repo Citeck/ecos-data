@@ -15,6 +15,7 @@ import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
@@ -60,7 +61,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 val convertedValue = preProcessContentAssocBeforeMutate(
                     recToMutate.extId,
                     column.attribute.id,
-                    assocValue
+                    assocValue,
+                    recToMutate.workspace
                 )
                 if (convertedValue !== assocValue) {
                     recAttributes[column.attribute.id] = convertedValue
@@ -72,7 +74,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
     private fun preProcessContentAssocBeforeMutate(
         recordId: String,
         attId: String,
-        value: DataValue
+        value: DataValue,
+        workspaceId: Long?
     ): DataValue {
         if (value.isNull()) {
             return value
@@ -82,7 +85,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 return value
             }
             val result = DataValue.createArr()
-            value.forEach { result.add(preProcessContentAssocBeforeMutate(recordId, attId, it)) }
+            value.forEach { result.add(preProcessContentAssocBeforeMutate(recordId, attId, it, workspaceId)) }
             return result
         }
         if (!value.isObject()) {
@@ -119,6 +122,13 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
             val name = value["originalName"]
             if (name.isNotNull()) {
                 childAttributes[ScalarType.DISP.mirrorAtt] = name
+            }
+
+            if (typeInfo.workspaceScope == WorkspaceScope.PRIVATE && workspaceId != null && workspaceId >= 0) {
+                val wsExtId = ctx.tableCtx.getWorkspaceService().getWorkspaceExtIdById(workspaceId)
+                if (wsExtId.isNotBlank()) {
+                    childAttributes[RecordConstants.ATT_WORKSPACE] = wsExtId
+                }
             }
 
             val childRef = ctx.recordsService.create(typeInfo.sourceId, childAttributes)

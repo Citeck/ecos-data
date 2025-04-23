@@ -356,4 +356,65 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
         assertThat(assocsRefs).hasSize(2)
         assertThat(assocsRefs[0]).isEqualTo(assocRef)
     }
+
+    @Test
+    fun privateWsAssocAsContentTest() {
+        registerType(
+            """
+            ---
+            id: $REC_TEST_TYPE_ID
+            workspaceScope: PRIVATE
+            model:
+              attributes:
+                  - id: assoc
+                    type: ASSOC
+                    multiple: true
+                    config:
+                      child: true
+                      typeRef: emodel/type@user-base
+            """.trimIndent()
+        )
+
+        registerType(
+            """
+            ---
+            id: document
+            parentRef: emodel/type@user-base
+            workspaceScope: PRIVATE
+            model:
+              attributes:
+                  - id: name
+                  - id: content
+                    type: CONTENT
+            """.trimIndent()
+        )
+        val contentBase64 = Base64.getEncoder().encodeToString("some-text".toByteArray())
+
+        val record = createRecord(
+            "_workspace" to "test-ws",
+            "assoc" to listOf(
+                DataValue.of(
+                    """
+              {
+                "storage": "base64",
+                "name": "Assoc test2.-ad3e182c-3aac-4d7d-b145-880dae799698.txt",
+                "url": "data:text/plain;base64,$contentBase64",
+                "size": ${contentBase64.toByteArray().size},
+                "type": "text/plain",
+                "fileType": "document",
+                "originalName": "Assoc test2.txt"
+              }
+                    """.trimIndent()
+                )
+            )
+        )
+
+        val results = records.getAtt(record, "assoc[]{bytes:content.bytes,ws:_workspace?localId}").map {
+            String(Base64.getDecoder().decode(it["bytes"].asText()), Charsets.UTF_8) to it["ws"].asText()
+        }
+
+        assertThat(results).hasSize(1)
+        assertThat(results[0].first).isEqualTo("some-text")
+        assertThat(results[0].second).isEqualTo("test-ws")
+    }
 }

@@ -2,14 +2,54 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.data.sql.records.listener.DbRecordChangedEvent
+import ru.citeck.ecos.data.sql.records.listener.DbRecordDeletedEvent
 import ru.citeck.ecos.data.sql.records.listener.DbRecordsListenerAdapter
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.records2.RecordConstants
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.util.*
 
 class DbRecordsEventsTest : DbRecordsTestBase() {
+
+    @Test
+    fun deletedTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("children")
+                    .withType(AttributeType.ASSOC)
+                    .withConfig(ObjectData.create().set("child", true))
+                    .build()
+            )
+        )
+
+        val parent = createRecord()
+        val child = createRecord(
+            "id" to "child",
+            RecordConstants.ATT_PARENT to parent,
+            RecordConstants.ATT_PARENT_ATT to "children"
+        )
+
+        val deletedEvents = mutableListOf<DbRecordDeletedEvent>()
+
+        recordsDao.addListener(object : DbRecordsListenerAdapter() {
+            override fun onDeleted(event: DbRecordDeletedEvent) {
+                deletedEvents.add(event)
+                if (event.localRef.getLocalId() == "child") {
+                    assertThat(records.getAtt(event.record, "_parent?id").toEntityRef()).isEqualTo(parent)
+                }
+            }
+        })
+
+        records.delete(parent)
+
+        assertThat(deletedEvents).hasSize(2)
+    }
 
     @Test
     fun assocsTest() {

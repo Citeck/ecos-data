@@ -1,9 +1,11 @@
 package ru.citeck.ecos.data.sql.pg.records.commons
 
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.type.dto.TypeAspectDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
+import ru.citeck.ecos.model.lib.utils.ModelUtils
 
 class TypeRegistration(
     private var typeId: String,
@@ -14,6 +16,7 @@ class TypeRegistration(
     private var workspaceScope: WorkspaceScope = WorkspaceScope.PUBLIC
     private var defaultWorkspace: String = ""
     private var attributes: List<AttributeDef> = emptyList()
+    private val aspects: MutableList<TypeAspectDef> = ArrayList()
 
     fun withWorkspaceScope(workspaceScope: WorkspaceScope): TypeRegistration {
         this.workspaceScope = workspaceScope
@@ -27,6 +30,16 @@ class TypeRegistration(
 
     fun withAttributes(vararg attributes: AttributeDef.Builder): TypeRegistration {
         this.attributes = attributes.map { it.build() }
+        return this
+    }
+
+    fun addAspect(aspect: TypeAspectDef.Builder): TypeRegistration {
+        aspects.add(aspect.build())
+        return this
+    }
+
+    fun addAspect(aspectId: String): TypeRegistration {
+        aspects.add(TypeAspectDef.create().withRef(ModelUtils.getAspectRef(aspectId)).build())
         return this
     }
 
@@ -52,6 +65,7 @@ class TypeRegistration(
                         .withAttributes(attributes)
                         .build()
                 )
+                .withAspects(aspects)
                 .build()
         )
     }

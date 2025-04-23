@@ -11,12 +11,10 @@ import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthRole
 import ru.citeck.ecos.context.lib.auth.data.SimpleAuthData
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
+import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
-import ru.citeck.ecos.model.lib.type.dto.TypeInfo
-import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
-import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
+import ru.citeck.ecos.model.lib.type.dto.*
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicates
@@ -45,8 +43,12 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
                     .withId("children")
                     .withType(AttributeType.ASSOC)
                     .withMultiple(true)
-                    .withConfig(ObjectData.create().set("child", true))
+                    .withConfig(ObjectData.create().set("child", true)),
+                AttributeDef.create()
+                    .withId("content")
+                    .withType(AttributeType.CONTENT)
             )
+            .addAspect(DbRecord.ASPECT_VERSIONABLE)
             .withWorkspaceScope(WorkspaceScope.PRIVATE).register()
 
         val ws0 = "workspace-0"
@@ -90,6 +92,16 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
             }
         }
         listOf(parent, child0, child1).forEach { assertWs(it, ws0) }
+
+        val contentData0 = createTempRecord(content = "content-0".toByteArray())
+        val contentData1 = createTempRecord(content = "content-1".toByteArray())
+
+        updateRecord(child0, "content" to contentData0)
+        updateRecord(child0, "content" to contentData1)
+
+        updateRecord(parent, "__updateWorkspace" to ws1)
+
+        listOf(parent, child0, child1).forEach { assertWs(it, ws1) }
     }
 
     @Test
@@ -258,7 +270,7 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
             "_parentAtt" to "children"
         )
 
-        assertThat(getWsId(publicChildWithParent)).isEqualTo(testWsId)
+        assertThat(getWsId(publicChildWithParent)).isEqualTo("")
 
         assertThrows<RuntimeException> {
             privateWsChildCtx.createRecord("text" to "test")

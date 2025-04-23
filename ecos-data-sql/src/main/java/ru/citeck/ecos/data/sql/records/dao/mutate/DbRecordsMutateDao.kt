@@ -367,18 +367,18 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             }
         }
 
+        val isMutationFromParent = record.getAtt(RecMutAssocHandler.MUTATION_FROM_PARENT_FLAG).asBoolean()
         val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
         var workspaceRef = EntityRef.EMPTY
-        if (isNewEntity) {
-            val isPrivateWsScope = typeInfo.workspaceScope == WorkspaceScope.PRIVATE
+        if (isNewEntity && typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
             var parentWsId = ""
             val parentRef = record.getAtt(RecordConstants.ATT_PARENT).asText().toEntityRef()
-            if (parentRef.isNotEmpty() && parentRef.getAppName() != AppName.ALFRESCO) {
+            if (!isMutationFromParent && parentRef.isNotEmpty() && parentRef.getAppName() != AppName.ALFRESCO) {
                 val parentAtts = AuthContext.runAsSystem {
                     daoCtx.recordsService.getAtts(parentRef, OnCreateParentAtts::class.java)
                 }
                 /*
-                // todo
+                // todo?
                 if (parentAtts.notExists) {
                     error(
                         "Parent record doesn't exists: '$parentRef'. " +
@@ -388,7 +388,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 parentWsId = parentAtts.workspace
             }
             var mutWorkspaceId = record.getAtt(RecordConstants.ATT_WORKSPACE).asText().toEntityRef().getLocalId()
-            if (isPrivateWsScope) {
+            if (!isMutationFromParent) {
                 if (mutWorkspaceId.isBlank()) {
                     mutWorkspaceId = parentWsId
                 } else if (parentRef.isNotEmpty() && mutWorkspaceId != parentWsId) {
@@ -397,22 +397,18 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                             "Parent: $parentRef Parent ws: $parentWsId Child ws: $mutWorkspaceId Child type: ${typeInfo.id}"
                     )
                 }
-            } else {
-                mutWorkspaceId = parentWsId
             }
-            if (isPrivateWsScope && mutWorkspaceId.isEmpty() && typeInfo.defaultWorkspace.isNotBlank()) {
+            if (mutWorkspaceId.isEmpty() && typeInfo.defaultWorkspace.isNotBlank()) {
                 mutWorkspaceId = typeInfo.defaultWorkspace
             }
-            if (isPrivateWsScope && mutWorkspaceId.isEmpty()) {
+            if (mutWorkspaceId.isEmpty()) {
                 error(
                     "You should provide ${RecordConstants.ATT_WORKSPACE} attribute to create new record " +
                         "with private workspace scope. Type: '${typeInfo.id}'"
                 )
             }
-            workspaceRef = if (mutWorkspaceId.isNotBlank()) {
-                EntityRef.create(AppName.EMODEL, "workspace", mutWorkspaceId)
-            } else {
-                EntityRef.EMPTY
+            if (mutWorkspaceId.isNotBlank()) {
+                workspaceRef = EntityRef.create(AppName.EMODEL, "workspace", mutWorkspaceId)
             }
             if (!isRunAsSystem && workspaceRef.isNotEmpty()) {
                 val workspaces = workspaceService.getUserWorkspaces(currentRunAsUser)
