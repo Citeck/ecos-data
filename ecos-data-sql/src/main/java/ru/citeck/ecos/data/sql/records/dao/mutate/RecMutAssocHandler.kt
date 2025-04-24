@@ -124,8 +124,12 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 childAttributes[ScalarType.DISP.mirrorAtt] = name
             }
 
-            if (typeInfo.workspaceScope == WorkspaceScope.PRIVATE && workspaceId != null && workspaceId >= 0) {
-                val wsExtId = ctx.tableCtx.getWorkspaceService().getWorkspaceExtIdById(workspaceId)
+            if (typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
+                val wsExtId = if (workspaceId == null || workspaceId < 0) {
+                    DbRecord.WS_DEFAULT
+                } else {
+                    ctx.tableCtx.getWorkspaceService().getWorkspaceExtIdById(workspaceId)
+                }
                 if (wsExtId.isNotBlank()) {
                     childAttributes[RecordConstants.ATT_WORKSPACE] = wsExtId
                 }

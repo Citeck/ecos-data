@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
+import org.junit.jupiter.params.provider.ValueSource
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
@@ -104,8 +105,9 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
         listOf(parent, child0, child1).forEach { assertWs(it, ws1) }
     }
 
-    @Test
-    fun defaultWorkspaceTest() {
+    @ParameterizedTest
+    @ValueSource(strings = [DbRecord.WS_DEFAULT, "other"])
+    fun defaultWorkspaceTest(workspace: String) {
 
         registerType()
             .withWorkspaceScope(WorkspaceScope.PRIVATE)
@@ -125,11 +127,11 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
         registerType()
             .withWorkspaceScope(WorkspaceScope.PRIVATE)
             .withAttributes(AttributeDef.create().withId("text"))
-            .withDefaultWorkspace("def-ws")
+            .withDefaultWorkspace(workspace)
             .register()
 
         val rec1 = createRecord("text" to "abc")
-        assertWs(rec1, "def-ws")
+        assertWs(rec1, workspace)
     }
 
     @Test

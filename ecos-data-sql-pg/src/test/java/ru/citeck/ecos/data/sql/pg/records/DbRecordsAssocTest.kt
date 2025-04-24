@@ -3,9 +3,12 @@ package ru.citeck.ecos.data.sql.pg.records
 import com.github.javafaker.Faker
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
+import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.records2.predicate.model.Predicate
@@ -357,8 +360,9 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
         assertThat(assocsRefs[0]).isEqualTo(assocRef)
     }
 
-    @Test
-    fun privateWsAssocAsContentTest() {
+    @ParameterizedTest
+    @ValueSource(strings = [DbRecord.WS_DEFAULT, "other"])
+    fun privateWsAssocAsContentTest(workspace: String) {
         registerType(
             """
             ---
@@ -391,7 +395,7 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
         val contentBase64 = Base64.getEncoder().encodeToString("some-text".toByteArray())
 
         val record = createRecord(
-            "_workspace" to "test-ws",
+            "_workspace" to workspace,
             "assoc" to listOf(
                 DataValue.of(
                     """
@@ -415,6 +419,6 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
 
         assertThat(results).hasSize(1)
         assertThat(results[0].first).isEqualTo("some-text")
-        assertThat(results[0].second).isEqualTo("test-ws")
+        assertThat(results[0].second).isEqualTo(workspace)
     }
 }
