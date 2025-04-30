@@ -280,18 +280,9 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
         val pwsChild0 = privateWsChildCtx.createRecord("text" to "test", "_workspace" to "child-ws")
         assertThat(getWsId(pwsChild0)).isEqualTo("child-ws")
 
-        assertThrows<RuntimeException> {
-            privateWsChildCtx.createRecord(
-                "text" to "test",
-                "_workspace" to "child-ws",
-                "_parent" to mainRec,
-                "_parentAtt" to "children"
-            )
-        }
-
         val pwsChild1 = privateWsChildCtx.createRecord(
             "text" to "test",
-            "_workspace" to testWsId,
+            "_workspace" to "child-ws", // workspace att ignored when parent exists and it has own workspace
             "_parent" to mainRec,
             "_parentAtt" to "children"
         )
@@ -299,10 +290,18 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
 
         val pwsChild2 = privateWsChildCtx.createRecord(
             "text" to "test",
+            "_workspace" to testWsId,
             "_parent" to mainRec,
             "_parentAtt" to "children"
         )
         assertThat(getWsId(pwsChild2)).isEqualTo(testWsId)
+
+        val pwsChild3 = privateWsChildCtx.createRecord(
+            "text" to "test",
+            "_parent" to mainRec,
+            "_parentAtt" to "children"
+        )
+        assertThat(getWsId(pwsChild3)).isEqualTo(testWsId)
     }
 
     @ParameterizedTest

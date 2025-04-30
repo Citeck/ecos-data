@@ -555,10 +555,11 @@ class DbRecord(
         fun getValueForOperations(attribute: String, value: Any?, attDef: AttributeDef): Any? {
             return if (attribute != ATT_ASPECTS && DbRecordsUtils.isAssocLikeAttribute(attDef)) {
                 DbAssocAttValuesContainer(
+                    entity,
                     ctx,
                     value,
                     DbRecordsUtils.isChildAssocAttribute(attDef),
-                    attDef.multiple
+                    attDef
                 )
             } else {
                 value ?: return null

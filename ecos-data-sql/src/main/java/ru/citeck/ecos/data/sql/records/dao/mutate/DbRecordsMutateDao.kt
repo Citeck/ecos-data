@@ -379,6 +379,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 }
                 /*
                 // todo?
+                // move to before commit action?
                 if (parentAtts.notExists) {
                     error(
                         "Parent record doesn't exists: '$parentRef'. " +
@@ -387,16 +388,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 }*/
                 parentWsId = parentAtts.workspace
             }
-            var mutWorkspaceId = record.getAtt(RecordConstants.ATT_WORKSPACE).asText().toEntityRef().getLocalId()
-            if (!isMutationFromParent) {
-                if (mutWorkspaceId.isBlank()) {
-                    mutWorkspaceId = parentWsId
-                } else if (parentRef.isNotEmpty() && mutWorkspaceId != parentWsId) {
-                    error(
-                        "Child and parent workspaces doesn't match. " +
-                            "Parent: $parentRef Parent ws: $parentWsId Child ws: $mutWorkspaceId Child type: ${typeInfo.id}"
-                    )
-                }
+            var mutWorkspaceId = parentWsId.ifBlank {
+                record.getAtt(RecordConstants.ATT_WORKSPACE).asText().toEntityRef().getLocalId()
             }
             if (mutWorkspaceId.isEmpty() && typeInfo.defaultWorkspace.isNotBlank()) {
                 mutWorkspaceId = typeInfo.defaultWorkspace
@@ -680,10 +673,11 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     }.toSet()
 
                     val assocValuesContainer = DbAssocAttValuesContainer(
+                        entityToMutate,
                         daoCtx,
                         refsBefore,
                         DbRecordsUtils.isChildAssocAttribute(attDef.attribute),
-                        attDef.attribute.multiple
+                        attDef.attribute
                     )
                     allAssocsValues[att] = assocValuesContainer
 
@@ -772,6 +766,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             changedAssocs,
             isAssocForceDeletion,
             currentUserRefId,
+            isMutationFromChild,
             perms,
             allAssocsValues
         )
@@ -784,7 +779,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     optionalAtts,
                     changedAssocs,
                     isAssocForceDeletion,
-                    currentUserRefId
+                    currentUserRefId,
+                    isMutationFromChild
                 )
             )
         }
@@ -919,7 +915,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             fullColumns,
             ArrayList(),
             true,
-            currentUserRefId
+            currentUserRefId,
+            false
         )
         entity.name = component.computeDisplayName(DbRecord(daoCtx, entity), typeRef)
 
@@ -976,6 +973,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         changedAssocs: MutableList<DbAssocRefsDiff>,
         isAssocForceDeletion: Boolean,
         currentUserRefId: Long,
+        isMutationFromChild: Boolean,
         perms: DbRecordPermsContext? = null,
         multiAssocValues: Map<String, DbAssocAttValuesContainer> = emptyMap()
     ): List<DbColumnDef> {
@@ -991,9 +989,12 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 continue
             }
             if (perms?.hasAttWritePerms(dbColumnDef.name) == false) {
-                log.warn {
-                    "User $currentUser can't change attribute ${dbColumnDef.name} " +
-                        "for record ${config.id}@${recToMutate.extId}"
+                val msg = "Permission Denied. User $currentUser can't change attribute ${dbColumnDef.name} " +
+                    "for record ${config.id}@${recToMutate.extId}"
+                if (isMutationFromChild) {
+                    error(msg)
+                } else {
+                    log.warn { msg }
                 }
             } else {
                 notEmptyColumns.add(dbColumnDef)

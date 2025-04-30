@@ -71,7 +71,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         }
     }
 
-    private fun preProcessContentAssocBeforeMutate(
+    fun preProcessContentAssocBeforeMutate(
         recordId: String,
         attId: String,
         value: DataValue,

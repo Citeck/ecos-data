@@ -2,12 +2,15 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.data.sql.pg.ContentUtils
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
+import java.util.*
 
 class DbRecordsAddRemAssocTest : DbRecordsTestBase() {
 
@@ -24,6 +27,12 @@ class DbRecordsAddRemAssocTest : DbRecordsTestBase() {
                     withId("multi_assoc")
                     withType(AttributeType.ASSOC)
                     withMultiple(true)
+                },
+                AttributeDef.create {
+                    withId("child_assocs")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                    withConfig(ObjectData.create().set("child", true))
                 }
             )
         )
@@ -66,6 +75,25 @@ class DbRecordsAddRemAssocTest : DbRecordsTestBase() {
         assertThat(getAssocsList("multi_assoc")).isEqualTo(listOf(extRef0, extRef2))
         updateRecord(rec0, "att_rem_multi_assoc" to listOf(extRef0, extRef2))
         assertThat(getAssocsList("multi_assoc")).isEqualTo(emptyList<EntityRef>())
+
+        val rec1 = createRecord()
+
+        val content0 = ContentUtils.createContentObjFromText("Content0", fileType = ATTACHMENT_TYPE_ID)
+        val content1 = ContentUtils.createContentObjFromText("Content1", fileType = ATTACHMENT_TYPE_ID)
+        records.mutateAtt(rec1, "child_assocs", listOf(content0, content1))
+
+        fun assertChildNodesContent(vararg expected: String) {
+            val contents = records.getAtt(rec1, "child_assocs[].content.bytes").map {
+                String(Base64.getDecoder().decode(it.asText()))
+            }
+            assertThat(contents).containsExactly(*expected)
+        }
+        assertChildNodesContent("Content0", "Content1")
+
+        val content2 = ContentUtils.createContentObjFromText("Content2", fileType = ATTACHMENT_TYPE_ID)
+        records.mutateAtt(rec1, "att_add_child_assocs", content2)
+
+        assertChildNodesContent("Content0", "Content1", "Content2")
     }
 
     @Test

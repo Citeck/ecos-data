@@ -91,6 +91,7 @@ abstract class DbRecordsTestBase {
 
         const val TEMP_FILE_TYPE_ID = "temp-file"
         const val THUMBNAIL_TYPE_ID = "thumbnail"
+        const val ATTACHMENT_TYPE_ID = "attachment"
 
         val REC_TEST_TYPE_REF = ModelUtils.getTypeRef(REC_TEST_TYPE_ID)
 
@@ -161,7 +162,7 @@ abstract class DbRecordsTestBase {
                         .build()
                 ).build(),
             TypeInfo.create()
-                .withId("thumbnail")
+                .withId(THUMBNAIL_TYPE_ID)
                 .withParentRef(ModelUtils.getTypeRef("base"))
                 .withSourceId(THUMBNAIL_TYPE_ID)
                 .withModel(
@@ -173,6 +174,26 @@ abstract class DbRecordsTestBase {
                                     .build(),
                                 AttributeDef.create()
                                     .withId("srcAttribute")
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("content")
+                                    .withType(AttributeType.CONTENT)
+                                    .build()
+                            )
+                        )
+                        .build()
+                ).build(),
+            TypeInfo.create()
+                .withId(ATTACHMENT_TYPE_ID)
+                .withParentRef(ModelUtils.getTypeRef("base"))
+                .withSourceId(ATTACHMENT_TYPE_ID)
+                .withModel(
+                    TypeModelDef.create()
+                        .withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("name")
+                                    .withType(AttributeType.MLTEXT)
                                     .build(),
                                 AttributeDef.create()
                                     .withId("content")
@@ -213,6 +234,7 @@ abstract class DbRecordsTestBase {
     lateinit var mainCtx: RecordsDaoTestCtx
     lateinit var tempCtx: RecordsDaoTestCtx
     lateinit var thumbnailCtx: RecordsDaoTestCtx
+    lateinit var attachmentCtx: RecordsDaoTestCtx
 
     lateinit var delegationService: CustomDelegationService
     lateinit var workspaceService: CustomWorkspaceService
@@ -377,6 +399,11 @@ abstract class DbRecordsTestBase {
             DEFAULT_TABLE_REF.withTable(THUMBNAIL_TYPE_ID),
             ModelUtils.getTypeRef(THUMBNAIL_TYPE_ID),
             THUMBNAIL_TYPE_ID
+        )
+        attachmentCtx = createRecordsDao(
+            DEFAULT_TABLE_REF.withTable(ATTACHMENT_TYPE_ID),
+            ModelUtils.getTypeRef(ATTACHMENT_TYPE_ID),
+            ATTACHMENT_TYPE_ID
         )
 
         mainCtxInitialized = true

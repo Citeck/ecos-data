@@ -25,6 +25,56 @@ import java.lang.RuntimeException
 class DbRecordsChildNodesTest : DbRecordsTestBase() {
 
     @Test
+    fun testWithChildAttPerms() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("childAssoc")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                    withConfig(ObjectData.create("""{"child":true}"""))
+                }
+            )
+        )
+
+        val parentRec = createRecord()
+
+        fun createChild(vararg atts: Pair<String, Any?>): EntityRef {
+            return super.createRecord(*atts, "_parent" to parentRec, "_parentAtt" to "childAssoc")
+        }
+        fun getChildrenFromParent(): List<EntityRef> {
+            return records.getAtt(parentRec, "childAssoc[]?id").asList(EntityRef::class.java)
+        }
+        fun cleanChildrenAtt() {
+            records.mutateAtt(parentRec, "childAssoc", null)
+        }
+
+        val childRef1 = createChild()
+
+        assertThat(getChildrenFromParent()).containsExactly(childRef1)
+        cleanChildrenAtt()
+        assertThat(getChildrenFromParent()).isEmpty()
+
+        setAuthoritiesWithAttWritePerms(parentRec, "childAssoc", "user0")
+
+        AuthContext.runAs("user1") {
+            val ex = assertThrows<Exception> { createChild() }
+            assertThat(ex.message).containsIgnoringCase("Permission Denied")
+        }
+
+        assertThat(getChildrenFromParent()).isEmpty()
+
+        val childRef2 = AuthContext.runAs("user0") {
+            createChild()
+        }
+        assertThat(getChildrenFromParent()).containsExactly(childRef2)
+
+        val childRef3 = createChild()
+        assertThat(getChildrenFromParent()).containsExactly(childRef2, childRef3)
+    }
+
+    @Test
     fun removeChildAssocTest() {
 
         registerAtts(
