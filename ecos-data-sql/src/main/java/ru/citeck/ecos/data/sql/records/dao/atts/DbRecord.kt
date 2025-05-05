@@ -18,6 +18,7 @@ import ru.citeck.ecos.data.sql.records.dao.atts.content.DbDefaultLocalContentVal
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbDefaultRemoteContentValue
 import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
+import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceDesc
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
@@ -32,7 +33,6 @@ import ru.citeck.ecos.records3.record.atts.schema.utils.AttStrUtils
 import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
-import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.temporal.Temporal
 import java.util.*
@@ -702,7 +702,7 @@ class DbRecord(
                 if (workspaceId.isNullOrBlank()) {
                     EntityRef.EMPTY
                 } else {
-                    EntityRef.create(AppName.EMODEL, "workspace", workspaceId)
+                    DbWorkspaceDesc.getRef(workspaceId)
                 }
             }
             StatusConstants.ATT_STATUS -> {

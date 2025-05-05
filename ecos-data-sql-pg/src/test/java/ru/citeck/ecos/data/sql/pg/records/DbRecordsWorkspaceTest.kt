@@ -13,12 +13,14 @@ import ru.citeck.ecos.context.lib.auth.AuthRole
 import ru.citeck.ecos.context.lib.auth.data.SimpleAuthData
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
+import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceDesc
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.*
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.records3.record.dao.impl.mem.InMemDataRecordsDao
 import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
@@ -260,7 +262,7 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
             "_workspace" to testWsId
         )
         assertThat(getWsId(mainRec)).isEqualTo(testWsId)
-        assertThat(getWsRef(mainRec)).isEqualTo(EntityRef.create("emodel", "workspace", testWsId))
+        assertThat(getWsRef(mainRec)).isEqualTo(DbWorkspaceDesc.getRef(testWsId))
 
         val publicChildWithoutParent = publicWsChildCtx.createRecord("text" to "test")
         assertThat(getAtt(publicChildWithoutParent, "_workspace?id")).isEqualTo(DataValue.NULL)
@@ -302,6 +304,16 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
             "_parentAtt" to "children"
         )
         assertThat(getWsId(pwsChild3)).isEqualTo(testWsId)
+
+        // special case for workspace ref as parent
+        records.register(InMemDataRecordsDao("emodel/workspace"))
+        records.create("emodel/workspace", mapOf("id" to "test-ws"))
+        val pwsChild4 = privateWsChildCtx.createRecord(
+            "text" to "test",
+            "_parent" to "emodel/workspace@test-ws",
+            "_parentAtt" to "children"
+        )
+        assertThat(getWsId(pwsChild4)).isEqualTo("test-ws")
     }
 
     @ParameterizedTest

@@ -30,6 +30,7 @@ import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsContext
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
+import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceDesc
 import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceService
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -374,8 +375,12 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             var parentWsId = ""
             val parentRef = record.getAtt(RecordConstants.ATT_PARENT).asText().toEntityRef()
             if (!isMutationFromParent && parentRef.isNotEmpty() && parentRef.getAppName() != AppName.ALFRESCO) {
-                val parentAtts = AuthContext.runAsSystem {
-                    daoCtx.recordsService.getAtts(parentRef, OnCreateParentAtts::class.java)
+                val parentAtts = if (DbWorkspaceDesc.isWorkspaceRef(parentRef)) {
+                    OnCreateParentAtts(parentRef.getLocalId())
+                } else {
+                    AuthContext.runAsSystem {
+                        daoCtx.recordsService.getAtts(parentRef, OnCreateParentAtts::class.java)
+                    }
                 }
                 /*
                 // todo?
@@ -401,7 +406,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 )
             }
             if (mutWorkspaceId.isNotBlank()) {
-                workspaceRef = EntityRef.create(AppName.EMODEL, "workspace", mutWorkspaceId)
+                workspaceRef = DbWorkspaceDesc.getRef(mutWorkspaceId)
             }
             if (!isRunAsSystem && workspaceRef.isNotEmpty()) {
                 val workspaces = workspaceService.getUserWorkspaces(currentRunAsUser)
@@ -1065,8 +1070,6 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
     private class OnCreateParentAtts(
         @AttName(RecordConstants.ATT_WORKSPACE + ScalarType.LOCAL_ID_SCHEMA + "!")
-        val workspace: String,
-        @AttName(RecordConstants.ATT_NOT_EXISTS + ScalarType.BOOL_SCHEMA + "!")
-        val notExists: Boolean
+        val workspace: String
     )
 }
