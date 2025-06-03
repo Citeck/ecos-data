@@ -302,7 +302,9 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         var hasMoreItems: Boolean
         var totalCount: Long
 
-        val queryMaxItems = if (config.enableTotalCount) {
+        val enableTotalCount = config.enableTotalCount && groupBy.isEmpty()
+
+        val queryMaxItems = if (enableTotalCount) {
             maxItems
         } else {
             // Increment by 1 to detect if the table contains more records than the defined maximum limit
@@ -311,17 +313,17 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         val findRes = dataService.find(
             dbQuery,
             DbFindPage(totalSkipCount, queryMaxItems),
-            config.enableTotalCount
+            enableTotalCount
         )
         hasMoreItems = if (findRes.entities.size < queryMaxItems) {
             false
-        } else if (config.enableTotalCount) {
+        } else if (enableTotalCount) {
             findRes.totalCount > (findRes.entities.size + totalSkipCount)
         } else {
             findRes.entities.size == queryMaxItems
         }
 
-        var entities = if (config.enableTotalCount || findRes.entities.size <= maxItems) {
+        var entities = if (enableTotalCount || findRes.entities.size <= maxItems) {
             findRes.entities
         } else {
             // If we found more elements than maxItems, then we should drop last.
@@ -370,7 +372,7 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
                         } else {
                             records.add(record)
                             if (--filteredCount <= 0) {
-                                if (!config.enableTotalCount) {
+                                if (!enableTotalCount) {
                                     if (entityIdx < mappedEntities.lastIndex) {
                                         hasMoreItems = true
                                     } else {
@@ -387,7 +389,7 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
                         }
                     }
                 }
-                if (!config.enableTotalCount && filteredCount > 0) {
+                if (!enableTotalCount && filteredCount > 0) {
                     hasMoreItems = false
                 }
             }
