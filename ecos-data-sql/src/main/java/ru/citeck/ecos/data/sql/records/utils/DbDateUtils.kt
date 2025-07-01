@@ -1,7 +1,9 @@
 package ru.citeck.ecos.data.sql.records.utils
 
+import ru.citeck.ecos.context.lib.time.TimeZoneContext
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 
 object DbDateUtils {
@@ -33,7 +35,9 @@ object DbDateUtils {
         return when (value) {
             NOW -> Instant.now().toString()
             TODAY -> {
-                val todayTime = Instant.now().truncatedTo(ChronoUnit.DAYS)
+                val offset = TimeZoneContext.getUtcOffset()
+                val zone = ZoneOffset.ofTotalSeconds(offset.seconds.toInt())
+                val todayTime = Instant.now().atZone(zone).truncatedTo(ChronoUnit.DAYS).toInstant()
                 if (withTime) {
                     when (rangePart) {
                         RangePart.START -> todayTime.toString()
