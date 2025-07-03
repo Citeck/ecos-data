@@ -348,4 +348,39 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
             assertThat(queryRes.getRecords()).describedAs(pred.toString()).isEmpty()
         }
     }
+
+    @Test
+    fun testWithBackslashInName() {
+        registerAtts(
+            listOf(
+                AttributeDef.create()
+                    .withId("name")
+                    .build()
+            )
+        )
+
+        val name0 = """
+            OOO \"ABC\"
+        """.trimIndent()
+        val rc0 = createRecord("name" to name0)
+
+        val query = RecordsQuery.create {
+            withSourceId(recordsDao.getId())
+            withQuery(Predicates.eq("_name", name0))
+            withLanguage(PredicateService.LANGUAGE_PREDICATE)
+        }
+
+        val result = records.query(query)
+        assertThat(result.getRecords()).containsExactly(rc0)
+
+        val name1 = """
+            OOO /|\\ \"qq\\\"
+        """.trimIndent()
+        val rc1 = createRecord("name" to name1)
+        val query1 = query.copy {
+            withQuery(Predicates.eq("_name", name1))
+        }
+        val result1 = records.query(query1)
+        assertThat(result1.getRecords()).containsExactly(rc1)
+    }
 }

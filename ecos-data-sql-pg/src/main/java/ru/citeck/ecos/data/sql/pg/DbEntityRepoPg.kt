@@ -28,10 +28,11 @@ import ru.citeck.ecos.records2.predicate.model.*
 import java.sql.Date
 import java.sql.ResultSet
 import java.sql.Timestamp
-import java.time.*
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.collections.HashSet
 import kotlin.reflect.KClass
 
 open class DbEntityRepoPg internal constructor() : DbEntityRepo {
@@ -1443,6 +1444,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
                         convertedParam = convertedParam.lowercase()
                         if (type == ValuePredicate.Type.CONTAINS) {
+                            convertedParam = convertedParam.replace("\\", "\\\\")
                             convertedParam = "%$convertedParam%"
                         }
                     } else {
@@ -1545,6 +1547,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                                     .append(" ?")
                                 queryParam = queryParam.lowercase()
                                 if (type == ValuePredicate.Type.CONTAINS) {
+                                    queryParam = queryParam.replace("\\", "\\\\")
                                     queryParam = "%$queryParam%"
                                 }
                             } else {
