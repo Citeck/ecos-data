@@ -16,6 +16,10 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValue
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbDefaultLocalContentValue
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbDefaultRemoteContentValue
+import ru.citeck.ecos.data.sql.records.dao.atts.stage.DbStageEdge
+import ru.citeck.ecos.data.sql.records.dao.atts.stage.DbStageValue
+import ru.citeck.ecos.data.sql.records.dao.atts.status.DbStatusEdge
+import ru.citeck.ecos.data.sql.records.dao.atts.status.DbStatusValue
 import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceDesc
@@ -36,10 +40,6 @@ import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.time.temporal.Temporal
 import java.util.*
-import kotlin.collections.ArrayList
-import kotlin.collections.HashMap
-import kotlin.collections.LinkedHashMap
-import kotlin.collections.LinkedHashSet
 
 class DbRecord(
     internal val ctx: DbRecordsDaoCtx,
@@ -56,6 +56,7 @@ class DbRecord(
         const val ATT_CONTENT_VERSION = "version:version"
         const val ATT_CONTENT_VERSION_COMMENT = "version:comment"
         const val ATT_IS_DRAFT = "_isDraft"
+        const val ATT_STAGE = "_stage"
         const val ATT_STATUS_MODIFIED = "_statusModified"
         const val ASSOC_SRC_ATT_PREFIX = "assoc_src_"
 
@@ -111,8 +112,15 @@ class DbRecord(
             DbColumnDef.create {
                 withName(ATT_STATUS_MODIFIED)
                 withType(DbColumnType.DATETIME)
+                withIndex(DbColumnIndexDef(true))
             }
         )
+
+        val COLUMN_STAGE = DbColumnDef.create {
+            withName(ATT_STAGE)
+            withType(DbColumnType.TEXT)
+            withIndex(DbColumnIndexDef(true))
+        }
 
         val COLUMN_IS_DRAFT = DbColumnDef.create {
             withName(ATT_IS_DRAFT)
@@ -711,6 +719,14 @@ class DbRecord(
                 val attValue = ctx.attValuesConverter.toAttValue(statusDef) ?: EmptyAttValue.INSTANCE
                 return DbStatusValue(statusDef, attValue)
             }
+            ATT_STAGE -> {
+                additionalAtts[ATT_STAGE]?.let { stageId ->
+                    typeInfo.model.stages.firstOrNull { it.id == stageId }
+                }?.let { stageDef ->
+                    val attValue = ctx.attValuesConverter.toAttValue(stageDef) ?: EmptyAttValue.INSTANCE
+                    DbStageValue(stageDef, attValue)
+                }
+            }
             ATT_PERMISSIONS -> permsValue
             RecordConstants.ATT_CONTENT -> getDefaultContent("")
             RecordConstants.ATT_PARENT -> additionalAtts[RecordConstants.ATT_PARENT]
@@ -831,6 +847,8 @@ class DbRecord(
     override fun getEdge(name: String): AttEdge {
         if (name == StatusConstants.ATT_STATUS) {
             return DbStatusEdge(ctx, type)
+        } else if (name == ATT_STAGE) {
+            return DbStageEdge(ctx, type)
         }
         return DbRecordAttEdge(
             this,

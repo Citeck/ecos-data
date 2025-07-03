@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql.records.dao.atts
+package ru.citeck.ecos.data.sql.records.dao.atts.status
 
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.model.lib.status.dto.StatusDef

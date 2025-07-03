@@ -1,4 +1,4 @@
-package ru.citeck.ecos.data.sql.records.dao.atts
+package ru.citeck.ecos.data.sql.records.dao.atts.status
 
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.records3.record.atts.value.AttEdge

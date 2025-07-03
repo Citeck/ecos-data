@@ -32,7 +32,7 @@ class SchemaDaoTest {
         val dbSchemaDao = dsCtx.schemaDao
         assertThat(dbSchemaDao.getColumns(dataSource, tableRef)).isEmpty()
 
-        val singleValueColumns = DbColumnType.values().mapIndexed { idx, value ->
+        val singleValueColumns = DbColumnType.entries.mapIndexed { idx, value ->
             DbColumnDef.create {
                 withName("column_$idx")
                 withType(value)
@@ -43,7 +43,7 @@ class SchemaDaoTest {
         val columnsFromDb = dbSchemaDao.getColumns(dataSource, tableRef)
         assertThat(columnsFromDb).containsExactlyInAnyOrderElementsOf(singleValueColumns)
 
-        val arrayColumns = DbColumnType.values()
+        val arrayColumns = DbColumnType.entries
             .filter { it != DbColumnType.BIGSERIAL }
             .filter { it != DbColumnType.JSON }
             .mapIndexed { idx, value ->
