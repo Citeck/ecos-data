@@ -329,7 +329,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     if (!isRunAsSystemOrAdmin) {
                         error(
                             "Calculated fields updating allowed only for admin. " +
-                            "Record: $record sourceId: '${config.id}'"
+                                "Record: $record sourceId: '${config.id}'"
                         )
                     }
 
@@ -983,11 +983,17 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         val entityStatus = entity.status
         if (entityStatus.isNotBlank()) {
-            val stage = typeInfo.model.stages.find { it.statuses.contains(entityStatus) }
+            var stageId = ""
+            for ((idx, stage) in typeInfo.model.stages.withIndex()) {
+                if (stage.statuses.contains(entityStatus)) {
+                    stageId = stage.id.ifBlank { idx.toString() }
+                    break
+                }
+            }
             var stageChanged = false
-            if (stage != null) {
-                if (entity.attributes[DbRecord.ATT_STAGE] != stage.id) {
-                    entity.attributes[DbRecord.ATT_STAGE] = stage.id
+            if (stageId.isNotEmpty()) {
+                if (entity.attributes[DbRecord.ATT_STAGE] != stageId) {
+                    entity.attributes[DbRecord.ATT_STAGE] = stageId
                     stageChanged = true
                 }
             } else {

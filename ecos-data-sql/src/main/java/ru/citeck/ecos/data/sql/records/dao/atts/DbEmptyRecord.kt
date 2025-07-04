@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.records.dao.atts
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
+import ru.citeck.ecos.data.sql.records.dao.atts.stage.DbStageEdge
 import ru.citeck.ecos.data.sql.records.dao.atts.status.DbStatusEdge
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -30,6 +31,9 @@ class DbEmptyRecord(private val ctx: DbRecordsDaoCtx) : AttValue {
     override fun getEdge(name: String): AttEdge {
         if (name == StatusConstants.ATT_STATUS) {
             return DbStatusEdge(ctx, ctx.config.typeRef)
+        }
+        if (name == DbRecord.ATT_STAGE) {
+            return DbStageEdge(ctx, ctx.config.typeRef)
         }
         return EmptyEdge(
             name,

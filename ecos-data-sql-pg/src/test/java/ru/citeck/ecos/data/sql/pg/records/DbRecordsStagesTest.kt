@@ -43,7 +43,7 @@ class DbRecordsStagesTest : DbRecordsTestBase() {
                 ProcStageDef.create().withId(STAGE_1).withName(MLText(STAGE_1_NAME)).withStatuses(listOf(STATUS_1, STATUS_2))
             ).register()
 
-        val ref  = createRecord()
+        val ref = createRecord()
         fun getStatusId() = records.getAtt(ref, "_status?str").asText()
         fun getStageId() = records.getAtt(ref, "_stage?str").asText()
         fun setStatus(newStatus: String) = records.mutateAtt(ref, "_status", newStatus)
@@ -89,12 +89,14 @@ class DbRecordsStagesTest : DbRecordsTestBase() {
         assertThat(queryStageEq(STAGE_1)).isNull()
         assertThat(queryStageEmpty()).isEqualTo(ref)
 
-        val options = records.getAtt(ref, "_edge._stage.options[]{?str,?disp}").asList(DataValue::class.java)
-        assertThat(options).hasSize(2)
-        assertThat(options).containsExactly(
-            DataValue.createObj().set("?str", STAGE_0).set("?disp", STAGE_0_NAME),
-            DataValue.createObj().set("?str", STAGE_1).set("?disp", STAGE_1_NAME)
-        )
+        listOf(ref, ref.withoutLocalId()).forEach { refToCheckOptions ->
+            val options = records.getAtt(refToCheckOptions, "_edge._stage.options[]{?str,?disp}").asList(DataValue::class.java)
+            assertThat(options).describedAs { refToCheckOptions.toString() }.hasSize(2)
+            assertThat(options).describedAs { refToCheckOptions.toString() }.containsExactly(
+                DataValue.createObj().set("?str", STAGE_0).set("?disp", STAGE_0_NAME),
+                DataValue.createObj().set("?str", STAGE_1).set("?disp", STAGE_1_NAME)
+            )
+        }
 
         setStatus(STATUS_2)
         assertThat(records.getAtt(ref, "_stage")).isEqualTo(DataValue.createStr(STAGE_1_NAME))
