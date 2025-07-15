@@ -65,7 +65,7 @@ class DbDateUtilsTest {
                 DbDateUtils.TODAY,
                 withTime = false
             )
-            val expected = "2023-06-14T21:00:00Z"
+            val expected = "2023-06-15T00:00:00Z"
             assertThat(result).isEqualTo(expected)
         }
 
@@ -74,16 +74,25 @@ class DbDateUtilsTest {
                 DbDateUtils.TODAY,
                 withTime = false
             )
-            val expected = "2023-06-15T05:00:00Z"
+            val expected = "2023-06-15T00:00:00Z"
             assertThat(result).isEqualTo(expected)
         }
 
-        TimeZoneContext.doWithUtcOffset(Duration.ofMinutes(330)) {
+        TimeZoneContext.doWithUtcOffset(Duration.ofHours(20)) {
             val result = DbDateUtils.normalizeDateTimePredicateValue(
                 DbDateUtils.TODAY,
                 withTime = false
             )
-            val expected = "2023-06-14T18:30:00Z"
+            val expected = "2023-06-16T00:00:00Z"
+            assertThat(result).isEqualTo(expected)
+        }
+
+        TimeZoneContext.doWithUtcOffset(Duration.ofHours(-20)) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue(
+                DbDateUtils.TODAY,
+                withTime = false
+            )
+            val expected = "2023-06-14T00:00:00Z"
             assertThat(result).isEqualTo(expected)
         }
     }
