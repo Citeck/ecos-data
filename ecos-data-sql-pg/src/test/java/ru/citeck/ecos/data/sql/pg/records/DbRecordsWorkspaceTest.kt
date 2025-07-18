@@ -31,8 +31,8 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
         @JvmStatic
         fun getRecCreateTestVariants(): List<Array<*>> {
             return listOf(
-                *WorkspaceScope.entries.map { arrayOf(it, true) }.toTypedArray(),
-                *WorkspaceScope.entries.map { arrayOf(it, false) }.toTypedArray()
+                *WorkspaceScope.entries.map { arrayOf<Any>(it, true) }.toTypedArray(),
+                *WorkspaceScope.entries.map { arrayOf<Any>(it, false) }.toTypedArray()
             )
         }
     }
@@ -427,6 +427,36 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
                 assertThat(rec1.getWsId()).isEqualTo("")
             }
         }
+    }
+
+    @Test
+    fun nestedWorkspacesTest() {
+
+        registerType()
+            .withWorkspaceScope(WorkspaceScope.PRIVATE)
+            .register()
+
+        val firstWsRec = createRecord("_workspace" to "first")
+        val secondWsRec = createRecord("_workspace" to "second")
+
+        fun assertElementsInWs(workspace: String, vararg expected: EntityRef) {
+            assertThat(
+                records.query(
+                    baseQuery.copy()
+                        .withWorkspaces(listOf(workspace))
+                        .build()
+                ).getRecords()
+            ).containsExactlyInAnyOrderElementsOf(expected.toList())
+        }
+
+        assertElementsInWs("first", firstWsRec)
+        assertElementsInWs("second", secondWsRec)
+        assertElementsInWs("third")
+
+        workspaceService.setNestedWorkspaces("third", setOf("first"))
+        assertElementsInWs("third", firstWsRec)
+        workspaceService.setNestedWorkspaces("third", setOf("first", "second"))
+        assertElementsInWs("third", firstWsRec, secondWsRec)
     }
 
     @Test

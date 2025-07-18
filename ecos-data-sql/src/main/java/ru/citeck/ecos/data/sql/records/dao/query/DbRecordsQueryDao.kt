@@ -142,18 +142,19 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
 
         val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.getLocalId())
         if (typeInfo?.workspaceScope == WorkspaceScope.PRIVATE) {
-            val workspacesForQuery: Collection<String>
+            var workspacesForQuery: Collection<String>
+            var workspacesInIncomingQuery = workspaceService.expandWorkspaces(recsQuery.workspaces)
             if (isRunAsSystem) {
-                workspacesForQuery = recsQuery.workspaces
+                workspacesForQuery = workspacesInIncomingQuery
             } else {
                 val runAs = AuthContext.getCurrentRunAsAuth()
                 val userWs = workspaceService.getUserWorkspaces(runAs.getUser())
-                if (recsQuery.workspaces.isEmpty()) {
+                if (workspacesInIncomingQuery.isEmpty()) {
                     val wsToSearch = HashSet(userWs)
                     wsToSearch.add("")
                     workspacesForQuery = wsToSearch
                 } else {
-                    workspacesForQuery = recsQuery.workspaces.filter {
+                    workspacesForQuery = workspacesInIncomingQuery.filter {
                         it.isEmpty() || userWs.contains(it)
                     }
                     if (workspacesForQuery.isEmpty()) {

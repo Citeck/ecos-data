@@ -833,6 +833,8 @@ abstract class DbRecordsTestBase {
     class CustomWorkspaceService {
 
         val usersWs = ConcurrentHashMap<String, Set<String>>()
+        val nestedWorkspaces = ConcurrentHashMap<String, Set<String>>()
+
         val service: WorkspaceService by lazy {
             val workspaceService = Mockito.mock(WorkspaceService::class.java)
             Mockito.`when`(workspaceService.getUserWorkspaces(Mockito.anyString())).thenAnswer {
@@ -842,11 +844,23 @@ abstract class DbRecordsTestBase {
                     "user$$user"
                 )
             }
+            Mockito.`when`(workspaceService.expandWorkspaces(Mockito.anyList<String>())).thenAnswer {
+                val workspaces: Collection<String> = it.getArgument(0)
+                val result = LinkedHashSet(workspaces)
+                for (workspace in workspaces) {
+                    result.addAll(nestedWorkspaces[workspace] ?: emptyList())
+                }
+                result
+            }
             workspaceService
         }
 
         fun setUserWorkspaces(user: String, workspaces: Set<String>) {
             usersWs[user] = workspaces.filterTo(LinkedHashSet()) { it.isNotBlank() }
+        }
+
+        fun setNestedWorkspaces(workspace: String, nestedWorkspaces: Set<String>) {
+            this.nestedWorkspaces[workspace] = nestedWorkspaces
         }
     }
 
