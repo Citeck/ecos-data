@@ -1442,9 +1442,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                             .append(operator)
                             .append(" ?")
 
-                        convertedParam = convertedParam.lowercase()
+                        convertedParam = convertedParam.lowercase().replace("\\", "\\\\")
                         if (type == ValuePredicate.Type.CONTAINS) {
-                            convertedParam = convertedParam.replace("\\", "\\\\")
                             convertedParam = "%$convertedParam%"
                         }
                     } else {
@@ -1545,9 +1544,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                                 query.append(") ")
                                     .append(operator)
                                     .append(" ?")
-                                queryParam = queryParam.lowercase()
+                                queryParam = queryParam.lowercase().replace("\\", "\\\\")
                                 if (type == ValuePredicate.Type.CONTAINS) {
-                                    queryParam = queryParam.replace("\\", "\\\\")
                                     queryParam = "%$queryParam%"
                                 }
                             } else {

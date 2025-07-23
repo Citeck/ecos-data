@@ -4,6 +4,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.DataValue
+import ru.citeck.ecos.commons.data.MLText
+import ru.citeck.ecos.context.lib.i18n.I18nContext
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.model.lib.attributes.dto.AttIndexDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
@@ -355,13 +357,15 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
             listOf(
                 AttributeDef.create()
                     .withId("name")
-                    .build()
+                    .build(),
+                AttributeDef.create()
+                    .withId("attMlText")
+                    .withType(AttributeType.MLTEXT)
+                    .build(),
             )
         )
 
-        val name0 = """
-            OOO \"ABC\"
-        """.trimIndent()
+        val name0 = "OOO \"ABC\""
         val rc0 = createRecord("name" to name0)
 
         val query = RecordsQuery.create {
@@ -373,14 +377,35 @@ class DbRecordsDaoQueryTest : DbRecordsTestBase() {
         val result = records.query(query)
         assertThat(result.getRecords()).containsExactly(rc0)
 
-        val name1 = """
-            OOO /|\\ \"qq\\\"
-        """.trimIndent()
+        val name1 = "OOO /|\\ \"qq\\\""
         val rc1 = createRecord("name" to name1)
         val query1 = query.copy {
             withQuery(Predicates.eq("_name", name1))
         }
         val result1 = records.query(query1)
         assertThat(result1.getRecords()).containsExactly(rc1)
+
+        val query2 = query.copy {
+            withQuery(Predicates.like("_name", name1))
+        }
+        val result2 = records.query(query2)
+        assertThat(result2.getRecords()).containsExactly(rc1)
+
+        val attMLTextValue = MLText(
+            I18nContext.ENGLISH to "ООО \"Тест\"",
+            I18nContext.RUSSIAN to "OOO \"Test\""
+        )
+        val rc3 = createRecord("attMlText" to attMLTextValue)
+        val query3 = query1.copy {
+            withQuery(Predicates.eq("attMlText", "ООО \"Тест\""))
+        }
+        val result3 = records.query(query3)
+        assertThat(result3.getRecords()).containsExactly(rc3)
+
+        val query4 = query1.copy {
+            withQuery(Predicates.like("attMlText", "OOO \"Test\""))
+        }
+        val result4 = records.query(query4)
+        assertThat(result4.getRecords()).containsExactly(rc3)
     }
 }
