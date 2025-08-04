@@ -58,6 +58,9 @@ class DbRecord(
         const val ATT_IS_DRAFT = "_isDraft"
         const val ATT_STAGE = "_stage"
         const val ATT_STATUS_MODIFIED = "_statusModified"
+        const val ATT_PATH_BY_ASSOC = "_pathByAssoc"
+        const val ATT_PATH_BY_PARENT = "_pathByParent"
+
         const val ASSOC_SRC_ATT_PREFIX = "assoc_src_"
 
         const val ASPECT_VERSIONABLE = "versionable"
@@ -727,6 +730,8 @@ class DbRecord(
                     DbStageValue(stageDef, attValue)
                 }
             }
+            ATT_PATH_BY_ASSOC -> return DbPathByAssocValue(this)
+            ATT_PATH_BY_PARENT -> return DbPathByAssocValue(this).getAtt(RecordConstants.ATT_PARENT)
             ATT_PERMISSIONS -> permsValue
             RecordConstants.ATT_CONTENT -> getDefaultContent("")
             RecordConstants.ATT_PARENT -> additionalAtts[RecordConstants.ATT_PARENT]
