@@ -8,16 +8,44 @@ import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.InnerAttValue
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
-class DbPathByAssocValue(
+class DbPathByAssocValue private constructor(
     private val record: DbRecord
 ) : AttValue {
 
-    override fun getAtt(name: String): Any {
+    companion object {
+        /**
+         * Protection against recursion
+         */
+        private val pathNodesInProgress = ThreadLocal.withInitial { HashSet<EntityRef>() }
 
-        val sourceRef = if (name == RecordConstants.ATT_PARENT) {
+        fun getValue(record: DbRecord): DbPathByAssocValue? {
+            return if (pathNodesInProgress.get().contains(record.id)) {
+                null
+            } else {
+                DbPathByAssocValue(record)
+            }
+        }
+    }
+
+    override fun getAtt(name: String): Any? {
+        val nodesInProgress = pathNodesInProgress.get()
+        return if (nodesInProgress.add(record.id)) {
+            try {
+                getPathByAssoc(name)
+            } finally {
+                nodesInProgress.remove(record.id)
+            }
+        } else {
+            null
+        }
+    }
+
+    private fun getPathByAssoc(assocName: String): Any {
+
+        val sourceRef = if (assocName == RecordConstants.ATT_PARENT) {
             record.getAtt(RecordConstants.ATT_PARENT) as? EntityRef
         } else {
-            record.ctx.assocsService.getSourceAssocs(record.entity.refId, name, DbFindPage.FIRST)
+            record.ctx.assocsService.getSourceAssocs(record.entity.refId, assocName, DbFindPage.FIRST)
                 .entities
                 .firstOrNull()
                 ?.sourceId
@@ -27,19 +55,21 @@ class DbPathByAssocValue(
             return listOf(record)
         }
 
-        val attsToLoad = AttContext.getCurrentSchemaAtt()
+        val innerAttsToLoad = AttContext.getCurrentSchemaAtt()
 
         val schemaAtt = SchemaAtt.create()
             .withName(DbRecord.ATT_PATH_BY_ASSOC)
             .withInner(
                 SchemaAtt.create()
-                    .withName(name)
+                    .withName(assocName)
                     .withMultiple(true)
-                    .withInner(attsToLoad.inner)
+                    .withInner(innerAttsToLoad.inner)
             ).build()
 
-        val attToLoadStr = record.ctx.schemaWriter.write(schemaAtt)
-        val atts = record.ctx.recordsService.getAtt(sourceRef, attToLoadStr)
+        val attsToLoad = record.ctx.schemaWriter.writeToMap(listOf(schemaAtt))
+
+        val atts = record.ctx.recordsService.getAtts(listOf(sourceRef), attsToLoad, true)
+            .first()[DbRecord.ATT_PATH_BY_ASSOC][assocName]
 
         val result = ArrayList<Any>()
         if (atts.isArray()) {

@@ -8,7 +8,33 @@ import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 
-class PathByAttTest : DbRecordsTestBase() {
+class PathByAssocTest : DbRecordsTestBase() {
+
+    @Test
+    fun testWithRecursion() {
+
+        registerType()
+            .withAttributes(
+                AttributeDef.create()
+                    .withId("name"),
+                AttributeDef.create()
+                    .withId("targetAssoc")
+                    .withType(AttributeType.ASSOC)
+            ).register()
+
+        val rec0 = createRecord("name" to "rec0")
+        val rec1 = createRecord("name" to "rec1", "targetAssoc" to rec0)
+        val rec2 = createRecord("name" to "rec2", "targetAssoc" to rec1)
+        records.mutateAtt(rec0, "targetAssoc", rec2)
+
+        val path = records.getAtt(rec2, "_pathByAssoc.targetAssoc[].name")
+        assertThat(path).isEqualTo(
+            DataValue.createArr()
+                .add(DataValue.createStr("rec1"))
+                .add(DataValue.createStr("rec0"))
+                .add(DataValue.createStr("rec2"))
+        )
+    }
 
     @Test
     fun test() {

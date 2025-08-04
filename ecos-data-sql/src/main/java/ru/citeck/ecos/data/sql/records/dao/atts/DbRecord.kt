@@ -159,6 +159,8 @@ class DbRecord(
         }
     }
 
+    private val globalRef: EntityRef by lazy { ctx.getGlobalRef(extId) }
+
     private val permsValue by lazy { DbRecPermsValue(ctx, this) }
     private val additionalAtts: Map<String, Any?>
     private val assocsInnerAdditionalAtts: Map<String, Any?>
@@ -459,7 +461,7 @@ class DbRecord(
     }
 
     override fun getId(): EntityRef {
-        return ctx.getGlobalRef(extId)
+        return globalRef
     }
 
     override fun asText(): String {
@@ -730,8 +732,8 @@ class DbRecord(
                     DbStageValue(stageDef, attValue)
                 }
             }
-            ATT_PATH_BY_ASSOC -> return DbPathByAssocValue(this)
-            ATT_PATH_BY_PARENT -> return DbPathByAssocValue(this).getAtt(RecordConstants.ATT_PARENT)
+            ATT_PATH_BY_ASSOC -> DbPathByAssocValue.getValue(this)
+            ATT_PATH_BY_PARENT -> DbPathByAssocValue.getValue(this)?.getAtt(RecordConstants.ATT_PARENT)
             ATT_PERMISSIONS -> permsValue
             RecordConstants.ATT_CONTENT -> getDefaultContent("")
             RecordConstants.ATT_PARENT -> additionalAtts[RecordConstants.ATT_PARENT]
