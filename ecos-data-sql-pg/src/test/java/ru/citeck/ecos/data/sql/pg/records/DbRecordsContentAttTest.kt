@@ -253,7 +253,7 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
                 recordsDao.getId(),
                 ObjectData.create()
                     .set("_type", REC_TEST_TYPE_REF)
-                    .set("content", uploadedFile)
+                    .set("_content", uploadedFile)
             )
 
             val bytesFromAtt = Base64.getDecoder().decode(records.getAtt(newFile, "content.bytes").asText())
