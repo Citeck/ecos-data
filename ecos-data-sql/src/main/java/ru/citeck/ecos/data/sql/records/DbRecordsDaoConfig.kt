@@ -18,7 +18,7 @@ data class DbRecordsDaoConfig(
 
     companion object {
 
-        private val VALID_ID_PATTERN = "[\\w-]+".toRegex()
+        private val VALID_ID_PATTERN = "[\\w-:]+".toRegex()
         private val DEFAULT = create().buildUnchecked()
 
         @JvmStatic
