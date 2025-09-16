@@ -177,5 +177,14 @@ class ExpressionParserTest {
                 )
             )
         )
+
+        assertExpr(
+            "(_parent.\"text-abc\" = \"text-abc\")",
+            GroupToken(
+                ColumnToken("_parent.\"text-abc\""),
+                OperatorToken(OperatorToken.Type.EQUAL),
+                ColumnToken("text-abc"),
+            )
+        )
     }
 }

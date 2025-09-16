@@ -3,6 +3,8 @@ package ru.citeck.ecos.data.sql.pg.records
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
@@ -29,7 +31,11 @@ class DbRecordsParentTest : DbRecordsTestBase() {
         )
 
         val rec0 = createRecord("text" to "")
-        val rec1 = createRecord("text" to "", "_parent" to rec0, "_parentAtt" to "childAssoc")
+        val rec1 = createRecord(
+            "text" to "",
+            "_parent" to rec0,
+            "_parentAtt" to "childAssoc"
+        )
 
         val query = baseQuery.copy()
             .withSortBy(emptyList())
@@ -49,13 +55,13 @@ class DbRecordsParentTest : DbRecordsTestBase() {
         assertThat(records.query(query).getRecords()).containsExactly(rec1)
     }
 
-    @Test
-    fun compareParentAttWithCurrentRecAttTest() {
+    @ParameterizedTest
+    @ValueSource(strings = ["text", "att-with-special"])
+    fun compareParentAttWithCurrentRecAttTest(textAttId: String) {
 
         registerAtts(
             listOf(
-                AttributeDef.create { withId("text") },
-                AttributeDef.create { withId("text2") },
+                AttributeDef.create { withId(textAttId) },
                 AttributeDef.create {
                     withId("childAssoc")
                     withType(AttributeType.ASSOC)
@@ -64,11 +70,11 @@ class DbRecordsParentTest : DbRecordsTestBase() {
             )
         )
 
-        val rec0 = createRecord("text" to "abc", "text2" to "abc")
-        val rec1 = createRecord("text" to "abc", "_parent" to rec0, "_parentAtt" to "childAssoc")
-        val rec2 = createRecord("text" to "abc", "_parent" to rec0, "_parentAtt" to "childAssoc")
-        val rec3 = createRecord("text" to "def", "_parent" to rec0, "_parentAtt" to "childAssoc")
-        val rec4 = createRecord("text" to "hij", "_parent" to rec0, "_parentAtt" to "childAssoc")
+        val rec0 = createRecord(textAttId to "abc")
+        val rec1 = createRecord(textAttId to "abc", "_parent" to rec0, "_parentAtt" to "childAssoc")
+        val rec2 = createRecord(textAttId to "abc", "_parent" to rec0, "_parentAtt" to "childAssoc")
+        val rec3 = createRecord(textAttId to "def", "_parent" to rec0, "_parentAtt" to "childAssoc")
+        val rec4 = createRecord(textAttId to "hij", "_parent" to rec0, "_parentAtt" to "childAssoc")
         val rec5 = createRecord("_parent" to rec0, "_parentAtt" to "childAssoc")
 
         fun assertParentQuery(query: Predicate, vararg expected: EntityRef) {
@@ -84,12 +90,12 @@ class DbRecordsParentTest : DbRecordsTestBase() {
             ).getRecords()
             assertThat(records).containsExactlyInAnyOrderElementsOf(expected.asList())
         }
-        assertParentQuery(Predicates.eq("(_parent.text = text)", true), rec1, rec2)
-        assertParentQuery(Predicates.eq("(_parent.text = coalesce(text, ''))", true), rec1, rec2)
-        assertParentQuery(Predicates.eq("(_parent.text <> coalesce(text, ''))", true), rec3, rec4, rec5)
-        assertParentQuery(Predicates.eq("(_parent.text = coalesce(text, ''))", false), rec3, rec4, rec5)
-        assertParentQuery(Predicates.eq("(_parent.text = text)", false), rec3, rec4)
-        assertParentQuery(Predicates.eq("(_parent.text <> text)", false), rec1, rec2)
+        assertParentQuery(Predicates.eq("(_parent.\"$textAttId\" = \"$textAttId\")", true), rec1, rec2)
+        assertParentQuery(Predicates.eq("(_parent.\"$textAttId\" = coalesce(\"$textAttId\", ''))", true), rec1, rec2)
+        assertParentQuery(Predicates.eq("(_parent.\"$textAttId\" <> coalesce(\"$textAttId\", ''))", true), rec3, rec4, rec5)
+        assertParentQuery(Predicates.eq("(_parent.\"$textAttId\" = coalesce(\"$textAttId\", ''))", false), rec3, rec4, rec5)
+        assertParentQuery(Predicates.eq("(_parent.\"$textAttId\" = \"$textAttId\")", false), rec3, rec4)
+        assertParentQuery(Predicates.eq("(_parent.\"$textAttId\" <> \"$textAttId\")", false), rec1, rec2)
     }
 
     @Test

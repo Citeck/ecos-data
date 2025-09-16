@@ -238,11 +238,16 @@ class DbFindQueryContext(
         }
         val tableCtx: DbTableContext = recordsCtx.dataService.getTableContext()
 
-        val mappedTargetColumnName = DbRecord.ATTS_MAPPING.getOrDefault(targetAttName, targetAttName)
+        val unquotedAttName = if (targetAttName.startsWith("\"") && targetAttName.length > 1) {
+            targetAttName.substring(1, targetAttName.length - 1)
+        } else {
+            targetAttName
+        }
+        val mappedTargetColumnName = DbRecord.ATTS_MAPPING.getOrDefault(unquotedAttName, unquotedAttName)
         if (!tableCtx.hasColumn(mappedTargetColumnName)) {
             printError {
                 "Assoc select can't be executed for nonexistent inner " +
-                    "attribute '$targetAttName'. Full attribute: '$att'"
+                    "attribute '$unquotedAttName'. Full attribute: '$att'"
             }
             return null
         }
