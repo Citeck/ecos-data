@@ -12,7 +12,9 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.status.constants.StatusConstants
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.value.AttValue
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 
 class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
 
@@ -164,6 +166,35 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
             )
             ctx.listeners.forEach {
                 it.onStatusChanged(statusChangedEvent)
+            }
+        }
+        val parentBefore = before.attributes[RecordConstants.ATT_PARENT] as? Long
+        val parentAttBefore = before.attributes[RecordConstants.ATT_PARENT_ATT] as? Long
+        val parentAfter = after.attributes[RecordConstants.ATT_PARENT] as? Long
+        val parentAttAfter = after.attributes[RecordConstants.ATT_PARENT_ATT] as? Long
+
+        if (parentAfter != parentBefore || parentAttAfter != parentAttBefore) {
+            val atts = ctx.recordsService.getAtts(
+                listOf(recBefore, recAfter),
+                mapOf(
+                    "parentRef" to "_parent?id",
+                    "parentAtt" to "_parentAtt"
+                )
+            )
+            val event = DbRecordParentChangedEvent(
+                localRef,
+                globalRef,
+                isDraft,
+                recAfter,
+                typeInfo,
+                aspectsInfo,
+                parentBefore = atts[0].getAtt("parentRef").asText().toEntityRef(),
+                parentAfter = atts[1].getAtt("parentRef").asText().toEntityRef(),
+                parentAttBefore = atts[0].getAtt("parentAtt").asText(),
+                parentAttAfter = atts[1].getAtt("parentAtt").asText(),
+            )
+            ctx.listeners.forEach {
+                it.onParentChanged(event)
             }
         }
 
