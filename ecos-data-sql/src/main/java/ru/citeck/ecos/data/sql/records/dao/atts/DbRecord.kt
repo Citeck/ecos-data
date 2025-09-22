@@ -661,6 +661,13 @@ class DbRecord(
     }
 
     override fun has(name: String): Boolean {
+        if (name.startsWith(ASSOC_SRC_ATT_PREFIX)) {
+            return ctx.assocsService.getSourceAssocs(
+                entity.refId,
+                name.substringAfter(ASSOC_SRC_ATT_PREFIX),
+                DbFindPage.FIRST
+            ).entities.isNotEmpty()
+        }
         if (name == RecordConstants.ATT_CONTENT) {
             val defaultContentAtt = getDefaultContentAtt()
             if (defaultContentAtt.contains('.')) {

@@ -35,6 +35,7 @@ class DbAssocsServiceTest : DbRecordsTestBase() {
         recs.forEach {
             val targets = records.getAtt(it, "assoc[]?id").asStrList()
             assertThat(targets).isEmpty()
+            assertThat(records.getAtt(it, "_has.assoc_src_assoc?bool").asBoolean()).isTrue()
             val sources = records.getAtt(it, "assoc_src_assoc[]?id").asStrList()
             assertThat(sources).hasSize(1)
             assertThat(sources[0]).isEqualTo(rec1.toString())
