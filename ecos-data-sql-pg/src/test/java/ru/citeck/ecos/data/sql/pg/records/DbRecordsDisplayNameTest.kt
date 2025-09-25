@@ -25,7 +25,12 @@ class DbRecordsDisplayNameTest : DbRecordsTestBase() {
             }
         )
 
-        registerNumTemplate(NumTemplateDef("test-template", "", "123", emptyList()))
+        registerNumTemplate(
+            NumTemplateDef.create()
+                .withId("test-template")
+                .withCounterKey("123")
+                .build()
+        )
 
         assertThat(records.getAtt(createRecord(), "?disp").asText()).isEqualTo("App №1")
         assertThat(records.getAtt(createRecord(), "?disp").asText()).isEqualTo("App №2")
