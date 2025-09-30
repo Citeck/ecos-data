@@ -109,7 +109,7 @@ class DbRecordRefService(
 
         val fixedRefs = refs.map { fixEntityRef(it) }
 
-        val refsToQuery = ArrayList<EntityRef>()
+        val refsToQuery = HashSet<EntityRef>()
         val idsByRefs = HashMap<EntityRef, Long>()
 
         val txnCache = getIdsByRefsTxnCache()
@@ -162,7 +162,7 @@ class DbRecordRefService(
 
         val txnCache = getRefsByIdsTxnCache()
 
-        val idsToQuery = ArrayList<Long>()
+        val idsToQuery = HashSet<Long>()
         val refsByIds = HashMap<Long, EntityRef>()
         if (txnCache.isEmpty()) {
             idsToQuery.addAll(ids)
@@ -177,7 +177,7 @@ class DbRecordRefService(
             }
         }
 
-        val entities = dataService.findByIds(idsToQuery.toSet())
+        val entities = dataService.findByIds(idsToQuery)
         if (entities.size != idsToQuery.size) {
             error("RecordRef's count doesn't match. Ids: $ids Refs: ${entities.map { it.extId }}")
         }

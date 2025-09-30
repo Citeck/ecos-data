@@ -20,7 +20,7 @@ class DbSchemaMetaEntity {
 
         const val ID = "id"
         const val EXT_ID = "__ext_id"
-        const val value = "__value"
+        const val VALUE = "__value"
     }
 
     @Constraints(PRIMARY_KEY)
