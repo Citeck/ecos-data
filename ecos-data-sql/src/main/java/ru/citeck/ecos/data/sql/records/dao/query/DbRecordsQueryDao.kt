@@ -142,8 +142,14 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
 
         val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.getLocalId())
         if (typeInfo?.workspaceScope == WorkspaceScope.PRIVATE) {
-            var workspacesForQuery: Collection<String>
+            val workspacesForQuery: Collection<String>
             var workspacesInIncomingQuery = workspaceService.expandWorkspaces(recsQuery.workspaces)
+            if (workspacesInIncomingQuery.contains("")) {
+                workspacesInIncomingQuery = workspacesInIncomingQuery.toMutableSet().apply {
+                    remove("")
+                    add(DbRecord.WS_DEFAULT)
+                }
+            }
             if (isRunAsSystem) {
                 workspacesForQuery = workspacesInIncomingQuery
             } else {
@@ -151,11 +157,11 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
                 val userWs = workspaceService.getUserWorkspaces(runAs.getUser())
                 if (workspacesInIncomingQuery.isEmpty()) {
                     val wsToSearch = HashSet(userWs)
-                    wsToSearch.add("")
+                    wsToSearch.add(DbRecord.WS_DEFAULT)
                     workspacesForQuery = wsToSearch
                 } else {
                     workspacesForQuery = workspacesInIncomingQuery.filter {
-                        it.isEmpty() || userWs.contains(it)
+                        it == DbRecord.WS_DEFAULT || userWs.contains(it)
                     }
                     if (workspacesForQuery.isEmpty()) {
                         return RecsQueryRes()
@@ -164,9 +170,7 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
             }
             if (workspacesForQuery.isNotEmpty()) {
                 val existingWsIds = dbWsService.getIdsForExistingWsInAnyOrder(workspacesForQuery)
-                val wsCondition = if (workspacesForQuery.contains("") ||
-                    workspacesForQuery.contains(DbRecord.WS_DEFAULT)
-                ) {
+                val wsCondition = if (workspacesForQuery.contains(DbRecord.WS_DEFAULT)) {
                     if (existingWsIds.isEmpty()) {
                         Predicates.empty(DbEntity.WORKSPACE)
                     } else {
