@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.remote.action
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.json.serialization.annotation.IncludeNonDefault
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
@@ -12,6 +13,8 @@ class UpdateRemoteAssocsAction : DbRemoteActionExecutor<UpdateRemoteAssocsAction
 
     companion object {
         const val TYPE = "update-remote-assocs"
+
+        private val log = KotlinLogging.logger {}
     }
 
     private lateinit var webAppApi: EcosWebAppApi
@@ -30,8 +33,8 @@ class UpdateRemoteAssocsAction : DbRemoteActionExecutor<UpdateRemoteAssocsAction
         val creatorRef = webAppApi.getAuthoritiesApi().getAuthorityRef(action.creator)
 
         val schemaCtxBySrcId: MutableMap<String, DbSchemaContext?> = IdentityHashMap()
-        fillSchemaCtxBySrcId(action.add, AssocsDiff::refs, schemaCtxBySrcId)
-        fillSchemaCtxBySrcId(action.rem, AssocsDiff::refs, schemaCtxBySrcId)
+        fillSchemaCtxBySrcId(action, "add", action.add, AssocsDiff::refs, schemaCtxBySrcId)
+        fillSchemaCtxBySrcId(action, "rem", action.rem, AssocsDiff::refs, schemaCtxBySrcId)
 
         var addedCount = 0
 
@@ -101,6 +104,8 @@ class UpdateRemoteAssocsAction : DbRemoteActionExecutor<UpdateRemoteAssocsAction
     }
 
     private fun <T> fillSchemaCtxBySrcId(
+        params: Params,
+        actionDesc: String,
         elements: Collection<T>,
         getRefs: (T) -> List<EntityRef>,
         schemaCtxBySrcId: MutableMap<String, DbSchemaContext?>
@@ -111,11 +116,30 @@ class UpdateRemoteAssocsAction : DbRemoteActionExecutor<UpdateRemoteAssocsAction
                     continue
                 }
                 schemaCtxBySrcId.computeIfAbsent(ref.getSourceId()) {
-                    val dao = recordsService.getRecordsDao(it) ?: error("Records DAO doesn't found by id $it")
-                    if (dao is DbRecordsDao) {
-                        dao.getRecordsDaoCtx().dataService.getTableContext().getSchemaCtx()
-                    } else {
-                        null
+                    when (val dao = recordsService.getRecordsDao(it)) {
+                        null -> {
+                            log.warn {
+                                "Records DAO doesn't found by id '$it'. " +
+                                "Remote assocs won't be updated. " +
+                                    "SourceRef: '${params.srcRef}' " +
+                                    "TargetRef: '${ref}' Action: '$actionDesc' " +
+                                    "Creator: ${params.creator}"
+                            }
+                            null
+                        }
+                        is DbRecordsDao -> {
+                            dao.getRecordsDaoCtx().dataService.getTableContext().getSchemaCtx()
+                        }
+                        else -> {
+                            log.debug {
+                                "Records DAO '$it' is not instance of DbRecordsDao. " +
+                                    "Remote assocs won't be updated. DAO type: ${dao::class.qualifiedName}. " +
+                                    "SourceRef: '${params.srcRef}' " +
+                                    "TargetRef: '${ref}' Action: '$actionDesc' " +
+                                    "Creator: ${params.creator}"
+                            }
+                            null
+                        }
                     }
                 }
             }
