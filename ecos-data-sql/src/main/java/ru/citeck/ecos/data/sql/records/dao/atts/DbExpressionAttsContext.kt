@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import ru.citeck.ecos.context.lib.time.TimeZoneContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.records.dao.query.DbQueryPreparingException
@@ -8,8 +9,9 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.expression.ExpressionParser
 import ru.citeck.ecos.data.sql.service.expression.ExpressionTools
 import ru.citeck.ecos.data.sql.service.expression.token.*
+import java.time.Duration
+import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.collections.HashMap
 
 class DbExpressionAttsContext(
     private val queryContext: DbFindQueryContext,
@@ -122,6 +124,9 @@ class DbExpressionAttsContext(
                             IntervalToken("$arg month")
                         )
                     }
+
+                    dateExpression = applyTimezoneOffset(dateExpression)
+
                     if (token.name == "startOfMonth") {
                         CastToken(
                             FunctionToken(
@@ -184,6 +189,16 @@ class DbExpressionAttsContext(
         } else {
             entities.map { mapEntityAtts(it) }
         }
+    }
+
+    private fun applyTimezoneOffset(dateExpression: ExpressionToken): ExpressionToken {
+        val offset = TimeZoneContext.getUtcOffset()
+        if (offset == Duration.ZERO) {
+            return dateExpression
+        }
+
+        val timezoneStr = ZoneOffset.ofTotalSeconds(offset.seconds.toInt()).id
+        return GroupToken(dateExpression, AtTimeZoneToken(timezoneStr))
     }
 
     class AssocAggregationSelectExpression(
