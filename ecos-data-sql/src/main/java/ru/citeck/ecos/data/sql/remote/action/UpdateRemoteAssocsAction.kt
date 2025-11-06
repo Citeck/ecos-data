@@ -120,9 +120,9 @@ class UpdateRemoteAssocsAction : DbRemoteActionExecutor<UpdateRemoteAssocsAction
                         null -> {
                             log.warn {
                                 "Records DAO doesn't found by id '$it'. " +
-                                "Remote assocs won't be updated. " +
+                                    "Remote assocs won't be updated. " +
                                     "SourceRef: '${params.srcRef}' " +
-                                    "TargetRef: '${ref}' Action: '$actionDesc' " +
+                                    "TargetRef: '$ref' Action: '$actionDesc' " +
                                     "Creator: ${params.creator}"
                             }
                             null
@@ -135,7 +135,7 @@ class UpdateRemoteAssocsAction : DbRemoteActionExecutor<UpdateRemoteAssocsAction
                                 "Records DAO '$it' is not instance of DbRecordsDao. " +
                                     "Remote assocs won't be updated. DAO type: ${dao::class.qualifiedName}. " +
                                     "SourceRef: '${params.srcRef}' " +
-                                    "TargetRef: '${ref}' Action: '$actionDesc' " +
+                                    "TargetRef: '$ref' Action: '$actionDesc' " +
                                     "Creator: ${params.creator}"
                             }
                             null
