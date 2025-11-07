@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records.perms
 
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthGroup
+import ru.citeck.ecos.context.lib.auth.data.SimpleAuthData
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecPermsValue
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.records2.RecordConstants
@@ -18,22 +19,30 @@ class DefaultDbPermsComponent(
         val parentRef = AuthContext.runAsSystem {
             recordsService.getAtt(record, "${RecordConstants.ATT_PARENT}?id").asText().toEntityRef()
         }
+
         val parentAtts = if (EntityRef.isEmpty(parentRef)) {
-            ParentPermsAtts(
+            val typeIsSystem = AuthContext.runAsSystem {
+                recordsService.getAtt(record, "${RecordConstants.ATT_TYPE}.system?bool!").asBoolean()
+            }
+            val userAuthData = SimpleAuthData(user, authorities.toList())
+            val canWrite = (AuthContext.isSystemAuth(userAuthData) || AuthContext.isAdminAuth(userAuthData)) ||
+                typeIsSystem.not()
+
+            PermsAtts(
                 canRead = true,
-                canWrite = true,
+                canWrite = canWrite,
                 authoritiesWithReadPerms = listOf(AuthGroup.EVERYONE),
                 additionalPerms = listOf(DbRecPermsValue.ADDITIONAL_PERMS_ALL)
             )
         } else {
             AuthContext.runAs(user, authorities.toList()) {
-                recordsService.getAtts(parentRef, ParentPermsAtts::class.java)
+                recordsService.getAtts(parentRef, PermsAtts::class.java)
             }
         }
         return DefaultRecPerms(parentAtts)
     }
 
-    private class ParentPermsAtts(
+    private class PermsAtts(
         @AttName("${DbRecord.ATT_PERMISSIONS}._has.${DbRecPermsValue.PERMS_READ}?bool!")
         val canRead: Boolean,
 
@@ -47,30 +56,30 @@ class DefaultDbPermsComponent(
         val additionalPerms: List<String>,
     )
 
-    private inner class DefaultRecPerms(private val parentPerms: ParentPermsAtts) : DbRecordPerms {
+    private inner class DefaultRecPerms(private val permsAtts: PermsAtts) : DbRecordPerms {
 
         override fun getAdditionalPerms(): Set<String> {
-            return parentPerms.additionalPerms.toSet()
+            return permsAtts.additionalPerms.toSet()
         }
 
         override fun getAuthoritiesWithReadPermission(): Set<String> {
-            return parentPerms.authoritiesWithReadPerms.toSet()
+            return permsAtts.authoritiesWithReadPerms.toSet()
         }
 
         override fun hasReadPerms(): Boolean {
-            return parentPerms.canRead
+            return permsAtts.canRead
         }
 
         override fun hasWritePerms(): Boolean {
-            return parentPerms.canWrite
+            return permsAtts.canWrite
         }
 
         override fun hasAttWritePerms(name: String): Boolean {
-            return true
+            return permsAtts.canWrite
         }
 
         override fun hasAttReadPerms(name: String): Boolean {
-            return true
+            return permsAtts.canRead
         }
     }
 }

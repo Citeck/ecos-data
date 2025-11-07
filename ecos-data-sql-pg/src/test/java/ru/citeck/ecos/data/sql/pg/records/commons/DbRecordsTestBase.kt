@@ -62,6 +62,7 @@ import ru.citeck.ecos.records2.predicate.model.VoidPredicate
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.RecordsServiceFactory
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
+import ru.citeck.ecos.records3.record.dao.impl.mem.InMemDataRecordsDao
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
 import ru.citeck.ecos.records3.record.request.RequestContext
@@ -404,6 +405,16 @@ abstract class DbRecordsTestBase {
             DEFAULT_TABLE_REF.withTable(ATTACHMENT_TYPE_ID),
             ModelUtils.getTypeRef(ATTACHMENT_TYPE_ID),
             ATTACHMENT_TYPE_ID
+        )
+
+        records.register(InMemDataRecordsDao("emodel/type"))
+        records.mutate(
+            "emodel/type@",
+            mapOf(
+                "id" to REC_TEST_TYPE_ID,
+                "system" to true,
+                "name" to ObjectData.create().set("ru", "Русский").set("en", "English")
+            )
         )
 
         mainCtxInitialized = true
