@@ -8,7 +8,7 @@ class CastToken(val token: ExpressionToken, val castTo: String) : ExpressionToke
 
     override fun validate() {
         token.validate()
-        if (!castTo.any { it !in 'a'..'z' && it !in 'A'..'Z' }) {
+        if (castTo.any { it !in 'a'..'z' && it !in 'A'..'Z' }) {
             error("Invalid castTo: '$castTo'")
         }
     }

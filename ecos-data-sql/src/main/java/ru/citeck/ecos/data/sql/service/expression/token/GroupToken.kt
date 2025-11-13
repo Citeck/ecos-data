@@ -50,6 +50,7 @@ class GroupToken(val tokens: List<ExpressionToken>) : ExpressionToken {
             if (token !is NullConditionToken && token !is AtTimeZoneToken) {
                 operandExpected = !operandExpected
             }
+            token.validate()
         }
     }
 

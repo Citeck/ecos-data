@@ -38,6 +38,10 @@ class ExpressionParserTest {
         assertInvalidExpr("(qq[qq)]")
         assertInvalidExpr("interval '1 month")
         assertInvalidExpr("interval '1 month $'")
+        assertInvalidExpr("current_database()")
+        assertInvalidExpr("(current_database())")
+        assertInvalidExpr("pg_sleep(10)")
+        assertInvalidExpr("(pg_sleep())")
 
         assertExpr(
             "(now()::date AT TIME ZONE 'UTC')",
@@ -125,7 +129,7 @@ class ExpressionParserTest {
 
         val expected0 = GroupToken(
             listOf(
-                FunctionToken("someFunc", listOf(ColumnToken("someColumn1"), ColumnToken("someColumn2"))),
+                FunctionToken("concat", listOf(ColumnToken("someColumn1"), ColumnToken("someColumn2"))),
                 OperatorToken(OperatorToken.Type.MULTIPLY),
                 ScalarToken("someString"),
                 OperatorToken(OperatorToken.Type.PLUS),
@@ -153,7 +157,7 @@ class ExpressionParserTest {
             )
         )
         assertExpr(
-            "(someFunc(\"someColumn1\",\"someColumn2\") " +
+            "(concat(\"someColumn1\",\"someColumn2\") " +
                 "* 'someString'+ \"SomeColumn\" * 123 / (abc + 23*qqqqQ+ (Qq + count(*))))",
             expected0
         )

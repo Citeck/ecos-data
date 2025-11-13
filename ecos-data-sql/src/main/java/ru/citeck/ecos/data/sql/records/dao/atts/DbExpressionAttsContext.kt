@@ -208,6 +208,7 @@ class DbExpressionAttsContext(
     ) : ExpressionToken {
 
         override fun validate() {
+            expression.validate()
         }
 
         override fun <T : ExpressionToken> visit(type: Class<T>, visitor: (T) -> Unit) {

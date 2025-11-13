@@ -36,10 +36,7 @@ class ScalarToken(val value: Any) : ExpressionToken {
             return false
         }
         other as ScalarToken
-        if (value != other.value) {
-            return false
-        }
-        return true
+        return value == other.value
     }
 
     override fun hashCode(): Int {

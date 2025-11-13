@@ -7,7 +7,13 @@ class CaseToken(
     val orElse: ExpressionToken?,
 ) : ExpressionToken {
 
-    override fun validate() {}
+    override fun validate() {
+        branches.forEach {
+            it.condition.validate()
+            it.thenResult.validate()
+        }
+        orElse?.validate()
+    }
 
     override fun <T : ExpressionToken> visit(type: Class<T>, visitor: (T) -> Unit) {
         branches.forEach {

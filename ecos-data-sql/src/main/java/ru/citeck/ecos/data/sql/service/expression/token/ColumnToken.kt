@@ -15,7 +15,11 @@ class ColumnToken(val name: String) : ExpressionToken {
             "\"" + name + "\""
         }
     }
-    override fun validate() {}
+    override fun validate() {
+        if (name.any { !it.isLetterOrDigit() && it != '-' && it != '_' && it != '.' && it != '\"' }) {
+            throw IllegalArgumentException("Invalid column name '$name'")
+        }
+    }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) {
