@@ -2,6 +2,12 @@ package ru.citeck.ecos.data.sql.service.expression.token
 
 class ColumnToken(val name: String) : ExpressionToken {
 
+    companion object {
+        private val ALLOWED_SPECIAL_CHARS = setOf(
+            '-', '_', '.', '\"', ':', '$'
+        )
+    }
+
     override fun <T : ExpressionToken> visit(type: Class<T>, visitor: (T) -> Unit) {
         if (type.isInstance(this)) {
             visitor.invoke(type.cast(this))
@@ -16,7 +22,7 @@ class ColumnToken(val name: String) : ExpressionToken {
         }
     }
     override fun validate() {
-        if (name.any { !it.isLetterOrDigit() && it != '-' && it != '_' && it != '.' && it != '\"' }) {
+        if (name.any { !it.isLetterOrDigit() && !ALLOWED_SPECIAL_CHARS.contains(it)}) {
             throw IllegalArgumentException("Invalid column name '$name'")
         }
     }
