@@ -131,6 +131,7 @@ class FunctionToken(val name: String, val args: List<ExpressionToken>) : Express
         if (args.any { it is AllFieldsToken } && name != "count") {
             error("All fields token '*' can be used only within count function")
         }
+        args.forEach { it.validate() }
     }
 
     override fun equals(other: Any?): Boolean {

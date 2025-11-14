@@ -42,6 +42,8 @@ class ExpressionParserTest {
         assertInvalidExpr("(current_database())")
         assertInvalidExpr("pg_sleep(10)")
         assertInvalidExpr("(pg_sleep())")
+        assertInvalidExpr("(concat(current_database(), ''))")
+        assertInvalidExpr("(concat(query_to_xml('SELECT * FROM public.type_permissions WHERE \\\"type_ref\\\" = ''emodel/type@deal''', true, true, '')::text))")
 
         assertExpr(
             "(now()::date AT TIME ZONE 'UTC')",
