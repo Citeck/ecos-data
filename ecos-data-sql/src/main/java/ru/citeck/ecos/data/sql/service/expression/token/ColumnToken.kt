@@ -4,7 +4,12 @@ class ColumnToken(val name: String) : ExpressionToken {
 
     companion object {
         private val ALLOWED_SPECIAL_CHARS = setOf(
-            '-', '_', '.', '\"', ':', '$'
+            '-',
+            '_',
+            '.',
+            '\"',
+            ':',
+            '$'
         )
     }
 
@@ -22,7 +27,7 @@ class ColumnToken(val name: String) : ExpressionToken {
         }
     }
     override fun validate() {
-        if (name.any { !it.isLetterOrDigit() && !ALLOWED_SPECIAL_CHARS.contains(it)}) {
+        if (name.any { !it.isLetterOrDigit() && !ALLOWED_SPECIAL_CHARS.contains(it) }) {
             throw IllegalArgumentException("Invalid column name '$name'")
         }
     }

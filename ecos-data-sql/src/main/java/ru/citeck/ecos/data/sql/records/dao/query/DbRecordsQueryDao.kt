@@ -183,8 +183,8 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         val delegationsList: MutableList<Pair<Set<Long>, Set<String>>> = ArrayList()
 
         val isRunAsSystem = AuthContext.isRunAsSystem() || (
-            typeInfo?.workspaceScope == WorkspaceScope.PRIVATE
-                && workspaceService.isRunAsSystemOrWsSystem(typeInfo.defaultWorkspace)
+            typeInfo?.workspaceScope == WorkspaceScope.PRIVATE &&
+                workspaceService.isRunAsSystemOrWsSystem(typeInfo.defaultWorkspace)
             )
 
         if (!isRunAsSystem && predicateData.queryPermsPolicy != QueryPermsPolicy.PUBLIC) {
@@ -600,8 +600,8 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
             QueryPermsPolicy.PUBLIC
         } else {
             val typeInfo = typeData.getTypeInfo()
-            if (typeInfo?.workspaceScope == WorkspaceScope.PRIVATE
-                && workspaceService.isRunAsSystemOrWsSystem(typeInfo.defaultWorkspace)
+            if (typeInfo?.workspaceScope == WorkspaceScope.PRIVATE &&
+                workspaceService.isRunAsSystemOrWsSystem(typeInfo.defaultWorkspace)
             ) {
                 QueryPermsPolicy.PUBLIC
             } else {

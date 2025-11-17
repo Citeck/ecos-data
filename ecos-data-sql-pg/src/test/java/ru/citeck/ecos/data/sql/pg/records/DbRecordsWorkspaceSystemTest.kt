@@ -78,7 +78,17 @@ class DbRecordsWorkspaceSystemTest : DbRecordsTestBase() {
             }
 
             checkQueryRes(ref0, ref1, ref2, ref3)
+
+            records.delete(ref3)
+
+            checkQueryRes(ref0, ref1, ref2)
         }
+
+        checkQueryRes(ref0, ref1, ref2)
+
+        val ref4 = createRecord()
+
+        checkQueryRes(ref0, ref1, ref2, ref4)
 
         workspaceService.impl.runAsWsSystem("ws1") {
 
@@ -98,8 +108,20 @@ class DbRecordsWorkspaceSystemTest : DbRecordsTestBase() {
             assertThrows<Exception> {
                 records.mutateAtt(ref2, "sys_text", "value2")
             }
+
+            checkQueryRes()
+
+            assertThrows<Exception> {
+                records.delete(ref0)
+            }
+            assertThrows<Exception> {
+                records.delete(listOf(ref0, ref1, ref2, ref4))
+            }
+
             checkQueryRes()
         }
+
+        checkQueryRes(ref0, ref1, ref2, ref4)
 
         workspaceService.impl.runAsWsSystemBySystemId("ws1-sid") {
             val auth = AuthContext.getCurrentRunAsAuth()
