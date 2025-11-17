@@ -19,6 +19,7 @@ class TypeRegistration(
     private var defaultWorkspace: String = ""
     private var defaultStatus: String = ""
     private var attributes: List<AttributeDef> = emptyList()
+    private var sysAttributes: List<AttributeDef> = emptyList()
     private var statuses: List<StatusDef> = emptyList()
     private var stages: List<ProcStageDef> = emptyList()
     private val aspects: MutableList<TypeAspectDef> = ArrayList()
@@ -78,6 +79,11 @@ class TypeRegistration(
         return this
     }
 
+    fun withSysAttributes(vararg attributes: AttributeDef): TypeRegistration {
+        this.sysAttributes = attributes.toList()
+        return this
+    }
+
     fun withSourceId(sourceId: String): TypeRegistration {
         this.sourceId = sourceId
         return this
@@ -94,6 +100,7 @@ class TypeRegistration(
                 .withModel(
                     TypeModelDef.create()
                         .withAttributes(attributes)
+                        .withSystemAttributes(sysAttributes)
                         .withStatuses(statuses)
                         .withStages(stages)
                         .build()

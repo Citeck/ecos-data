@@ -334,7 +334,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     }
 
                     val fullColumns = ArrayList(typeColumns)
-                    var recAfterSave = entity
+                    var recAfterSave: DbEntity = entity
                     dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
                         AuthContext.runAsSystem {
 
@@ -427,47 +427,60 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         val isMutationFromParent = record.getAtt(RecMutAssocHandler.MUTATION_FROM_PARENT_FLAG).asBoolean()
         val isNewEntity = entityToMutate.id == DbEntity.NEW_REC_ID
         var workspaceRef = EntityRef.EMPTY
-        if (isNewEntity && typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
-            var parentWsId = ""
-            val parentRef = record.getAtt(RecordConstants.ATT_PARENT).asText().toEntityRef()
-            if (!isMutationFromParent && parentRef.isNotEmpty() && parentRef.getAppName() != AppName.ALFRESCO) {
-                val parentAtts = if (DbWorkspaceDesc.isWorkspaceRef(parentRef)) {
-                    OnCreateParentAtts(parentRef.getLocalId())
-                } else {
-                    AuthContext.runAsSystem {
-                        daoCtx.recordsService.getAtts(parentRef, OnCreateParentAtts::class.java)
+        var isRunAsSystemOrWsSystem = isRunAsSystem
+        if (typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
+            if (isNewEntity) {
+                var parentWsId = ""
+                val parentRef = record.getAtt(RecordConstants.ATT_PARENT).asText().toEntityRef()
+                if (!isMutationFromParent && parentRef.isNotEmpty() && parentRef.getAppName() != AppName.ALFRESCO) {
+                    val parentAtts = if (DbWorkspaceDesc.isWorkspaceRef(parentRef)) {
+                        OnCreateParentAtts(parentRef.getLocalId())
+                    } else {
+                        AuthContext.runAsSystem {
+                            daoCtx.recordsService.getAtts(parentRef, OnCreateParentAtts::class.java)
+                        }
                     }
+                    /*
+                    // todo?
+                    // move to before commit action?
+                    if (parentAtts.notExists) {
+                        error(
+                            "Parent record doesn't exists: '$parentRef'. " +
+                                "Child record with type ${typeInfo.id} can't be created"
+                        )
+                    }*/
+                    parentWsId = parentAtts.workspace
                 }
-                /*
-                // todo?
-                // move to before commit action?
-                if (parentAtts.notExists) {
+                var mutWorkspaceId = parentWsId.ifBlank {
+                    record.getAtt(RecordConstants.ATT_WORKSPACE).asText().toEntityRef().getLocalId()
+                }
+                if (mutWorkspaceId.isEmpty() && typeInfo.defaultWorkspace.isNotBlank()) {
+                    mutWorkspaceId = typeInfo.defaultWorkspace
+                }
+                if (mutWorkspaceId.isEmpty()) {
                     error(
-                        "Parent record doesn't exists: '$parentRef'. " +
-                            "Child record with type ${typeInfo.id} can't be created"
+                        "You should provide ${RecordConstants.ATT_WORKSPACE} attribute to create new record " +
+                            "with private workspace scope. Type: '${typeInfo.id}'"
                     )
-                }*/
-                parentWsId = parentAtts.workspace
-            }
-            var mutWorkspaceId = parentWsId.ifBlank {
-                record.getAtt(RecordConstants.ATT_WORKSPACE).asText().toEntityRef().getLocalId()
-            }
-            if (mutWorkspaceId.isEmpty() && typeInfo.defaultWorkspace.isNotBlank()) {
-                mutWorkspaceId = typeInfo.defaultWorkspace
-            }
-            if (mutWorkspaceId.isEmpty()) {
-                error(
-                    "You should provide ${RecordConstants.ATT_WORKSPACE} attribute to create new record " +
-                        "with private workspace scope. Type: '${typeInfo.id}'"
-                )
-            }
-            if (mutWorkspaceId.isNotBlank()) {
-                workspaceRef = DbWorkspaceDesc.getRef(mutWorkspaceId)
-            }
-            if (!isRunAsSystem && workspaceRef.isNotEmpty()) {
-                val workspaces = workspaceService.getUserWorkspaces(currentRunAsUser)
-                if (!workspaces.contains(workspaceRef.getLocalId())) {
-                    error("You can't create records in workspace $workspaceRef")
+                }
+                if (mutWorkspaceId.isNotBlank()) {
+                    workspaceRef = DbWorkspaceDesc.getRef(mutWorkspaceId)
+                }
+                if (!isRunAsSystem && workspaceRef.isNotEmpty()) {
+                    val workspaces = workspaceService.getUserOrWsSystemUserWorkspaces(runAsAuth) ?: emptySet()
+                    if (!workspaces.contains(workspaceRef.getLocalId())) {
+                        error("You can't create records in workspace $workspaceRef")
+                    }
+                    isRunAsSystemOrWsSystem = workspaceService.isRunAsSystemOrWsSystem(
+                        workspaceRef.getLocalId()
+                    )
+                }
+            } else if (!isRunAsSystemOrWsSystem) {
+                val workspaceId = entityBeforeMutation.workspace ?: -1L
+                if (workspaceId >= 0L) {
+                    isRunAsSystemOrWsSystem = workspaceService.isRunAsSystemOrWsSystem(
+                        wsDbService.getWorkspaceExtIdById(workspaceId)
+                    )
                 }
             }
         }
@@ -509,7 +522,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         }
 
         var recordPerms = DbRecordPermsContext(DbRecordAllowedAllPerms)
-        if (!isNewEntity && !isRunAsSystem && !daoCtx.getUpdatedInTxnIds().contains(entityToMutate.extId)) {
+        if (!isNewEntity && !isRunAsSystemOrWsSystem && !daoCtx.getUpdatedInTxnIds().contains(entityToMutate.extId)) {
             recordPerms = permsDao.getRecordPerms(entityToMutate.extId, currentRunAsUser, currentRunAsAuthorities)
             if (!recordPerms.hasWritePerms()) {
                 if (isMutationFromChild && recordPerms.getAdditionalPerms().contains("create-children")) {
@@ -689,8 +702,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         } else {
             recAttributes[DbRecord.ATT_ASPECTS] = newAspects
         }
-
-        if (!isRunAsSystem) {
+        if (!isRunAsSystemOrWsSystem) {
             val deniedAtts = typeAttColumns.filter {
                 it.systemAtt && recAttributes.has(it.attribute.id)
             }.map {
@@ -811,7 +823,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         val recordEntityBeforeMutation = entityToMutate.copy()
 
         val fullColumns = ArrayList(typeColumns)
-        val perms = if (isNewEntity || isRunAsSystem) {
+        val perms = if (isNewEntity || isRunAsSystemOrWsSystem) {
             null
         } else {
             permsDao.getRecordPerms(entityToMutate.extId)

@@ -595,7 +595,7 @@ class DbRecord(
             }
         }
 
-        val isRunAsSystem = AuthContext.isRunAsSystem()
+        val isRunAsSystem = ctx.workspaceService.isRunAsSystemOrWsSystem(getWorkspaceId())
 
         val attDefs = if (isRunAsSystem) {
             allAttDefs
@@ -773,7 +773,7 @@ class DbRecord(
     }
 
     fun isCurrentUserHasReadPerms(): Boolean {
-        if (AuthContext.isRunAsSystem() || ctx.getUpdatedInTxnIds().contains(extId)) {
+        if (ctx.workspaceService.isRunAsSystemOrWsSystem(getWorkspaceId()) || ctx.getUpdatedInTxnIds().contains(extId)) {
             return true
         }
         val ws = workspace
@@ -787,7 +787,7 @@ class DbRecord(
     }
 
     private fun isCurrentUserHasAttReadPerms(attribute: String): Boolean {
-        if (AuthContext.isRunAsSystem()) {
+        if (ctx.workspaceService.isRunAsSystemOrWsSystem(getWorkspaceId())) {
             return true
         }
         return permsValue.getRecordPerms().hasAttReadPerms(attribute)

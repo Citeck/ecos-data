@@ -78,7 +78,6 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         if (language.isNotEmpty() && language != PredicateService.LANGUAGE_PREDICATE) {
             return RecsQueryRes()
         }
-        val isRunAsSystem = AuthContext.isRunAsSystem()
 
         var groupBy = recsQuery.groupBy
         // add support of legacy grouping with '&' as delimiter for attributes
@@ -142,35 +141,13 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
 
         val typeInfo = ecosTypeService.getTypeInfo(ecosTypeRef.getLocalId())
         if (typeInfo?.workspaceScope == WorkspaceScope.PRIVATE) {
-            val workspacesForQuery: Collection<String>
-            var workspacesInIncomingQuery = workspaceService.expandWorkspaces(recsQuery.workspaces)
-            if (workspacesInIncomingQuery.contains("")) {
-                workspacesInIncomingQuery = workspacesInIncomingQuery.toMutableSet().apply {
-                    remove("")
-                    add(DbRecord.WS_DEFAULT)
-                }
-            }
-            if (isRunAsSystem) {
-                workspacesForQuery = workspacesInIncomingQuery
-            } else {
-                val runAs = AuthContext.getCurrentRunAsAuth()
-                val userWs = workspaceService.getUserWorkspaces(runAs.getUser())
-                if (workspacesInIncomingQuery.isEmpty()) {
-                    val wsToSearch = HashSet(userWs)
-                    wsToSearch.add(DbRecord.WS_DEFAULT)
-                    workspacesForQuery = wsToSearch
-                } else {
-                    workspacesForQuery = workspacesInIncomingQuery.filter {
-                        it == DbRecord.WS_DEFAULT || userWs.contains(it)
-                    }
-                    if (workspacesForQuery.isEmpty()) {
-                        return RecsQueryRes()
-                    }
-                }
-            }
-            if (workspacesForQuery.isNotEmpty()) {
-                val existingWsIds = dbWsService.getIdsForExistingWsInAnyOrder(workspacesForQuery)
-                val wsCondition = if (workspacesForQuery.contains(DbRecord.WS_DEFAULT)) {
+            val availableWorkspaces = workspaceService.getAvailableWorkspacesToQuery(
+                AuthContext.getCurrentRunAsAuth(),
+                recsQuery.workspaces
+            ) ?: return RecsQueryRes()
+            if (availableWorkspaces.isNotEmpty()) {
+                val existingWsIds = dbWsService.getIdsForExistingWsInAnyOrder(availableWorkspaces)
+                val wsCondition = if (availableWorkspaces.contains("")) {
                     if (existingWsIds.isEmpty()) {
                         Predicates.empty(DbEntity.WORKSPACE)
                     } else {
@@ -204,34 +181,42 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         val runAsAuth = AuthContext.getCurrentRunAsAuth()
         val userAuthorities = DbRecordsUtils.getCurrentAuthorities(runAsAuth).toMutableSet()
         val delegationsList: MutableList<Pair<Set<Long>, Set<String>>> = ArrayList()
+
+        val isRunAsSystem = AuthContext.isRunAsSystem() || (
+            typeInfo?.workspaceScope == WorkspaceScope.PRIVATE
+                && workspaceService.isRunAsSystemOrWsSystem(typeInfo.defaultWorkspace)
+            )
+
         if (!isRunAsSystem && predicateData.queryPermsPolicy != QueryPermsPolicy.PUBLIC) {
             val delegations = daoCtx.delegationService.getActiveAuthDelegations(
                 runAsAuth.getUser(),
                 listOf(ecosTypeRef.getLocalId())
             )
-            val delegationsForTypeIds: MutableList<Pair<Set<String>, Set<String>>> = ArrayList()
-            val fullTypesIds = HashSet<String>()
-            for (delegation in delegations) {
-                if (delegation.delegatedTypes.isEmpty() ||
-                    delegation.delegatedTypes.contains(ecosTypeRef.getLocalId())
-                ) {
-                    userAuthorities.addAll(delegation.delegatedAuthorities)
-                } else {
-                    fullTypesIds.addAll(delegation.delegatedTypes)
-                    delegationsForTypeIds.add(delegation.delegatedTypes to delegation.delegatedAuthorities)
+            if (delegations.isNotEmpty()) {
+                val delegationsForTypeIds: MutableList<Pair<Set<String>, Set<String>>> = ArrayList()
+                val fullTypesIds = HashSet<String>()
+                for (delegation in delegations) {
+                    if (delegation.delegatedTypes.isEmpty() ||
+                        delegation.delegatedTypes.contains(ecosTypeRef.getLocalId())
+                    ) {
+                        userAuthorities.addAll(delegation.delegatedAuthorities)
+                    } else {
+                        fullTypesIds.addAll(delegation.delegatedTypes)
+                        delegationsForTypeIds.add(delegation.delegatedTypes to delegation.delegatedAuthorities)
+                    }
                 }
-            }
-            val typeRefIdByTypeId: Map<EntityRef, Long> = daoCtx.recordRefService.getIdByEntityRefsMap(
-                fullTypesIds.mapTo(ArrayList()) { ModelUtils.getTypeRef(it) }
-            )
-            for ((typesIds, authorities) in delegationsForTypeIds) {
-                val typeLongIds: Set<Long> = typesIds.mapNotNullTo(HashSet()) {
-                    typeRefIdByTypeId[ModelUtils.getTypeRef(it)]
+                val typeRefIdByTypeId: Map<EntityRef, Long> = daoCtx.recordRefService.getIdByEntityRefsMap(
+                    fullTypesIds.mapTo(ArrayList()) { ModelUtils.getTypeRef(it) }
+                )
+                for ((typesIds, authorities) in delegationsForTypeIds) {
+                    val typeLongIds: Set<Long> = typesIds.mapNotNullTo(HashSet()) {
+                        typeRefIdByTypeId[ModelUtils.getTypeRef(it)]
+                    }
+                    if (typeLongIds.isEmpty()) {
+                        continue
+                    }
+                    delegationsList.add(typeLongIds to authorities)
                 }
-                if (typeLongIds.isEmpty()) {
-                    continue
-                }
-                delegationsList.add(typeLongIds to authorities)
             }
         }
 
@@ -429,11 +414,6 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         val assocsTableExists = assocsService.isAssocsTableExists()
 
         val typeAspects = typeData.getTypeAspects()
-        val queryPermsPolicy = if (AuthContext.isRunAsSystem()) {
-            QueryPermsPolicy.PUBLIC
-        } else {
-            typeData.getQueryPermsPolicy()
-        }
 
         val predicateWithConvertedAssocs = replaceComplexTypePredicate(
             replaceAssocRefsToIdsAndMergeOrPredicates(predicate, typeData),
@@ -613,6 +593,19 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
             } else {
                 log.error { "Unknown predicate type: ${currentPred::class}" }
                 Predicates.alwaysFalse()
+            }
+        }
+
+        val queryPermsPolicy = if (AuthContext.isRunAsSystem()) {
+            QueryPermsPolicy.PUBLIC
+        } else {
+            val typeInfo = typeData.getTypeInfo()
+            if (typeInfo?.workspaceScope == WorkspaceScope.PRIVATE
+                && workspaceService.isRunAsSystemOrWsSystem(typeInfo.defaultWorkspace)
+            ) {
+                QueryPermsPolicy.PUBLIC
+            } else {
+                typeData.getQueryPermsPolicy()
             }
         }
 

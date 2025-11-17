@@ -5,6 +5,7 @@ import ru.citeck.ecos.context.lib.auth.AuthGroup
 import ru.citeck.ecos.context.lib.auth.data.SimpleAuthData
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecPermsValue
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
+import ru.citeck.ecos.model.lib.workspace.WorkspaceService
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
@@ -12,7 +13,8 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 
 class DefaultDbPermsComponent(
-    private val recordsService: RecordsService
+    private val recordsService: RecordsService,
+    private val workspaceService: WorkspaceService
 ) : DbPermsComponent {
 
     override fun getRecordPerms(user: String, authorities: Set<String>, record: Any): DbRecordPerms {
@@ -21,12 +23,14 @@ class DefaultDbPermsComponent(
         }
 
         val parentAtts = if (EntityRef.isEmpty(parentRef)) {
-            val typeIsSystem = AuthContext.runAsSystem {
-                recordsService.getAtt(record, "${RecordConstants.ATT_TYPE}.system?bool!").asBoolean()
+            val recAtts = AuthContext.runAsSystem {
+                recordsService.getAtts(record, RecWoParentAtts::class.java)
             }
             val userAuthData = SimpleAuthData(user, authorities.toList())
-            val canWrite = (AuthContext.isSystemAuth(userAuthData) || AuthContext.isAdminAuth(userAuthData)) ||
-                typeIsSystem.not()
+            val canWrite = !recAtts.hasSystemType || workspaceService.isSystemOrWsSystemOrAdminAuth(
+                userAuthData,
+                recAtts.workspace
+            )
 
             PermsAtts(
                 canRead = true,
@@ -41,6 +45,13 @@ class DefaultDbPermsComponent(
         }
         return DefaultRecPerms(parentAtts)
     }
+
+    private class RecWoParentAtts(
+        @AttName("${RecordConstants.ATT_TYPE}.system?bool!")
+        val hasSystemType: Boolean,
+        @AttName("_workspace?localId!")
+        val workspace: String
+    )
 
     private class PermsAtts(
         @AttName("${DbRecord.ATT_PERMISSIONS}._has.${DbRecPermsValue.PERMS_READ}?bool!")

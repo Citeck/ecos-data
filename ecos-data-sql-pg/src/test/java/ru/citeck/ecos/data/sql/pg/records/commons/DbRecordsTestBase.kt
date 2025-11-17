@@ -56,6 +56,9 @@ import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.repo.TypesRepo
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.model.lib.workspace.WorkspaceService
+import ru.citeck.ecos.model.lib.workspace.WorkspaceServiceImpl
+import ru.citeck.ecos.model.lib.workspace.api.WorkspaceApi
+import ru.citeck.ecos.model.lib.workspace.api.WsMembershipType
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.PredicateService
 import ru.citeck.ecos.records2.predicate.model.VoidPredicate
@@ -363,8 +366,8 @@ abstract class DbRecordsTestBase {
                     return this@DbRecordsTestBase.delegationService
                 }
 
-                override fun createWorkspaceService(): WorkspaceService {
-                    return this@DbRecordsTestBase.workspaceService.service
+                override fun createWorkspaceApi(): WorkspaceApi {
+                    return this@DbRecordsTestBase.workspaceService
                 }
 
                 override fun getEcosWebAppApi(): EcosWebAppApi {
@@ -373,6 +376,8 @@ abstract class DbRecordsTestBase {
             }
             modelServiceFactory.setRecordsServices(recordsServiceFactory)
             delegationService.ecosTypeService = DbEcosModelService(modelServiceFactory)
+
+            workspaceService.impl = modelServiceFactory.workspaceService
 
             dbDataSource = DbDataSourceImpl(jdbcDataSource)
             dataSourceCtx = DbDataSourceContext(
@@ -496,7 +501,7 @@ abstract class DbRecordsTestBase {
             schemaCtx
         )
 
-        val defaultPermsComponent = DefaultDbPermsComponent(records)
+        val defaultPermsComponent = DefaultDbPermsComponent(records, modelServiceFactory.workspaceService)
 
         val recAdditionalPerms: MutableMap<EntityRef, MutableMap<String, MutableSet<String>>> = mutableMapOf()
         val recReadPerms: MutableMap<EntityRef, Set<String>> = mutableMapOf()
@@ -841,29 +846,42 @@ abstract class DbRecordsTestBase {
         registerType(typeInfo.copy { withQueryPermsPolicy(policy) })
     }
 
-    class CustomWorkspaceService {
+    class CustomWorkspaceService : WorkspaceApi {
 
         val usersWs = ConcurrentHashMap<String, Set<String>>()
         val nestedWorkspaces = ConcurrentHashMap<String, Set<String>>()
 
-        val service: WorkspaceService by lazy {
-            val workspaceService = Mockito.mock(WorkspaceService::class.java)
-            Mockito.`when`(workspaceService.getUserWorkspaces(Mockito.anyString())).thenAnswer {
-                val user = it.getArgument<String>(0)
-                setOf(
-                    *(usersWs[user]?.toTypedArray() ?: emptyArray()),
-                    "user$$user"
-                )
+        lateinit var impl: WorkspaceService
+
+        override fun getNestedWorkspaces(workspaces: Collection<String>): List<Set<String>> {
+            return workspaces.map { workspace ->
+                nestedWorkspaces[workspace] ?: emptySet()
             }
-            Mockito.`when`(workspaceService.expandWorkspaces(Mockito.anyList<String>())).thenAnswer {
-                val workspaces: Collection<String> = it.getArgument(0)
-                val result = LinkedHashSet(workspaces)
-                for (workspace in workspaces) {
-                    result.addAll(nestedWorkspaces[workspace] ?: emptyList())
+        }
+
+        override fun getUserWorkspaces(user: String, membershipType: WsMembershipType): Set<String> {
+            return usersWs[user] ?: emptySet()
+        }
+
+        override fun isUserManagerOf(user: String, workspace: String): Boolean {
+            if (workspace.startsWith("user$")) {
+                return workspace.substring("user$".length) == user
+            }
+            return false
+        }
+
+        override fun mapIdentifiers(identifiers: List<String>, mappingType: WorkspaceApi.IdMappingType): List<String> {
+            return when (mappingType) {
+                WorkspaceApi.IdMappingType.WS_SYS_ID_TO_ID -> identifiers.map {
+                    if (it.endsWith("-sid")) {
+                        it.substring(0, it.length - "-sid".length)
+                    } else {
+                        it
+                    }
                 }
-                result
+                WorkspaceApi.IdMappingType.WS_ID_TO_SYS_ID -> identifiers.map { "$it-sid" }
+                else -> identifiers
             }
-            workspaceService
         }
 
         fun setUserWorkspaces(user: String, workspaces: Set<String>) {
@@ -872,6 +890,7 @@ abstract class DbRecordsTestBase {
 
         fun setNestedWorkspaces(workspace: String, nestedWorkspaces: Set<String>) {
             this.nestedWorkspaces[workspace] = nestedWorkspaces
+            impl.resetNestedWorkspacesCache()
         }
     }
 
