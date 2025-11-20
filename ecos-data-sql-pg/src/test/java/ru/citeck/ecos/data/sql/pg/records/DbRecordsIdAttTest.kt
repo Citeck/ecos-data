@@ -45,7 +45,7 @@ class DbRecordsIdAttTest : DbRecordsTestBase() {
                 )
             }
         }
-        assertThat(ex.message).contains("Record with id: 'test-id' already exists. The id must be unique.")
+        assertThat(ex.message).contains("Record 'test-app/test@test-id' already exists. The id must be unique.")
 
         val record0 = createRecord(
             RecordConstants.ATT_ID to "test-id-1",
