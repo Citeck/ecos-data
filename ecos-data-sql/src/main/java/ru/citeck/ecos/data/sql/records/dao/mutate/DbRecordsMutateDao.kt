@@ -186,7 +186,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         val typeId = getTypeIdForRecord(record)
         val typeInfo = ecosTypeService.getTypeInfo(typeId)
-            ?: error("Type is not found: '$typeId'. Record ID: '${record.id}'")
+            ?: error("Type is not found: '$typeId'. Record '${daoCtx.getGlobalRef(record.id)}'")
 
         val typeAttColumns = ecosTypeService.getColumnsForTypes(listOf(typeInfo))
         return mutateRecordInTxn(record, typeInfo, typeAttColumns)
@@ -266,13 +266,13 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             var entity = daoCtx.attsDao.findDbEntityByExtId(extId)
             if (entity == null) {
                 if (record.id.isNotEmpty()) {
-                    error("Record with id: '$extId' doesn't found")
+                    error("Record '${daoCtx.getGlobalRef(extId)}' doesn't found")
                 } else {
                     entity = DbEntity()
                 }
             } else {
                 if (record.id.isEmpty() && !isRunAsSystem) {
-                    error("Record with id: '$extId' already exists. The id must be unique.")
+                    error("Record '${daoCtx.getGlobalRef(extId)}' already exists. The id must be unique.")
                 }
 
                 val aspects = entity.attributes[DbRecord.ATT_ASPECTS]
@@ -402,7 +402,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     if (dataService.isExistsByExtId(customExtId)) {
                         log.error {
                             "Record with ID $customExtId already exists. You should mutate it directly. " +
-                                "Record: ${config.id}@$customExtId"
+                                "Record: ${daoCtx.getGlobalRef(customExtId)}"
                         }
                         error("Read permission denied for ${daoCtx.getGlobalRef(customExtId)}")
                     }
@@ -555,19 +555,21 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         if (isNewEntity) {
             if (!config.insertable) {
-                error("Records DAO doesn't support new records creation. Record ID: '${record.id}'")
+                error("Records DAO doesn't support new records creation. " +
+                    "Record ID: '${daoCtx.getGlobalRef(record.id)}'")
             }
         } else {
             if (!config.updatable) {
-                error("Records DAO doesn't support records updating. Record ID: '${record.id}'")
+                error("Records DAO doesn't support records updating. " +
+                    "Record: '${daoCtx.getGlobalRef(record.id)}'")
             }
         }
 
         if (entityToMutate.extId.isEmpty()) {
             entityToMutate.extId = UUID.randomUUID().toString()
         }
+        val globalRef = daoCtx.getGlobalRef(entityToMutate.extId)
         if (isNewEntity) {
-            val globalRef = daoCtx.getGlobalRef(entityToMutate.extId)
             entityToMutate.refId = recordRefService.getOrCreateIdByEntityRefs(listOf(globalRef))[0]
             if (workspaceRef.isNotEmpty() && workspaceRef.getLocalId() != DbRecord.WS_DEFAULT) {
                 entityToMutate.workspace = wsDbService.getOrCreateId(workspaceRef.getLocalId())
@@ -617,7 +619,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 if (newContentVersion <= currentVersion) {
                     error(
                         "Version downgrading is not supported. " +
-                            "Record: ${daoCtx.getGlobalRef(entityToMutate.extId)} " +
+                            "Record: $globalRef " +
                             "Before: '$currentVersion' After: '$newContentVersion'"
                     )
                 }
@@ -640,7 +642,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         if (recAttributes.has(RecordConstants.ATT_CONTENT)) {
 
             if (mainContentAtt.contains(".")) {
-                error("Inner content uploading is not supported. Content attribute: '$mainContentAtt'")
+                error("Inner content uploading is not supported. " +
+                    "Content attribute: '$mainContentAtt'. Record: $globalRef")
             }
             val contentValue = recAttributes[RecordConstants.ATT_CONTENT]
             recAttributes[mainContentAtt] = contentValue
@@ -709,7 +712,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 it.attribute.id
             }
             if (deniedAtts.isNotEmpty()) {
-                error("Permission denied. You should be in system context to change system attributes: $deniedAtts")
+                error("Permission denied. You should be in system context " +
+                    "to change system attributes: $deniedAtts. Record: $globalRef")
             }
         }
 
@@ -735,7 +739,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                         error(
                             "You can't edit large associations by providing full values list. " +
                                 "Please, use att_add_... and att_rem_... to work with it. " +
-                                "Assoc: $att Record: ${daoCtx.getGlobalRef(entityToMutate.extId)}"
+                                "Assoc: $att Record: $globalRef"
                         )
                     }
                     val refsBefore = recordRefService.getEntityRefsByIds(valuesBefore).map {
@@ -871,7 +875,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 } else {
                     error(
                         "Unknown status: '$newStatus'. " +
-                            "Available statuses: ${typeInfo.model.statuses.joinToString { it.id }}"
+                            "Available statuses: ${typeInfo.model.statuses.joinToString { it.id }}. Record: $globalRef"
                     )
                 }
             }
@@ -1090,8 +1094,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         }
 
         error(
-            "${RecordConstants.ATT_TYPE} attribute is mandatory for mutation. " +
-                "SourceId: '${config.id}' Record: ${record.id}"
+            "${RecordConstants.ATT_TYPE} attribute is mandatory for mutation. Record: ${daoCtx.getGlobalRef(record.id)}"
         )
     }
 
@@ -1119,7 +1122,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             }
             if (perms?.hasAttWritePerms(dbColumnDef.name) == false) {
                 val msg = "Permission Denied. User $currentUser can't change attribute ${dbColumnDef.name} " +
-                    "for record ${config.id}@${recToMutate.extId}"
+                    "for record ${daoCtx.getGlobalRef(recToMutate.extId)}"
                 if (isMutationFromChild) {
                     error(msg)
                 } else {
