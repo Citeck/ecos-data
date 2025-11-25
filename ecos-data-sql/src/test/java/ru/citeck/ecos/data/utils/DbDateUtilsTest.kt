@@ -864,4 +864,199 @@ class DbDateUtilsTest {
             assertThat(result).isEqualTo(expected)
         }
     }
+
+    @Test
+    fun normalizeDateTimePredicateValueDurationTest() {
+        setupWithInstant(Instant.parse("2023-06-15T14:30:45Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val resultDay = DbDateUtils.normalizeDateTimePredicateValue("P1D", withTime = false)
+            assertThat(resultDay).isEqualTo("2023-06-16T00:00:00Z")
+
+            val resultHour = DbDateUtils.normalizeDateTimePredicateValue("PT1H", withTime = false)
+            assertThat(resultHour).isEqualTo("2023-06-15T15:00:00Z")
+
+            val resultNegDay = DbDateUtils.normalizeDateTimePredicateValue("-P1D", withTime = false)
+            assertThat(resultNegDay).isEqualTo("2023-06-14T00:00:00Z")
+
+            val resultMinutes = DbDateUtils.normalizeDateTimePredicateValue("PT30M", withTime = false)
+            assertThat(resultMinutes).isEqualTo("2023-06-15T15:00:00Z")
+        }
+    }
+
+    @Test
+    fun normalizeDateTimePredicateValueDurationWithTimezoneTest() {
+        setupWithInstant(Instant.parse("2023-06-15T14:30:45Z"))
+
+        TimeZoneContext.doWithUtcOffset(Duration.ofHours(3)) {
+            val resultDay = DbDateUtils.normalizeDateTimePredicateValue("P1D", withTime = false)
+            assertThat(resultDay).isEqualTo("2023-06-16T00:00:00Z")
+
+            val resultHour = DbDateUtils.normalizeDateTimePredicateValue("PT1H", withTime = false)
+            assertThat(resultHour).isEqualTo("2023-06-15T15:00:00Z")
+        }
+
+        TimeZoneContext.doWithUtcOffset(Duration.ofHours(-5)) {
+            val resultDay = DbDateUtils.normalizeDateTimePredicateValue("P1D", withTime = false)
+            assertThat(resultDay).isEqualTo("2023-06-16T00:00:00Z")
+
+            val resultNegDay = DbDateUtils.normalizeDateTimePredicateValue("-P1D", withTime = false)
+            assertThat(resultNegDay).isEqualTo("2023-06-14T00:00:00Z")
+        }
+
+        setupWithInstant(Instant.parse("2023-06-30T23:30:00Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ofHours(2)) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue("P1M", withTime = false)
+            assertThat(result).isEqualTo("2023-08-01T00:00:00Z")
+        }
+
+        setupWithInstant(Instant.parse("2023-07-01T00:30:00Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ofHours(-3)) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue("P1M", withTime = false)
+            assertThat(result).isEqualTo("2023-07-30T00:00:00Z")
+        }
+    }
+
+    @Test
+    fun normalizeDateTimePredicateValuePeriodMonthsTest() {
+        setupWithInstant(Instant.parse("2023-06-15T14:30:45Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val result1M = DbDateUtils.normalizeDateTimePredicateValue("P1M", withTime = false)
+            assertThat(result1M).isEqualTo("2023-07-15T00:00:00Z")
+
+            val resultNeg1M = DbDateUtils.normalizeDateTimePredicateValue("-P1M", withTime = false)
+            assertThat(resultNeg1M).isEqualTo("2023-05-15T00:00:00Z")
+
+            val result3M = DbDateUtils.normalizeDateTimePredicateValue("P3M", withTime = false)
+            assertThat(result3M).isEqualTo("2023-09-15T00:00:00Z")
+
+            val resultNeg6M = DbDateUtils.normalizeDateTimePredicateValue("-P6M", withTime = false)
+            assertThat(resultNeg6M).isEqualTo("2022-12-15T00:00:00Z")
+        }
+    }
+
+    @Test
+    fun normalizeDateTimePredicateValuePeriodYearsTest() {
+        setupWithInstant(Instant.parse("2023-06-15T14:30:45Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val result1Y = DbDateUtils.normalizeDateTimePredicateValue("P1Y", withTime = false)
+            assertThat(result1Y).isEqualTo("2024-06-15T00:00:00Z")
+
+            val resultNeg1Y = DbDateUtils.normalizeDateTimePredicateValue("-P1Y", withTime = false)
+            assertThat(resultNeg1Y).isEqualTo("2022-06-15T00:00:00Z")
+
+            val result2Y = DbDateUtils.normalizeDateTimePredicateValue("P2Y", withTime = false)
+            assertThat(result2Y).isEqualTo("2025-06-15T00:00:00Z")
+        }
+    }
+
+    @Test
+    fun normalizeDateTimePredicateValuePeriodCombinedTest() {
+        setupWithInstant(Instant.parse("2023-06-15T14:30:45Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val result1Y2M = DbDateUtils.normalizeDateTimePredicateValue("P1Y2M", withTime = false)
+            assertThat(result1Y2M).isEqualTo("2024-08-15T00:00:00Z")
+
+            val result1Y2M3D = DbDateUtils.normalizeDateTimePredicateValue("P1Y2M3D", withTime = false)
+            assertThat(result1Y2M3D).isEqualTo("2024-08-18T00:00:00Z")
+
+            val resultNeg = DbDateUtils.normalizeDateTimePredicateValue("-P1Y2M3D", withTime = false)
+            assertThat(resultNeg).isEqualTo("2022-04-12T00:00:00Z")
+
+            val result6M15D = DbDateUtils.normalizeDateTimePredicateValue("P6M15D", withTime = false)
+            assertThat(result6M15D).isEqualTo("2023-12-30T00:00:00Z")
+        }
+    }
+
+    @Test
+    fun normalizeDateTimePredicateValuePeriodWithTimeTest() {
+        setupWithInstant(Instant.parse("2023-06-15T14:30:45Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue("P1M", withTime = false)
+            assertThat(result).isEqualTo("2023-07-15T00:00:00Z")
+        }
+    }
+
+    @Test
+    fun normalizeDateTimePredicateValuePeriodRangeTest() {
+        setupWithInstant(Instant.parse("2023-06-15T14:30:45Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue(
+                "-P2M/-P1M",
+                withTime = true
+            )
+            val expected = "2023-04-15T00:00:00Z/2023-05-15T00:00:00Z"
+            assertThat(result).isEqualTo(expected)
+        }
+
+        setupWithInstant(Instant.parse("2024-08-20T10:30:00Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue(
+                "-P2Y/-P1Y",
+                withTime = false
+            )
+            val expected = "2022-08-20T00:00:00Z/2023-08-20T00:00:00Z"
+            assertThat(result).isEqualTo(expected)
+        }
+
+        setupWithInstant(Instant.parse("2025-05-25T16:45:00Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue(
+                "-P4W/-P2W",
+                withTime = true
+            )
+            val expected = "2025-04-27T00:00:00Z/2025-05-11T00:00:00Z"
+            assertThat(result).isEqualTo(expected)
+        }
+
+        setupWithInstant(Instant.parse("2023-12-31T20:15:30Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue(
+                "-P1Y3M/-P6M",
+                withTime = true
+            )
+            val expected = "2022-09-30T00:00:00Z/2023-06-30T00:00:00Z"
+            assertThat(result).isEqualTo(expected)
+        }
+    }
+
+    @Test
+    fun normalizeDateTimePredicateValuePeriodWithTimezoneTest() {
+        setupWithInstant(Instant.parse("2023-06-15T14:30:45Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ofHours(3)) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue("P1M", withTime = false)
+            assertThat(result).isEqualTo("2023-07-15T00:00:00Z")
+        }
+
+        TimeZoneContext.doWithUtcOffset(Duration.ofHours(-5)) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue("-P2M", withTime = false)
+            assertThat(result).isEqualTo("2023-04-15T00:00:00Z")
+        }
+
+        setupWithInstant(Instant.parse("2023-01-31T23:00:00Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ofHours(3)) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue("P1M", withTime = false)
+            assertThat(result).isEqualTo("2023-03-01T00:00:00Z")
+        }
+
+        setupWithInstant(Instant.parse("2023-03-01T01:00:00Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ofHours(-6)) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue("-P1M", withTime = false)
+            assertThat(result).isEqualTo("2023-01-28T00:00:00Z")
+        }
+    }
+
+    @Test
+    fun normalizeDateTimePredicateValuePeriodEdgeCasesTest() {
+        setupWithInstant(Instant.parse("2023-01-31T10:00:00Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue("P1M", withTime = false)
+            assertThat(result).isEqualTo("2023-02-28T00:00:00Z")
+        }
+
+        setupWithInstant(Instant.parse("2024-01-31T10:00:00Z"))
+        TimeZoneContext.doWithUtcOffset(Duration.ZERO) {
+            val result = DbDateUtils.normalizeDateTimePredicateValue("P1M", withTime = false)
+            assertThat(result).isEqualTo("2024-02-29T00:00:00Z")
+        }
+    }
 }
