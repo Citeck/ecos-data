@@ -9,8 +9,6 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.expression.ExpressionParser
 import ru.citeck.ecos.data.sql.service.expression.ExpressionTools
 import ru.citeck.ecos.data.sql.service.expression.token.*
-import java.time.Duration
-import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 class DbExpressionAttsContext(
@@ -107,7 +105,25 @@ class DbExpressionAttsContext(
                     }
                 }
             } else if (token is FunctionToken) {
-                if (token.name == "startOfMonth" || token.name == "endOfMonth") {
+                if (token.name == "date_trunc") {
+                    if (token.args.size != 2) {
+                        error("Invalid function arguments: $token")
+                    }
+
+                    val offsetHours = TimeZoneContext.getUtcOffset().toHours()
+                    val dateArg = token.args[1]
+
+                    val dateExpression = if (offsetHours != 0L) {
+                        GroupToken(
+                            dateArg,
+                            OperatorToken(OperatorToken.Type.PLUS),
+                            IntervalToken("$offsetHours hours")
+                        )
+                    } else {
+                        dateArg
+                    }
+                    FunctionToken(token.name, listOf(token.args[0], dateExpression))
+                } else if (token.name == "startOfMonth" || token.name == "endOfMonth") {
                     if (token.args.size != 1) {
                         error("Invalid function arguments: $token")
                     }
@@ -124,8 +140,6 @@ class DbExpressionAttsContext(
                             IntervalToken("$arg month")
                         )
                     }
-
-                    dateExpression = applyTimezoneOffset(dateExpression)
 
                     if (token.name == "startOfMonth") {
                         CastToken(
@@ -189,16 +203,6 @@ class DbExpressionAttsContext(
         } else {
             entities.map { mapEntityAtts(it) }
         }
-    }
-
-    private fun applyTimezoneOffset(dateExpression: ExpressionToken): ExpressionToken {
-        val offset = TimeZoneContext.getUtcOffset()
-        if (offset == Duration.ZERO) {
-            return dateExpression
-        }
-
-        val timezoneStr = ZoneOffset.ofTotalSeconds(offset.seconds.toInt()).id
-        return GroupToken(dateExpression, AtTimeZoneToken(timezoneStr))
     }
 
     class AssocAggregationSelectExpression(
