@@ -1,10 +1,7 @@
 package ru.citeck.ecos.data.sql.records.utils
 
 import ru.citeck.ecos.context.lib.time.TimeZoneContext
-import java.time.DayOfWeek
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneOffset
+import java.time.*
 import java.time.temporal.ChronoUnit
 import java.time.temporal.IsoFields
 import java.time.temporal.TemporalAdjusters
@@ -131,11 +128,7 @@ object DbDateUtils {
                     if (value.contains('Q')) {
                         parseQuarterPeriod(value, offset, withTime, rangePart)
                     } else {
-                        val duration = Duration.parse(value)
-                        Instant.now()
-                            .truncatedTo(getMinDimension(value))
-                            .plus(duration)
-                            .toString()
+                        parsePeriodOrDuration(value, offset)
                     }
                 } else if (withTime && !value.contains("T")) {
                     val date = Instant.parse(value + "T00:00:00Z")
@@ -148,6 +141,33 @@ object DbDateUtils {
                 }
             }
         }
+    }
+
+    private fun parsePeriodOrDuration(value: String, offset: Duration): String {
+        val isPeriod = isPeriodFormat(value)
+
+        return if (isPeriod) {
+            val period = Period.parse(value)
+            val nowWithOffset = Instant.now().plus(offset).atZone(ZoneOffset.UTC)
+            nowWithOffset
+                .truncatedTo(ChronoUnit.DAYS)
+                .plus(period)
+                .toInstant()
+                .toString()
+        } else {
+            val duration = Duration.parse(value)
+            Instant.now()
+                .truncatedTo(getMinDimension(value))
+                .plus(duration)
+                .toString()
+        }
+    }
+
+    private fun isPeriodFormat(value: String): Boolean {
+        if (value.contains('T')) {
+            return false
+        }
+        return value.contains('Y') || value.contains('M') || value.contains('W')
     }
 
     fun getMinDimension(value: String): ChronoUnit {
