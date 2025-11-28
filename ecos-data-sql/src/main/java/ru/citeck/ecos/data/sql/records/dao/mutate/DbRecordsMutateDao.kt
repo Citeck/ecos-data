@@ -555,13 +555,17 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         if (isNewEntity) {
             if (!config.insertable) {
-                error("Records DAO doesn't support new records creation. " +
-                    "Record ID: '${daoCtx.getGlobalRef(record.id)}'")
+                error(
+                    "Records DAO doesn't support new records creation. " +
+                        "Record ID: '${daoCtx.getGlobalRef(record.id)}'"
+                )
             }
         } else {
             if (!config.updatable) {
-                error("Records DAO doesn't support records updating. " +
-                    "Record: '${daoCtx.getGlobalRef(record.id)}'")
+                error(
+                    "Records DAO doesn't support records updating. " +
+                        "Record: '${daoCtx.getGlobalRef(record.id)}'"
+                )
             }
         }
 
@@ -642,8 +646,10 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         if (recAttributes.has(RecordConstants.ATT_CONTENT)) {
 
             if (mainContentAtt.contains(".")) {
-                error("Inner content uploading is not supported. " +
-                    "Content attribute: '$mainContentAtt'. Record: $globalRef")
+                error(
+                    "Inner content uploading is not supported. " +
+                        "Content attribute: '$mainContentAtt'. Record: $globalRef"
+                )
             }
             val contentValue = recAttributes[RecordConstants.ATT_CONTENT]
             recAttributes[mainContentAtt] = contentValue
@@ -712,8 +718,10 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 it.attribute.id
             }
             if (deniedAtts.isNotEmpty()) {
-                error("Permission denied. You should be in system context " +
-                    "to change system attributes: $deniedAtts. Record: $globalRef")
+                error(
+                    "Permission denied. You should be in system context " +
+                        "to change system attributes: $deniedAtts. Record: $globalRef"
+                )
             }
         }
 

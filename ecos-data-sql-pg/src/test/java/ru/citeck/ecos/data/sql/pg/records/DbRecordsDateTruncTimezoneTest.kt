@@ -12,7 +12,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 
-//TODO Fix local timezone
+// TODO Fix local timezone
 @Disabled("Fix local timezone")
 class DbRecordsDateTruncTimezoneTest : DbRecordsTestBase() {
 

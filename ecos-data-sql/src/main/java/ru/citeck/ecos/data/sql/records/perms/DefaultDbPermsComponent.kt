@@ -85,12 +85,14 @@ class DefaultDbPermsComponent(
             return permsAtts.canWrite
         }
 
+        // We should return true for write/read for case when using permissions matrix without atts
+        // Its safe because higher level checks will block access if needed
         override fun hasAttWritePerms(name: String): Boolean {
-            return permsAtts.canWrite
+            return true
         }
 
         override fun hasAttReadPerms(name: String): Boolean {
-            return permsAtts.canRead
+            return true
         }
     }
 }
