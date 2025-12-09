@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.data.Version
+import ru.citeck.ecos.commons.exception.I18nRuntimeException
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.data.sql.content.DbContentService
@@ -541,14 +542,19 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                         }
                     }
                     if (deniedAtts.isNotEmpty()) {
-                        error(
-                            "Permissions Denied. " +
-                                "You can't change attributes $deniedAtts " +
-                                "for record '${daoCtx.getGlobalRef(record.id)}'"
+                        throw I18nRuntimeException(
+                            "permission-denied.attribute",
+                            mapOf(
+                                "attributes" to deniedAtts,
+                                "recordRef" to daoCtx.getGlobalRef(record.id)
+                            )
                         )
                     }
                 } else {
-                    error("Permissions Denied. You can't change record '${daoCtx.getGlobalRef(record.id)}'")
+                    throw I18nRuntimeException(
+                        "permission-denied.record",
+                        mapOf("recordRef" to daoCtx.getGlobalRef(record.id))
+                    )
                 }
             }
         }

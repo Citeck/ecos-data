@@ -1,0 +1,22 @@
+{
+  "id": "ecos-data-error-messages",
+  "locales": [
+    "en",
+    "ru"
+  ],
+  "messages": {
+    "permission-denied.record": [
+      "Permissions Denied. You can't change record {{recordRef}}",
+      "Доступ запрещен. Вы не можете изменять запись {{recordRef}}"
+    ],
+    "permission-denied.attribute": [
+      "Permissions Denied. You can't change attributes {{attributes}} for record {{recordRef}}",
+      "Доступ запрещен. Вы не можете изменять атрибуты {{attributes}} для записи {{recordRef}}"
+    ],
+    "permission-denied.delete": [
+      "Permissions Denied. You can't delete record {{recordRef}}",
+      "Доступ запрещен. Вы не можете удалить запись {{recordRef}}"
+    ]
+  }
+}
+
