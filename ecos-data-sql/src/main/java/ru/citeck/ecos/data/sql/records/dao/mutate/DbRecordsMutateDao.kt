@@ -543,7 +543,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     }
                     if (deniedAtts.isNotEmpty()) {
                         throw I18nRuntimeException(
-                            "permission-denied.attribute",
+                            "ecos-data.permission-denied.attributes",
                             mapOf(
                                 "attributes" to deniedAtts,
                                 "recordRef" to daoCtx.getGlobalRef(record.id)
@@ -552,7 +552,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     }
                 } else {
                     throw I18nRuntimeException(
-                        "permission-denied.record",
+                        "ecos-data.permission-denied.record",
                         mapOf("recordRef" to daoCtx.getGlobalRef(record.id))
                     )
                 }

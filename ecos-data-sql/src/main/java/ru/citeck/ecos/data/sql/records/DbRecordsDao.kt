@@ -165,7 +165,7 @@ class DbRecordsDao(
                     val recordPerms = getRecordPerms(it)
                     if (!recordPerms.hasWritePerms()) {
                         throw I18nRuntimeException(
-                            "permission-denied.delete",
+                            "ecos-data.permission-denied.delete",
                             mapOf("recordRef" to daoCtx.getGlobalRef(it))
                         )
                     }
