@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.commons.exception.I18nRuntimeException
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
@@ -163,7 +164,10 @@ class DbRecordsDao(
                 recordIds.forEach {
                     val recordPerms = getRecordPerms(it)
                     if (!recordPerms.hasWritePerms()) {
-                        error("Permissions Denied. You can't delete record '${daoCtx.getGlobalRef(it)}'")
+                        throw I18nRuntimeException(
+                            "ecos-data.permission-denied.delete",
+                            mapOf("recordRef" to daoCtx.getGlobalRef(it))
+                        )
                     }
                 }
             }
