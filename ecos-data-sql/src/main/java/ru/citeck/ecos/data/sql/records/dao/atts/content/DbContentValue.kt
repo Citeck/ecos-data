@@ -235,7 +235,7 @@ class DbContentValue(
             return when (name) {
                 "text" -> {
                     val mimeType = contentData.getMimeType()
-                    if (mimeType == MimeTypes.TXT_PLAIN || mimeType == MimeTypes.APP_BIN) {
+                    if (mimeType.isTextual() || mimeType == MimeTypes.APP_BIN) {
                         contentData.readContent { String(it.readBytes()) }
                     } else {
                         val client = ctx.webApiClient ?: error("Web API client is null")
