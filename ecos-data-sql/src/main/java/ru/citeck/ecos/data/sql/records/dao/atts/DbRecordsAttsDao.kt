@@ -66,15 +66,23 @@ class DbRecordsAttsDao(
         }
     }
 
-    fun findDbEntityByExtId(extId: String, expressions: Map<String, ExpressionToken> = emptyMap()): DbEntity? {
+    fun findDbEntityByExtId(
+        extId: String,
+        expressions: Map<String, ExpressionToken> = emptyMap(),
+        checkPerms: Boolean = true
+    ): DbEntity? {
 
         val entity = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
             dataService.findByExtId(extId, expressions)
         } ?: return null
 
-        if (DbRecord(daoCtx, entity).isCurrentUserHasReadPerms()) {
+        if (!checkPerms) {
             return entity
         }
-        return null
+        return if (DbRecord(daoCtx, entity).isCurrentUserHasReadPerms()) {
+            entity
+        } else {
+            null
+        }
     }
 }

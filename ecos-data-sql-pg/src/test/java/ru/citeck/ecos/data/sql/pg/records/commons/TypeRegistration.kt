@@ -8,6 +8,7 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
 import ru.citeck.ecos.model.lib.utils.ModelUtils
+import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class TypeRegistration(
     private var typeId: String,
@@ -15,6 +16,7 @@ class TypeRegistration(
     private val register: (TypeInfo) -> DbRecordsTestBase.RecordsDaoTestCtx
 ) {
 
+    private var parentRef: EntityRef = EntityRef.EMPTY
     private var workspaceScope: WorkspaceScope = WorkspaceScope.PUBLIC
     private var defaultWorkspace: String = ""
     private var defaultStatus: String = ""
@@ -23,6 +25,21 @@ class TypeRegistration(
     private var statuses: List<StatusDef> = emptyList()
     private var stages: List<ProcStageDef> = emptyList()
     private val aspects: MutableList<TypeAspectDef> = ArrayList()
+
+    fun withId(id: String): TypeRegistration {
+        this.typeId = id
+        return this
+    }
+
+    fun withParentType(parentTypeId: String): TypeRegistration {
+        this.parentRef = ModelUtils.getTypeRef(parentTypeId)
+        return this
+    }
+
+    fun asSubTypeWithId(typeId: String): TypeRegistration {
+        withParentType(typeId)
+        return withId(typeId)
+    }
 
     fun withDefaultStatus(defaultStatus: String): TypeRegistration {
         this.defaultStatus = defaultStatus
@@ -93,6 +110,7 @@ class TypeRegistration(
         return register(
             TypeInfo.create()
                 .withId(typeId)
+                .withParentRef(parentRef)
                 .withSourceId(sourceId)
                 .withWorkspaceScope(workspaceScope)
                 .withDefaultWorkspace(defaultWorkspace)

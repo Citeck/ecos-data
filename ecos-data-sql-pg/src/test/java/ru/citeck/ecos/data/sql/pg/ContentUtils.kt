@@ -5,10 +5,22 @@ import java.util.*
 
 object ContentUtils {
 
-    fun createContentObjFromText(text: String, fileName: String = "", fileType: String = ""): DataValue {
+    fun createContentObjFromText(
+        text: String,
+        fileName: String = "",
+        fileType: String = "",
+        mimeType: String = "text/plain"
+    ): DataValue {
+        return createContentObj(text.toByteArray(Charsets.UTF_8), fileName, fileType, mimeType)
+    }
 
-        val contentMimeType = "text/plain"
-        val contentBytes = text.toByteArray(Charsets.UTF_8)
+    fun createContentObj(
+        data: ByteArray,
+        fileName: String = "",
+        fileType: String = "",
+        mimeType: String = "text/plain"
+    ): DataValue {
+
         val resultName = fileName.ifBlank { UUID.randomUUID().toString() + ".txt" }
 
         val contentValue = DataValue.create(
@@ -16,9 +28,9 @@ object ContentUtils {
               {
                 "storage": "base64",
                 "name": "$resultName-${UUID.randomUUID()}.txt",
-                "url": "data:$contentMimeType;base64,${Base64.getEncoder().encodeToString(contentBytes)}",
-                "size": ${contentBytes.size},
-                "type": "$contentMimeType",
+                "url": "data:$mimeType;base64,${Base64.getEncoder().encodeToString(data)}",
+                "size": ${data.size},
+                "type": "$mimeType",
                 "originalName": "$resultName"
               }
             """
