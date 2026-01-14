@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.data.sql.records.listener.DbRecordChangedEvent
@@ -79,6 +80,46 @@ class DbRecordsEventsTest : DbRecordsTestBase() {
         assertThat(parentChangedEvents[2].parentAfter).isEqualTo(parent0)
         assertThat(parentChangedEvents[2].parentAttBefore).isEqualTo("children2")
         assertThat(parentChangedEvents[2].parentAttAfter).isEqualTo("children")
+    }
+
+    @Test
+    fun changedTest() {
+
+        val optionValues = DataValue.create(
+            """
+            [{ "value": "value0", "label": {"ru": "Значение 0", "en": "Value 0"}},
+             { "value": "value1", "label": {"ru": "Значение 1", "en": "Value 1"}}]
+            """.trimIndent()
+        )
+
+        registerType()
+            .withAttributes(
+                AttributeDef.create().withId("text"),
+                AttributeDef.create()
+                    .withId("options")
+                    .withType(AttributeType.OPTIONS)
+                    .withConfig(
+                        ObjectData.create()
+                            .set("source", "values")
+                            .set("values", optionValues)
+                    )
+            ).register()
+
+        val ref = createRecord("text" to "abc", "options" to "value0")
+
+        val onChangedEvents = mutableListOf<DbRecordChangedEvent>()
+        recordsDao.addListener(object : DbRecordsListenerAdapter() {
+            override fun onChanged(event: DbRecordChangedEvent) {
+                onChangedEvents.add(event)
+            }
+        })
+
+        records.mutateAtt(ref, "text", "def")
+
+        assertThat(onChangedEvents).hasSize(1)
+        assertThat(onChangedEvents[0].before["text"]).isEqualTo("abc")
+        assertThat(onChangedEvents[0].after["text"]).isEqualTo("def")
+        assertThat(onChangedEvents[0].before["options"]).isEqualTo(onChangedEvents[0].after["options"])
     }
 
     @Test

@@ -248,9 +248,11 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             setNotPresentAttsAsNull(record.attributes, typeInfo.model.attributes)
         }
 
-        val typeAttColumns = ArrayList(typeAttColumnsArg ?: run {
-            ecosTypeService.getColumnsForTypes(listOf(typeInfo))
-        })
+        val typeAttColumns = ArrayList(
+            typeAttColumnsArg ?: run {
+                ecosTypeService.getColumnsForTypes(listOf(typeInfo))
+            }
+        )
 
         val typeAspects = typeInfo.aspects.map { it.ref }.toSet()
 
@@ -1159,8 +1161,10 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             return config.typeRef.getLocalId()
         }
 
-        error("${RecordConstants.ATT_TYPE} attribute is mandatory for mutation. " +
-                "Record: ${daoCtx.getGlobalRef(record.id)}")
+        error(
+            "${RecordConstants.ATT_TYPE} attribute is mandatory for mutation. " +
+                "Record: ${daoCtx.getGlobalRef(record.id)}"
+        )
     }
 
     private fun setMutationAtts(

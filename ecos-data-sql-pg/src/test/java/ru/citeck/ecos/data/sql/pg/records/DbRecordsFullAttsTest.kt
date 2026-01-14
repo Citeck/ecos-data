@@ -120,9 +120,7 @@ class DbRecordsFullAttsTest : DbRecordsTestBase() {
         }
     }
 
-    private fun <T> runAsUser(action: () -> T):T {
+    private fun <T> runAsUser(action: () -> T): T {
         return AuthContext.runAs("user", listOf("GROUP_EVERYONE"), action)
     }
 }
-
-
