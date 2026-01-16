@@ -60,6 +60,7 @@ class DbRecord(
         const val ATT_STATUS_MODIFIED = "_statusModified"
         const val ATT_PATH_BY_ASSOC = "_pathByAssoc"
         const val ATT_PATH_BY_PARENT = "_pathByParent"
+        const val ATT_CUSTOM_ID = "_customId"
 
         const val ASSOC_SRC_ATT_PREFIX = "assoc_src_"
 
@@ -96,6 +97,10 @@ class DbRecord(
             DbColumnDef.create {
                 withName("_cipher")
                 withType(DbColumnType.JSON)
+            },
+            DbColumnDef.create {
+                withName(ATT_CUSTOM_ID)
+                withType(DbColumnType.TEXT)
             },
             DbColumnDef.create {
                 withName(RecordConstants.ATT_PARENT)
@@ -540,10 +545,14 @@ class DbRecord(
         }
     }
 
+    private fun getIdAtt(): String {
+        return (additionalAtts[ATT_CUSTOM_ID] as? String ?: "").ifBlank { extId }
+    }
+
     override fun asJson(): Any {
 
         val jsonAtts = LinkedHashMap<String, Any?>()
-        jsonAtts["id"] = extId
+        jsonAtts["id"] = getIdAtt()
 
         val nonSystemAttIds = typeInfo.model.attributes.map { it.id }.toSet()
 
@@ -711,7 +720,7 @@ class DbRecord(
             }
         }
         return when (name) {
-            "id" -> extId
+            "id" -> getIdAtt()
             ATT_NAME -> displayName
             RecordConstants.ATT_MODIFIED, "cm:modified" -> entity.modified
             RecordConstants.ATT_CREATED, "cm:created" -> entity.created

@@ -11,6 +11,7 @@ import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
@@ -283,18 +284,14 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
             """.trimIndent()
         )
 
-        registerType(
-            """
-            ---
-            id: document
-            parentRef: emodel/type@user-base
-            model:
-              attributes:
-                  - id: name
-                  - id: content
-                    type: CONTENT
-            """.trimIndent()
-        )
+        registerType()
+            .withId("document")
+            .withSourceId("document")
+            .withParentType("user-base")
+            .withAttributes(
+                AttributeDef.create().withId("name"),
+                AttributeDef.create().withId("content").withType(AttributeType.CONTENT)
+            ).register()
 
         val contentData = Faker.instance().chuckNorris().fact()
         val contentDataBase64 = Base64.getEncoder().encodeToString(contentData.toByteArray())
@@ -379,19 +376,16 @@ class DbRecordsAssocTest : DbRecordsTestBase() {
             """.trimIndent()
         )
 
-        registerType(
-            """
-            ---
-            id: document
-            parentRef: emodel/type@user-base
-            workspaceScope: PRIVATE
-            model:
-              attributes:
-                  - id: name
-                  - id: content
-                    type: CONTENT
-            """.trimIndent()
-        )
+        registerType()
+            .withId("document")
+            .withSourceId("document")
+            .withParentType("user-base")
+            .withWorkspaceScope(WorkspaceScope.PRIVATE)
+            .withAttributes(
+                AttributeDef.create().withId("name"),
+                AttributeDef.create().withId("content").withType(AttributeType.CONTENT)
+            ).register()
+
         val contentBase64 = Base64.getEncoder().encodeToString("some-text".toByteArray())
 
         val record = createRecord(

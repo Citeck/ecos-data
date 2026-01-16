@@ -16,6 +16,18 @@
     "ecos-data.permission-denied.delete": [
       "Permissions Denied. You can't delete record {{recordRef}}",
       "Доступ запрещен. Вы не можете удалить запись {{recordRef}}"
+    ],
+    "ecos-data.invalid-type.subtype": [
+      "Invalid type '{{typeId}}'. In source '{{sourceId}}', mutations are allowed only for type '{{cfgType}}' and its subtypes.",
+      "Некорректный тип '{{typeId}}'. В источнике данных '{{sourceId}}' мутации разрешены только для типа '{{cfgType}}' и его подтипов."
+    ],
+    "ecos-data.invalid-type.ws-scoped": [
+      "Invalid type '{{typeId}}'. In source '{{sourceId}}', mutations with workspace-scoped types are not allowed.",
+      "Некорректный тип '{{typeId}}'. В источнике данных '{{sourceId}}' мутации с workspace-scoped типами запрещены."
+    ],
+    "ecos-data.type-not-found-by-id": [
+      "Type with id '{{typeId}}' was not found.",
+      "Тип с идентификатором '{{typeId}}' не найден."
     ]
   }
 }
