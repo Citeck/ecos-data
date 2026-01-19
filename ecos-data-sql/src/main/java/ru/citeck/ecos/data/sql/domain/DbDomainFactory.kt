@@ -78,6 +78,10 @@ class DbDomainFactory(
         return dataSourceContext.getSchemaContext(schema)
     }
 
+    fun getDataSourceContext(): DbDataSourceContext {
+        return dataSourceContext
+    }
+
     private fun migrateSchema(context: DbSchemaContext) {
         migrationService.runSchemaMigrations(context)
     }
