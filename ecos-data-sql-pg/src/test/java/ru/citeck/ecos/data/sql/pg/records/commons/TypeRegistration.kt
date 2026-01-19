@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.pg.records.commons
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.procstages.dto.ProcStageDef
 import ru.citeck.ecos.model.lib.status.dto.StatusDef
+import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeAspectDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
@@ -16,7 +17,10 @@ class TypeRegistration(
     private val register: (TypeInfo) -> DbRecordsTestBase.RecordsDaoTestCtx
 ) {
 
+    private var extIdTemplate: String? = null
     private var parentRef: EntityRef = EntityRef.EMPTY
+    private var numTemplateRef: EntityRef = EntityRef.EMPTY
+    private var queryPermsPolicy: QueryPermsPolicy = QueryPermsPolicy.DEFAULT
     private var workspaceScope: WorkspaceScope = WorkspaceScope.PUBLIC
     private var defaultWorkspace: String = ""
     private var defaultStatus: String = ""
@@ -31,13 +35,28 @@ class TypeRegistration(
         return this
     }
 
+    fun withExtIdTemplate(extIdTemplate: String): TypeRegistration {
+        this.extIdTemplate = extIdTemplate
+        return this
+    }
+
+    fun withNumTemplateRef(numTemplateRef: EntityRef): TypeRegistration {
+        this.numTemplateRef = numTemplateRef
+        return this
+    }
+
+    fun withQueryPermsPolicy(queryPermsPolicy: QueryPermsPolicy): TypeRegistration {
+        this.queryPermsPolicy = queryPermsPolicy
+        return this
+    }
+
     fun withParentType(parentTypeId: String): TypeRegistration {
         this.parentRef = ModelUtils.getTypeRef(parentTypeId)
         return this
     }
 
     fun asSubTypeWithId(typeId: String): TypeRegistration {
-        withParentType(typeId)
+        withParentType(this.typeId)
         return withId(typeId)
     }
 
@@ -110,6 +129,9 @@ class TypeRegistration(
         return register(
             TypeInfo.create()
                 .withId(typeId)
+                .withExtIdTemplate(extIdTemplate)
+                .withQueryPermsPolicy(queryPermsPolicy)
+                .withNumTemplateRef(numTemplateRef)
                 .withParentRef(parentRef)
                 .withSourceId(sourceId)
                 .withWorkspaceScope(workspaceScope)

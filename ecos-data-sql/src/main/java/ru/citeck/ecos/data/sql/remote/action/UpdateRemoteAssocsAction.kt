@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.remote.action
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.json.serialization.annotation.IncludeNonDefault
+import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.records3.RecordsService
@@ -22,7 +23,11 @@ class UpdateRemoteAssocsAction : DbRemoteActionExecutor<UpdateRemoteAssocsAction
 
     private var currentAppName = ""
 
-    override fun init(webAppApi: EcosWebAppApi, recordsService: RecordsService) {
+    override fun init(
+        dbDataSourceContext: DbDataSourceContext,
+        webAppApi: EcosWebAppApi,
+        recordsService: RecordsService
+    ) {
         this.webAppApi = webAppApi
         this.recordsService = recordsService
         currentAppName = webAppApi.getProperties().appName

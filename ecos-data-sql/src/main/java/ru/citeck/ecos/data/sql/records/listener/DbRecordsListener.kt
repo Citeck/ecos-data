@@ -10,6 +10,7 @@ abstract class DbRecordsListenerAdapter : DbRecordsListener {
     override fun onChanged(event: DbRecordChangedEvent) {}
     override fun onCreated(event: DbRecordCreatedEvent) {}
     override fun onDeleted(event: DbRecordDeletedEvent) {}
+    override fun onRecordRefChangedEvent(event: DbRecordRefChangedEvent) {}
     override fun onParentChanged(event: DbRecordParentChangedEvent) {}
     override fun onContentChanged(event: DbRecordContentChangedEvent) {}
     override fun onDraftStatusChanged(event: DbRecordDraftStatusChangedEvent) {}
@@ -24,6 +25,8 @@ interface DbRecordsListener {
 
     fun onDeleted(event: DbRecordDeletedEvent)
 
+    fun onRecordRefChangedEvent(event: DbRecordRefChangedEvent)
+
     fun onParentChanged(event: DbRecordParentChangedEvent)
 
     fun onDraftStatusChanged(event: DbRecordDraftStatusChangedEvent)
@@ -32,6 +35,17 @@ interface DbRecordsListener {
 
     fun onStatusChanged(event: DbRecordStatusChangedEvent)
 }
+
+class DbRecordRefChangedEvent(
+    val before: EntityRef,
+    val after: EntityRef,
+    val localRef: EntityRef,
+    val globalRef: EntityRef,
+    val isDraft: Boolean,
+    val record: Any,
+    val typeDef: TypeInfo,
+    val aspects: List<AspectInfo>
+)
 
 class DbRecordDraftStatusChangedEvent(
     val localRef: EntityRef,

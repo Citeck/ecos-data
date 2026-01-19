@@ -10,8 +10,6 @@ import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
-import ru.citeck.ecos.model.lib.type.dto.TypeInfo
-import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.util.*
@@ -102,22 +100,16 @@ class RecordsDaoChildrenPermsTest : DbRecordsTestBase() {
         )
         setQueryPermsPolicy(QueryPermsPolicy.OWN)
 
-        registerType(
-            TypeInfo.create {
-                withId("child-id")
-                withQueryPermsPolicy(QueryPermsPolicy.PARENT)
-                withModel(
-                    TypeModelDef.create().withAttributes(
-                        listOf(
-                            AttributeDef.create {
-                                withId("content")
-                                withType(AttributeType.CONTENT)
-                            }
-                        )
-                    ).build()
-                )
-            }
-        )
+        registerType()
+            .withId("child-id")
+            .withSourceId("child-src-id")
+            .withQueryPermsPolicy(QueryPermsPolicy.PARENT)
+            .withAttributes(
+                AttributeDef.create {
+                    withId("content")
+                    withType(AttributeType.CONTENT)
+                }
+            ).register()
 
         setAuthoritiesWithWritePerms(EntityRef.create(APP_NAME, RECS_DAO_ID, "parent-rec-id"), "user-1")
         val record = AuthContext.runAs("test") {

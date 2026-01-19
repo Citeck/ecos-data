@@ -22,6 +22,7 @@ import ru.citeck.ecos.txn.lib.TxnContext
 import java.time.Instant
 
 class DbAssocsService(
+    private val currentAppName: String,
     private val schemaCtx: DbSchemaContext
 ) {
 
@@ -137,6 +138,47 @@ class DbAssocsService(
             dataService.save(entitiesToCreate)
         }
         return assocsToCreate.toList()
+    }
+
+    /**
+     * Finds external source applications that have references to the ref identified by targetId.
+     */
+    fun findSourceExternalApps(targetId: Long): Set<String> {
+
+        val func = FunctionToken(
+            "substringBefore",
+            listOf(
+                ColumnToken("ref.${DbRecordRefEntity.EXT_ID}"),
+                ScalarToken("/")
+            )
+        )
+        val refsTableCtx = schemaCtx.recordRefService.getDataService().getTableContext()
+
+        val query = DbFindQuery.create()
+            .withPredicate(Predicates.eq(DbAssocEntity.TARGET_ID, targetId))
+            .withRawTableJoins(
+                mapOf(
+                    "ref" to RawTableJoin(
+                        refsTableCtx,
+                        Predicates.eq(DbAssocEntity.SOURCE_ID, "ref.${DbEntity.ID}")
+                    )
+                )
+            )
+            .withExpressions(mapOf("appName" to func))
+            .withGroupBy(listOf("appName"))
+            .build()
+
+        val queryRes = dataService.findRaw(
+            query,
+            DbFindPage(0, 10_000),
+            false
+        )
+
+        return queryRes.entities
+            .asSequence()
+            .map { it["appName"].toString() }
+            .filter { it.isNotBlank() && it != currentAppName }
+            .toSet()
     }
 
     fun findNonChildrenTargetRecsSrcIds(sourceId: Long): Set<String> {

@@ -40,9 +40,11 @@ import ru.citeck.ecos.model.lib.ModelServiceFactory
 import ru.citeck.ecos.model.lib.api.EcosModelAppApi
 import ru.citeck.ecos.model.lib.aspect.dto.AspectInfo
 import ru.citeck.ecos.model.lib.aspect.repo.AspectsRepo
+import ru.citeck.ecos.model.lib.attributes.computed.ComputeRes
 import ru.citeck.ecos.model.lib.attributes.dto.AttOptionValue
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
+import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttDef
 import ru.citeck.ecos.model.lib.delegation.dto.AuthDelegation
 import ru.citeck.ecos.model.lib.delegation.dto.PermissionDelegateData
 import ru.citeck.ecos.model.lib.delegation.service.DelegationService
@@ -388,7 +390,7 @@ abstract class DbRecordsTestBase {
             records = recordsServiceFactory.recordsService
             RequestContext.setDefaultServices(recordsServiceFactory)
 
-            remoteActions.init(webAppApi, records)
+            remoteActions.init(dataSourceCtx, webAppApi, records)
         }
 
         mainCtx = createRecordsDao()
@@ -585,12 +587,36 @@ abstract class DbRecordsTestBase {
                 return modelServiceFactory.computedAttsService.getAttOptions(record, config)
             }
 
-            override fun computeAttsToStore(value: Any, isNewRecord: Boolean, typeRef: EntityRef): ObjectData {
-                return modelServiceFactory.computedAttsService.computeAttsToStore(value, isNewRecord, typeRef)
+            override fun computeAttsToStore(
+                value: Any,
+                isNewRecord: Boolean,
+                typeRef: EntityRef,
+                preCalculatedAtts: Map<String, Any?>
+            ): ObjectData {
+                return modelServiceFactory.computedAttsService.computeAttsToStore(
+                    value,
+                    isNewRecord,
+                    typeRef,
+                    preCalculatedAtts
+                )
             }
 
             override fun computeDisplayName(value: Any, typeRef: EntityRef): MLText {
                 return modelServiceFactory.computedAttsService.computeDisplayName(value, typeRef)
+            }
+
+            override fun computeAtt(
+                value: Any,
+                attId: String,
+                attType: AttributeType,
+                computed: ComputedAttDef
+            ): ComputeRes {
+                return modelServiceFactory.computedAttsService.computeAtt(
+                    value,
+                    attId,
+                    attType,
+                    computed
+                )
             }
         }
 
@@ -1082,6 +1108,29 @@ abstract class DbRecordsTestBase {
                     res.getObject("res")
                 }
             }
+        }
+
+        fun selectAllFromTable(table: String): List<Map<String, Any?>> {
+            val recordsList = ArrayList<Map<String, Any?>>()
+            dbDataSource.withTransaction(true) {
+                dbDataSource.query(
+                    "SELECT * FROM ${tableRef.withTable(table).fullName}",
+                    emptyList()
+                ) { res ->
+                    val columnNames = LinkedHashSet<String>()
+                    for (i in 1..res.metaData.columnCount) {
+                        columnNames.add(res.metaData.getColumnName(i))
+                    }
+                    while (res.next()) {
+                        val record = LinkedHashMap<String, Any>()
+                        for (name in columnNames) {
+                            record[name] = res.getObject(name)
+                        }
+                        recordsList.add(record)
+                    }
+                }
+            }
+            return recordsList
         }
 
         fun getColumns(): List<DbColumnDef> {

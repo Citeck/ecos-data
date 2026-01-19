@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.ecostype
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import ru.citeck.ecos.commons.exception.I18nRuntimeException
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
@@ -84,7 +85,10 @@ class DbEcosModelService(
     }
 
     fun getTypeInfoNotNull(typeId: String): TypeInfo {
-        return getTypeInfo(typeId) ?: error("TypeInfo is not found for id '$typeId'")
+        return getTypeInfo(typeId) ?: throw I18nRuntimeException(
+            messageKey = "ecos-data.type-not-found-by-id",
+            messageArgs = mapOf("typeId" to typeId)
+        )
     }
 
     fun getTypeInfo(typeId: String): TypeInfo? {

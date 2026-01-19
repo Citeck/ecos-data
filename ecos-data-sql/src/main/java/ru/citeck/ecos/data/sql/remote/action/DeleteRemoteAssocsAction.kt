@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.remote.action
 
 import ru.citeck.ecos.commons.data.DataValue
+import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.records3.RecordsService
@@ -18,7 +19,11 @@ class DeleteRemoteAssocsAction : DbRemoteActionExecutor<DeleteRemoteAssocsAction
 
     private var currentAppName = ""
 
-    override fun init(webAppApi: EcosWebAppApi, recordsService: RecordsService) {
+    override fun init(
+        dbDataSourceContext: DbDataSourceContext,
+        webAppApi: EcosWebAppApi,
+        recordsService: RecordsService
+    ) {
         this.webAppApi = webAppApi
         this.recordsService = recordsService
         currentAppName = webAppApi.getProperties().appName

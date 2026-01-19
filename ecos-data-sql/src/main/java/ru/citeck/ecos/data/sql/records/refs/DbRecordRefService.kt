@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.records.refs
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.DbDataService
@@ -9,26 +10,106 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
+import java.time.Instant
 
 class DbRecordRefService(
     private val appName: String,
-    schemaCtx: DbSchemaContext
+    private val schemaCtx: DbSchemaContext
 ) {
 
     companion object {
         private const val TXN_CACHE_MAX_SIZE = 1000
+
+        private val log = KotlinLogging.logger {}
     }
 
     private val idsByRefsCacheTxnKey = Any()
     private val refsByIdsCacheTxnKey = Any()
 
-    private val dataService: DbDataService<DbRecordRefEntity> = DbDataServiceImpl(
+    private val refsDataService: DbDataService<DbRecordRefEntity> = DbDataServiceImpl(
         DbRecordRefEntity::class.java,
         DbDataServiceConfig.create {
             withTable(DbRecordRefEntity.TABLE)
         },
         schemaCtx
     )
+
+    private val migDataService: DbDataService<DbRecordRefMigrationEntity> = DbDataServiceImpl(
+        DbRecordRefMigrationEntity::class.java,
+        DbDataServiceConfig.create {
+            withTable(DbRecordRefMigrationEntity.TABLE)
+        },
+        schemaCtx
+    )
+
+    fun migrateRefIfExists(fromRef: EntityRef, toRef: EntityRef, migratedBy: Long): Boolean {
+        val fromRefEntity = refsDataService.findByExtId(
+            fixEntityRef(fromRef).toString()
+        ) ?: return false
+        return migrateRef(fromRefEntity, toRef, migratedBy)
+    }
+
+    /**
+     * Migrates the record ref and returns the before/after values.
+     * Returns null if migration is not required.
+     */
+    fun migrateRef(fromRefId: Long, toRef: EntityRef, migratedBy: Long): Pair<EntityRef, EntityRef>? {
+        val fromRefEntity = refsDataService.findById(fromRefId) ?: error(
+            "Ref with id $fromRefId is not registered. " +
+                "Migration to $toRef is not allowed."
+        )
+        val refBefore = EntityRef.valueOf(fromRefEntity.extId)
+        if (!migrateRef(fromRefEntity, toRef, migratedBy)) {
+            return null
+        }
+        return refBefore to EntityRef.valueOf(fromRefEntity.extId)
+    }
+
+    private fun migrateRef(fromRefEntity: DbRecordRefEntity, toRef: EntityRef, migratedBy: Long): Boolean {
+
+        val fromRef = EntityRef.valueOf(fromRefEntity.extId)
+        val fixedToRef = fixEntityRef(
+            toRef.withDefault(
+                appName = fromRef.getAppName(),
+                sourceId = fromRef.getSourceId()
+            )
+        )
+
+        val targetRefStr = fixedToRef.toString()
+        if (fromRefEntity.extId == targetRefStr) {
+            // nothing to migrate
+            return false
+        }
+        val toRefIdInDb = getIdByEntityRef(fixedToRef)
+        if (toRefIdInDb != -1L) {
+            error(
+                "Ref $targetRefStr is already registered. " +
+                    "Migration from '${fromRefEntity.extId}' is not allowed."
+            )
+        }
+
+        log.info { "Migrate ref from $fromRef to $fixedToRef" }
+
+        fromRefEntity.extId = targetRefStr
+        refsDataService.save(fromRefEntity)
+
+        val oldRefEntity = DbRecordRefEntity()
+        oldRefEntity.extId = fromRef.toString()
+        val oldRefId = refsDataService.save(oldRefEntity).id
+
+        val migrationEntity = DbRecordRefMigrationEntity()
+        migrationEntity.migratedBy = migratedBy
+        migrationEntity.fromRef = oldRefId
+        migrationEntity.toRef = fromRefEntity.id
+        migrationEntity.time = Instant.now()
+
+        migDataService.save(migrationEntity)
+
+        getIdsByRefsTxnCache().remove(fromRef)
+        getRefsByIdsTxnCache().remove(fromRefEntity.id)
+
+        return true
+    }
 
     /**
      * Get or create record identifier for reference
@@ -41,11 +122,7 @@ class DbRecordRefService(
      * Get or create record references
      */
     fun getOrCreateIdByEntityRefsMap(refs: Collection<EntityRef>): Map<EntityRef, Long> {
-        val refsList = if (refs is List<EntityRef>) {
-            refs
-        } else {
-            refs.toList()
-        }
+        val refsList = refs as? List<EntityRef> ?: refs.toList()
         val ids = getOrCreateIdByEntityRefs(refsList)
         val result = LinkedHashMap<EntityRef, Long>()
         for ((idx, ref) in refsList.withIndex()) {
@@ -66,7 +143,7 @@ class DbRecordRefService(
                 val entity = DbRecordRefEntity()
                 val ref = fixEntityRef(refs[idx])
                 entity.extId = ref.toString()
-                val createdId = dataService.saveAtomicallyOrGetExistingByExtId(entity)
+                val createdId = refsDataService.saveAtomicallyOrGetExistingByExtId(entity)
                 result[idx] = createdId
                 if (txnCache.size < TXN_CACHE_MAX_SIZE) {
                     txnCache[ref] = createdId
@@ -130,7 +207,7 @@ class DbRecordRefService(
             DbEntity.EXT_ID,
             refsToQuery.map { it.toString() }
         )
-        val entities = dataService.findAll(predicate)
+        val entities = refsDataService.findAll(predicate)
         for (entity in entities) {
             val ref = EntityRef.valueOf(entity.extId)
             idsByRefs[ref] = entity.id
@@ -177,7 +254,7 @@ class DbRecordRefService(
             }
         }
 
-        val entities = dataService.findByIds(idsToQuery)
+        val entities = refsDataService.findByIds(idsToQuery)
         if (entities.size != idsToQuery.size) {
             error("RecordRef's count doesn't match. Ids: $ids Refs: ${entities.map { it.extId }}")
         }
@@ -194,20 +271,20 @@ class DbRecordRefService(
 
     fun createTableIfNotExists() {
         TxnContext.doInTxn {
-            dataService.runMigrations(mock = false, diff = true)
+            refsDataService.runMigrations(mock = false, diff = true)
         }
     }
 
     fun runMigrations(mock: Boolean, diff: Boolean): List<String> {
-        return dataService.runMigrations(mock, diff)
+        return refsDataService.runMigrations(mock, diff)
     }
 
     fun resetColumnsCache() {
-        dataService.resetColumnsCache()
+        refsDataService.resetColumnsCache()
     }
 
     fun getDataService(): DbDataService<DbRecordRefEntity> {
-        return dataService
+        return refsDataService
     }
 
     private fun fixEntityRef(entityRef: EntityRef): EntityRef {

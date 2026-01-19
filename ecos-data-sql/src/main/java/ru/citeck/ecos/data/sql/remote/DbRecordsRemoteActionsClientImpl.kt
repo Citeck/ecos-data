@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocRefsDiff
 import ru.citeck.ecos.data.sql.remote.action.DeleteRemoteAssocsAction
+import ru.citeck.ecos.data.sql.remote.action.MigrateRecordRefAction
 import ru.citeck.ecos.data.sql.remote.action.UpdateRemoteAssocsAction
 import ru.citeck.ecos.data.sql.remote.api.DbExecRemoteActionsWebExecutor
 import ru.citeck.ecos.records3.RecordsService
@@ -30,6 +31,25 @@ class DbRecordsRemoteActionsClientImpl : DbRecordsRemoteActionsClient {
         this.webClientApi = webAppApi.getWebClientApi()
         this.remoteActionsService = remoteActionsService
         this.recordsService = recordsService
+    }
+
+    override fun migrateRef(
+        fromRef: EntityRef,
+        toRef: EntityRef,
+        migratedBy: String,
+        targetApps: Collection<String>
+    ) {
+        for (appName in targetApps) {
+            execRemoteAction(
+                appName = appName,
+                actionType = MigrateRecordRefAction.TYPE,
+                config = MigrateRecordRefAction.Params(
+                    fromRef = fromRef,
+                    toRef = toRef,
+                    migratedBy = migratedBy
+                )
+            )
+        }
     }
 
     override fun updateRemoteAssocs(

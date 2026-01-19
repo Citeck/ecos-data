@@ -57,4 +57,8 @@ class DbDataSourceContext(
         }
         return result
     }
+
+    fun forEachSchema(action: (String, DbSchemaContext) -> Unit) {
+        schemasByName.forEach(action)
+    }
 }

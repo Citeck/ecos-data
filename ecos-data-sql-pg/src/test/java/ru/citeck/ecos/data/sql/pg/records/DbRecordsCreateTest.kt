@@ -37,14 +37,14 @@ class DbRecordsCreateTest : DbRecordsTestBase() {
             data[RecordConstants.ATT_TYPE] = REC_TEST_TYPE_REF
             records.mutate(ref, data)
         }
-        assertThat(exception.message).contains("doesn't found")
+        assertThat(exception.message).contains("was not found")
     }
 
     @Test
     fun copyTest() {
 
         registerAtts(
-            AttributeType.values().map { type ->
+            AttributeType.entries.map { type ->
                 AttributeDef.create {
                     withId(type.toString().lowercase())
                     withType(type)

@@ -52,7 +52,7 @@ class DbSchemaContext(
     )
     val entityPermsService: DbEntityPermsService = DbEntityPermsServiceImpl(this)
     val recordRefService: DbRecordRefService = DbRecordRefService(dataSourceCtx.appName, this)
-    val assocsService: DbAssocsService = DbAssocsService(this)
+    val assocsService: DbAssocsService = DbAssocsService(dataSourceCtx.appName, this)
     val workspaceService: DbWorkspaceService = DbWorkspaceService(this)
 
     private val metaSchemaVersionKey = listOf("schema-version")
@@ -125,6 +125,14 @@ class DbSchemaContext(
     fun getUserRef(userName: String): EntityRef {
         val nonEmptyUserName = userName.ifBlank { AuthUser.ANONYMOUS }
         return authoritiesApi.getPersonRef(nonEmptyUserName)
+    }
+
+    fun forEachNeighbourSchema(action: (String, DbSchemaContext) -> Unit) {
+        dataSourceCtx.forEachSchema { name, context ->
+            if (name != this.schema) {
+                action(name, context)
+            }
+        }
     }
 
     override fun equals(other: Any?): Boolean {
