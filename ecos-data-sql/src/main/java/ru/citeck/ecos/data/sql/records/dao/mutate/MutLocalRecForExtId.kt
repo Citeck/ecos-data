@@ -4,17 +4,17 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttDef
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttStoringType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
-import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class MutLocalRecForExtId(
-    private val record: LocalRecordAtts,
+    private val attributes: ObjectData,
     private val typeInfo: TypeInfo,
     private val mutComputeCtx: MutationComputeContext
 ) : AttValue {
@@ -30,24 +30,37 @@ class MutLocalRecForExtId(
         val attDef = when (name) {
             "id" -> ATT_ID_DEF
             RecordConstants.ATT_DOC_NUM -> {
-                if (typeInfo.numTemplateRef.isEmpty()) {
-                    return null
+                if (attributes.has(RecordConstants.ATT_DOC_NUM)) {
+                    AttributeDef.create()
+                        .withId(RecordConstants.ATT_DOC_NUM)
+                        .withType(AttributeType.NUMBER)
+                        .build()
+                } else {
+                    if (typeInfo.numTemplateRef.isEmpty()) {
+                        return null
+                    }
+                    val config = ObjectData.create()
+                    config[COUNTER_CONFIG_TEMPLATE_KEY] = typeInfo.numTemplateRef
+                    AttributeDef.create()
+                        .withId(RecordConstants.ATT_DOC_NUM)
+                        .withComputed(
+                            ComputedAttDef.create()
+                                .withType(ComputedAttType.COUNTER)
+                                .withConfig(config)
+                                .withStoringType(ComputedAttStoringType.ON_CREATE)
+                                .build()
+                        ).build()
                 }
-                val config = ObjectData.create()
-                config[COUNTER_CONFIG_TEMPLATE_KEY] = typeInfo.numTemplateRef
-                AttributeDef.create()
-                    .withId(RecordConstants.ATT_DOC_NUM)
-                    .withComputed(
-                        ComputedAttDef.create()
-                            .withType(ComputedAttType.COUNTER)
-                            .withConfig(config)
-                            .withStoringType(ComputedAttStoringType.ON_CREATE)
-                            .build()
-                    ).build()
             }
             else -> attDefById[name] ?: error("Attribute is not found: '$name'")
         }
         if (attDef.computed.type != ComputedAttType.NONE) {
+            if (attDef.computed.type == ComputedAttType.COUNTER && attributes.has(name)) {
+                val counterValue = attributes[name]
+                if (counterValue.isValueNode() && counterValue.isNotNull()) {
+                    return counterValue
+                }
+            }
             return mutComputeCtx.calculateAtt(
                 this,
                 name,
@@ -55,10 +68,10 @@ class MutLocalRecForExtId(
                 attDef.computed
             )
         }
-        if (!record.hasAtt(name)) {
+        if (!attributes.has(name)) {
             error("Attribute '$name' required for extIdTemplate is not present. Type: '${typeInfo.id}'")
         }
-        val rawValue = record.getAtt(name)
+        val rawValue = attributes[name]
         if (DbRecordsUtils.isAssocLikeAttribute(attDef)) {
             return convertToAssocValue(rawValue)
         }

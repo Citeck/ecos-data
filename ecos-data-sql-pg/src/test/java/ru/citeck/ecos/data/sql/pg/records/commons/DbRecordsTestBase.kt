@@ -390,7 +390,7 @@ abstract class DbRecordsTestBase {
             records = recordsServiceFactory.recordsService
             RequestContext.setDefaultServices(recordsServiceFactory)
 
-            remoteActions.init(webAppApi, records)
+            remoteActions.init(dataSourceCtx, webAppApi, records)
         }
 
         mainCtx = createRecordsDao()
@@ -1108,6 +1108,29 @@ abstract class DbRecordsTestBase {
                     res.getObject("res")
                 }
             }
+        }
+
+        fun selectAllFromTable(table: String): List<Map<String, Any?>> {
+            val recordsList = ArrayList<Map<String, Any?>>()
+            dbDataSource.withTransaction(true) {
+                dbDataSource.query(
+                    "SELECT * FROM ${tableRef.withTable(table).fullName}",
+                    emptyList()
+                ) { res ->
+                    val columnNames = LinkedHashSet<String>()
+                    for (i in 1..res.metaData.columnCount) {
+                        columnNames.add(res.metaData.getColumnName(i))
+                    }
+                    while (res.next()) {
+                        val record = LinkedHashMap<String, Any>()
+                        for (name in columnNames) {
+                            record[name] = res.getObject(name)
+                        }
+                        recordsList.add(record)
+                    }
+                }
+            }
+            return recordsList
         }
 
         fun getColumns(): List<DbColumnDef> {

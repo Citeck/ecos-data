@@ -18,6 +18,40 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
 
     @Test
+    fun assocTest() {
+
+        val projectCtx = registerType()
+            .withId("project")
+            .withExtIdTemplate("{{key}}")
+            .withSourceId("project-src")
+            .withAttributes(
+                AttributeDef.create().withId("key")
+            ).register()
+
+        registerType()
+            .withExtIdTemplate("{{project.key}}-{{number}}")
+            .withAttributes(
+                AttributeDef.create().withId("project").withType(AttributeType.ASSOC),
+                AttributeDef.create().withId("number").withType(AttributeType.NUMBER)
+            )
+            .register()
+
+        val projectSd = projectCtx.createRecord("key" to "SD")
+        assertThat(projectSd.getLocalId()).isEqualTo("SD")
+        val projectEpt = projectCtx.createRecord("key" to "EPT")
+        assertThat(projectEpt.getLocalId()).isEqualTo("EPT")
+
+        val rec0 = createRecord("project" to projectSd, "number" to 23)
+        assertThat(rec0.getLocalId()).isEqualTo("SD-23")
+
+        val rec1 = createRecord("project" to projectSd, "number" to 33)
+        assertThat(rec1.getLocalId()).isEqualTo("SD-33")
+
+        val rec2 = createRecord("project" to projectEpt, "number" to 33)
+        assertThat(rec2.getLocalId()).isEqualTo("EPT-33")
+    }
+
+    @Test
     fun customIdWithExtIdTemplateTest() {
 
         registerType()
@@ -34,7 +68,7 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
                 .set("id", "function-enabled")
                 .set("scope", "uiserv")
         )
-        assertThat( records.getAtt(ref, "id").asText()).isEqualTo("function-enabled")
+        assertThat(records.getAtt(ref, "id").asText()).isEqualTo("function-enabled")
     }
 
     @Test
@@ -70,6 +104,7 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
         assertThat(ref1).isEqualTo(ref0)
         assertThat(records.getAtt(ref1, "text").asText()).isEqualTo("def")
 
+        // copy by mutation of id att is not allowed with custom extIdTemplate
         assertCount(1L)
     }
 

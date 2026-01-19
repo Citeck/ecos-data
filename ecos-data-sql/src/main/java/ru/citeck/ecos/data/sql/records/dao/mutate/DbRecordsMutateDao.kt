@@ -29,6 +29,7 @@ import ru.citeck.ecos.data.sql.records.dao.content.DbRecordsContentDao
 import ru.citeck.ecos.data.sql.records.dao.delete.DbRecordsDeleteDao
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.OperationType
 import ru.citeck.ecos.data.sql.records.dao.perms.DbRecordsPermsDao
+import ru.citeck.ecos.data.sql.records.listener.DbRecordRefChangedEvent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsContext
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
@@ -244,7 +245,11 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         var typeInfo = typeInfo ?: ecosTypeService.getTypeInfoNotNull(getTypeIdForRecord(record))
         val mutComputeContext = MutationComputeContext(daoCtx)
 
-        val extIdFromAtts = getExtIdFromAtts(typeInfo, record, mutComputeContext)
+        val extIdFromAtts = getExtIdFromAtts(
+            typeInfo = typeInfo,
+            record = record,
+            mutComputeCtx = mutComputeContext
+        )
 
         val runAsAuth = AuthContext.getCurrentRunAsAuth()
         val isRunAsSystem = AuthContext.isSystemAuth(runAsAuth)
@@ -288,9 +293,9 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 typeInfo = ecosTypeService.getTypeInfoNotNull(typeIdFromDb)
                 if (record.id.isBlank()) {
                     val extIdForTypeFromDb = getExtIdFromAtts(
-                        typeInfo,
-                        record,
-                        mutComputeContext
+                        typeInfo = typeInfo,
+                        record = record,
+                        mutComputeCtx = mutComputeContext
                     )
                     if (extIdForTypeFromDb != extIdFromAtts) {
                         error(
@@ -919,21 +924,25 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         globalRef: EntityRef
     ) {
         daoCtx.mutAssocHandler.processChildrenAfterMutation(
-            recordEntityBeforeMutation,
-            recAfterSave,
-            record.attributes,
-            typeAttColumns,
-            allAssocsValues,
-            disableEvents
+            recBeforeSave = recordEntityBeforeMutation,
+            recAfterSave = recAfterSave,
+            attributes = record.attributes,
+            columns = typeAttColumns,
+            assocsValues = allAssocsValues,
+            disableEvents = disableEvents
         )
         daoCtx.mutAssocHandler.processParentAfterMutation(
-            recordEntityBeforeMutation,
-            recAfterSave,
-            record.attributes,
-            disableEvents
+            recBeforeSave = recordEntityBeforeMutation,
+            recAfterSave = recAfterSave,
+            attributes = record.attributes,
+            disableEvents = disableEvents
         )
-
-        daoCtx.remoteActionsClient?.updateRemoteAssocs(daoCtx.tableCtx, globalRef, currentUser, changedAssocs)
+        daoCtx.remoteActionsClient?.updateRemoteAssocs(
+            currentCtx = daoCtx.tableCtx,
+            sourceRef = globalRef,
+            creator = currentUser,
+            assocsDiff = changedAssocs
+        )
     }
 
     private fun computeAttsToStore(
@@ -1060,19 +1069,30 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
     private fun getExtIdFromAtts(
         typeInfo: TypeInfo,
+        attributes: ObjectData,
+        mutComputeCtx: MutationComputeContext
+    ): String {
+        return getExtIdFromAtts(typeInfo, LocalRecordAtts("", attributes), mutComputeCtx)
+    }
+
+    private fun getExtIdFromAtts(
+        typeInfo: TypeInfo,
         record: LocalRecordAtts,
         mutComputeCtx: MutationComputeContext
     ): String {
 
-        val recAtts = record.attributes
-        recAtts.remove(DbRecord.ATT_CUSTOM_ID)
+        val attributes = record.attributes
+        attributes.remove(DbRecord.ATT_CUSTOM_ID)
 
         val extIdTemplate = typeInfo.extIdTemplate
         if (extIdTemplate.isEmpty()) {
-            return recAtts[ATT_ID].asText()
+            return attributes[ATT_ID].asText()
+        }
+        if (record.id.isNotBlank()) {
+            return ""
         }
 
-        val record = MutLocalRecForExtId(record, typeInfo, mutComputeCtx)
+        val record = MutLocalRecForExtId(attributes, typeInfo, mutComputeCtx)
         return daoCtx.recordsServiceFactory.recordsTemplateService.resolve(extIdTemplate, record)
     }
 
@@ -1182,6 +1202,90 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             } else {
                 entityToMutate
             }
+        }
+        if (record.attributes.has(DbRecordsControlAtts.UPDATE_ID)) {
+            if (!isRunAsSystemOrAdmin) {
+                error("Id update allowed only for admin. Record: $record sourceId: '${config.id}'")
+            }
+            val updateIdValue = record.attributes[DbRecordsControlAtts.UPDATE_ID]
+            var newId = ""
+            if (updateIdValue.isTextual()) {
+                newId = updateIdValue.asText()
+            }
+            val attsToCopy = AuthContext.runAsSystem {
+                DbRecord(daoCtx, mutCtx.entityToMutate, null).getAttsForCopy()
+            }
+            val attributes = ObjectData.create(attsToCopy)
+            if (entityToMutate.attributes.containsKey(RecordConstants.ATT_DOC_NUM)) {
+                attributes[RecordConstants.ATT_DOC_NUM] = entityToMutate.attributes[RecordConstants.ATT_DOC_NUM]
+            }
+            if (newId.isNotBlank()) {
+                attributes[ATT_ID] = newId
+            }
+            val newExtId = getExtIdFromAtts(
+                typeInfo = mutCtx.typeInfo,
+                attributes = attributes,
+                mutComputeCtx = mutCtx.computeContext
+            )
+            var recordWasChanged = false
+            var extIdWasChanged = false
+            if (newExtId.isNotBlank() && entityToMutate.extId != newExtId) {
+                if (daoCtx.attsDao.findDbEntityByExtId(newExtId, checkPerms = false) != null) {
+                    error("Record '${daoCtx.getGlobalRef(newExtId)}' already exists. The id must be unique.")
+                }
+                entityToMutate.extId = newExtId
+                recordWasChanged = true
+                extIdWasChanged = true
+            }
+            if (newId.isNotBlank() && entityToMutate.extId != newId) {
+                entityToMutate.attributes[DbRecord.ATT_CUSTOM_ID] = newId
+                recordWasChanged = true
+            } else if (entityToMutate.attributes.containsKey(DbRecord.ATT_CUSTOM_ID)) {
+                entityToMutate.attributes[DbRecord.ATT_CUSTOM_ID] = null
+            }
+            val resultEntity = if (recordWasChanged) {
+                dataService.save(entityToMutate)
+            } else {
+                entityToMutate
+            }
+            if (extIdWasChanged) {
+                val beforeAfterRef = recordRefService.migrateRef(
+                    fromRefId = entityToMutate.refId,
+                    toRef = EntityRef.create("", entityToMutate.extId),
+                    migratedBy = mutCtx.currentUserRefId
+                )
+                if (beforeAfterRef != null) {
+                    daoCtx.tableCtx.getSchemaCtx().forEachNeighbourSchema { _, context ->
+                        context.recordRefService.migrateRefIfExists(
+                            fromRef = beforeAfterRef.first,
+                            toRef = beforeAfterRef.second,
+                            migratedBy = mutCtx.currentUserRefId
+                        )
+                    }
+                    daoCtx.remoteActionsClient?.migrateRef(
+                        fromRef = beforeAfterRef.first,
+                        toRef = beforeAfterRef.second,
+                        migratedBy = mutCtx.currentUser,
+                        targetApps = assocsService.findSourceExternalApps(entityToMutate.refId)
+                    )
+                    val entityInfo = daoCtx.getEntityMeta(entityToMutate)
+                    daoCtx.listeners.forEach {
+                        it.onRecordRefChangedEvent(
+                            DbRecordRefChangedEvent(
+                                before = beforeAfterRef.first,
+                                after = beforeAfterRef.second,
+                                isDraft = entityToMutate.attributes[DbRecord.COLUMN_IS_DRAFT.name] == true,
+                                record = DbRecord(daoCtx, entityToMutate, null),
+                                typeDef = entityInfo.typeInfo,
+                                aspects = entityInfo.aspectsInfo,
+                                localRef = entityInfo.localRef,
+                                globalRef = entityInfo.globalRef
+                            )
+                        )
+                    }
+                }
+            }
+            return resultEntity
         }
         updateCalculatedAttsIfRequired(mutCtx)?.let { return it }
         return null

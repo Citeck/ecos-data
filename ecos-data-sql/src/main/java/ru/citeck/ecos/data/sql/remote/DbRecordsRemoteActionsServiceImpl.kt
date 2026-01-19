@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.commons.utils.ReflectUtils
+import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.remote.action.DbRemoteActionExecutor
 import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
@@ -21,12 +22,18 @@ class DbRecordsRemoteActionsServiceImpl : DbRecordsRemoteActionsService {
 
     private lateinit var webAppApi: EcosWebAppApi
     private lateinit var recordsService: RecordsService
+    private lateinit var dbDataSourceContext: DbDataSourceContext
 
     @Synchronized
-    fun init(webAppApi: EcosWebAppApi, recordsService: RecordsService) {
+    fun init(
+        dbDataSourceContext: DbDataSourceContext,
+        webAppApi: EcosWebAppApi,
+        recordsService: RecordsService
+    ) {
         this.webAppApi = webAppApi
         this.recordsService = recordsService
-        executors.values.forEach { it.executor.init(webAppApi, recordsService) }
+        this.dbDataSourceContext = dbDataSourceContext
+        executors.values.forEach { it.executor.init(dbDataSourceContext, webAppApi, recordsService) }
         initialized.set(true)
     }
 
@@ -49,7 +56,7 @@ class DbRecordsRemoteActionsServiceImpl : DbRecordsRemoteActionsService {
             executor as DbRemoteActionExecutor<Any>
         )
         if (initialized.get()) {
-            executor.init(webAppApi, recordsService)
+            executor.init(dbDataSourceContext, webAppApi, recordsService)
         }
     }
 
