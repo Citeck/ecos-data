@@ -10,6 +10,7 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordDeniedAllPerms
+import ru.citeck.ecos.data.sql.records.perms.DbRecordPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsContext
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.utils.ModelUtils
@@ -56,26 +57,28 @@ class DbRecordsPermsDao(
                         } else {
                             record
                         }
-                        val perms = if (authorities.contains(ModelUtils.WORKSPACE_SYSTEM_ROLE)) {
+                        var perms: DbRecordPerms? = null
+                        if (authorities.contains(ModelUtils.WORKSPACE_SYSTEM_ROLE)) {
                             val workspaceId = daoCtx.recordsService.getAtt(
                                 recordToGetPerms,
                                 "${RecordConstants.ATT_WORKSPACE}${ScalarType.LOCAL_ID_SCHEMA}"
                             ).asText()
-                            if (daoCtx.workspaceService.isSystemOrWsSystemAuth(
-                                    SimpleAuthData(user, authorities.toList()),
-                                    workspaceId
-                                )
-                            ) {
-                                DbRecordAllowedAllPerms
-                            } else {
-                                DbRecordDeniedAllPerms
+                            if (!daoCtx.workspaceService.isWorkspaceWithGlobalEntities(workspaceId)) {
+                                perms = if (daoCtx.workspaceService.isSystemOrWsSystemAuth(
+                                        SimpleAuthData(user, authorities.toList()),
+                                        workspaceId
+                                    )
+                                ) {
+                                    DbRecordAllowedAllPerms
+                                } else {
+                                    DbRecordDeniedAllPerms
+                                }
                             }
-                        } else if (recordToGetPerms != null) {
-                            permsComponent.getRecordPerms(user, authorities, recordToGetPerms)
-                        } else {
-                            DbRecordAllowedAllPerms
                         }
-                        DbRecordPermsContext(perms)
+                        if (perms == null && recordToGetPerms != null) {
+                            perms = permsComponent.getRecordPerms(user, authorities, recordToGetPerms)
+                        }
+                        DbRecordPermsContext(perms ?: DbRecordAllowedAllPerms)
                     }
                 }
             }

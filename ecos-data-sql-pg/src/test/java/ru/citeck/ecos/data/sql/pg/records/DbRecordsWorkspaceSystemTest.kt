@@ -129,4 +129,20 @@ class DbRecordsWorkspaceSystemTest : DbRecordsTestBase() {
             assertThat(auth.getAuthorities()).contains("ROLE_WS_SYSTEM")
         }
     }
+
+    @Test
+    fun accessToPublicRecordsFromWsSystem() {
+
+        registerType()
+            .withAttributes(
+                AttributeDef.create().withId("text").build()
+            ).withWorkspaceScope(WorkspaceScope.PUBLIC).register()
+
+        val publicRef = createRecord("text" to "abc")
+
+        assertThat(records.getAtt(publicRef, "text").asText()).isEqualTo("abc")
+        workspaceService.impl.runAsWsSystem("any-ws") {
+            assertThat(records.getAtt(publicRef, "text").asText()).isEqualTo("abc")
+        }
+    }
 }
