@@ -22,14 +22,14 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
 
         val projectCtx = registerType()
             .withId("project")
-            .withExtIdTemplate("{{key}}")
+            .withLocalIdTemplate("{{key}}")
             .withSourceId("project-src")
             .withAttributes(
                 AttributeDef.create().withId("key")
             ).register()
 
         registerType()
-            .withExtIdTemplate("{{project.key}}-{{number}}")
+            .withLocalIdTemplate("{{project.key}}-{{number}}")
             .withAttributes(
                 AttributeDef.create().withId("project").withType(AttributeType.ASSOC),
                 AttributeDef.create().withId("number").withType(AttributeType.NUMBER)
@@ -52,10 +52,10 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
     }
 
     @Test
-    fun customIdWithExtIdTemplateTest() {
+    fun customIdWithLocalIdTemplateTest() {
 
         registerType()
-            .withExtIdTemplate("\${scope}$\${id}")
+            .withLocalIdTemplate("\${scope}$\${id}")
             .withAttributes(AttributeDef.create().withId("scope"))
             .register()
 
@@ -75,7 +75,7 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
     fun copyTest() {
 
         registerType()
-            .withExtIdTemplate("SD-\${text}")
+            .withLocalIdTemplate("SD-\${text}")
             .withAttributes(
                 AttributeDef.create().withId("text")
             )
@@ -104,7 +104,7 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
         assertThat(ref1).isEqualTo(ref0)
         assertThat(records.getAtt(ref1, "text").asText()).isEqualTo("def")
 
-        // copy by mutation of id att is not allowed with custom extIdTemplate
+        // copy by mutation of id att is not allowed with custom localIdTemplate
         assertCount(1L)
     }
 
@@ -114,9 +114,9 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
         registerNumTemplate(NumTemplateDef.create().withId("custom").build())
         registerNumTemplate(NumTemplateDef.create().withId("custom2").build())
 
-        fun registerTypeWithExtIdTemplate(template: String) {
+        fun registerTypeWithLocalIdTemplate(template: String) {
             registerType()
-                .withExtIdTemplate(template)
+                .withLocalIdTemplate(template)
                 .withNumTemplateRef(EntityRef.valueOf("custom"))
                 .withAttributes(
                     AttributeDef.create().withId("text"),
@@ -150,7 +150,7 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
         val createdRecords = mutableListOf<EntityRef>()
 
         fun testWithCounterAtt(att: String) {
-            registerTypeWithExtIdTemplate("CUSTOM--\${$att}")
+            registerTypeWithLocalIdTemplate("CUSTOM--\${$att}")
             (1..3).map {
                 val counterNextVal = createdRecords.size + 1
                 val ref = createRecord("text" to "abc-$counterNextVal")
@@ -172,19 +172,19 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
             assertThat(atts["id"].asText()).isEqualTo(createdRecords[idx].getLocalId())
         }
 
-        registerTypeWithExtIdTemplate("prefix-{{attWithScript}}")
+        registerTypeWithLocalIdTemplate("prefix-{{attWithScript}}")
 
         val mutEx0 = assertThrows<RuntimeException> { createRecord() }
-        assertThat(mutEx0.message).contains("Attribute 'text' required for extIdTemplate is not present")
+        assertThat(mutEx0.message).contains("Attribute 'text' required for localIdTemplate is not present")
 
         val ref = createRecord("text" to "value")
         assertThat(ref.getLocalId()).isEqualTo("prefix-text__value")
     }
 
     @Test
-    fun testWithConstantExtIdTemplate() {
+    fun testWithConstantLocalIdTemplate() {
         registerType()
-            .withExtIdTemplate("abc")
+            .withLocalIdTemplate("abc")
             .withAttributes(AttributeDef.create().withId("text"))
             .register()
 
@@ -198,7 +198,7 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
     @Test
     fun test() {
         registerType()
-            .withExtIdTemplate("{{project}}-{{number}}")
+            .withLocalIdTemplate("{{project}}-{{number}}")
             .withAttributes(
                 AttributeDef.create().withId("project"),
                 AttributeDef.create().withId("number").withType(AttributeType.NUMBER)
@@ -216,6 +216,6 @@ class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
         )
 
         val mutEx0 = assertThrows<RuntimeException> { createRecord("project" to "EPT") }
-        assertThat(mutEx0.message).contains("Attribute 'number' required for extIdTemplate is not present")
+        assertThat(mutEx0.message).contains("Attribute 'number' required for localIdTemplate is not present")
     }
 }

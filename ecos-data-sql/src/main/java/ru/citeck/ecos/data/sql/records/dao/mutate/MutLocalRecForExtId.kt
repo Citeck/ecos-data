@@ -69,7 +69,7 @@ class MutLocalRecForExtId(
             )
         }
         if (!attributes.has(name)) {
-            error("Attribute '$name' required for extIdTemplate is not present. Type: '${typeInfo.id}'")
+            error("Attribute '$name' required for localIdTemplate is not present. Type: '${typeInfo.id}'")
         }
         val rawValue = attributes[name]
         if (DbRecordsUtils.isAssocLikeAttribute(attDef)) {

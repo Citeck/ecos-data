@@ -97,15 +97,15 @@ class DbRecordsUpdateIdTest : DbRecordsTestBase() {
     }
 
     @Test
-    fun testWithExtIdTemplate() {
+    fun testWithLocalIdTemplate() {
 
         registerNumTemplate(NumTemplateDef.create().withId("test-num").build())
         registerNumTemplate(NumTemplateDef.create().withId("custom2").build())
 
-        fun registerTypeWithExtIdTemplate(template: String) {
+        fun registerTypeWithLocalIdTemplate(template: String) {
             registerType()
                 .withNumTemplateRef(EntityRef.valueOf("test-num"))
-                .withExtIdTemplate(template)
+                .withLocalIdTemplate(template)
                 .withAttributes(
                     AttributeDef.create().withId("text"),
                     AttributeDef.create().withId("project").withType(AttributeType.ASSOC),
@@ -122,7 +122,7 @@ class DbRecordsUpdateIdTest : DbRecordsTestBase() {
                 )
                 .register()
         }
-        registerTypeWithExtIdTemplate("\${project.key}-\${_docNum}")
+        registerTypeWithLocalIdTemplate("\${project.key}-\${_docNum}")
 
         val projectCtx = registerType()
             .withId("project")
@@ -156,7 +156,7 @@ class DbRecordsUpdateIdTest : DbRecordsTestBase() {
         assertThat(records.getAtt(newRef, "text").asText()).isEqualTo("abc")
         assertThat(records.getAtt(newRef, "attWithCounter?num").asInt()).isEqualTo(1)
 
-        registerTypeWithExtIdTemplate("\${project.key}-\${attWithCounter}-Q")
+        registerTypeWithLocalIdTemplate("\${project.key}-\${attWithCounter}-Q")
 
         assertThat(records.getAtt(newRef, "text").asText()).isEqualTo("abc")
         assertThat(records.getAtt(newRef, "attWithCounter?num").asInt()).isEqualTo(1)
@@ -166,10 +166,10 @@ class DbRecordsUpdateIdTest : DbRecordsTestBase() {
     }
 
     @Test
-    fun testWithCustomIdAndExtIdTemplate() {
+    fun testWithCustomIdAndLocalIdTemplate() {
 
         registerType()
-            .withExtIdTemplate("\${scope}$\${id}")
+            .withLocalIdTemplate("\${scope}$\${id}")
             .withAttributes(AttributeDef.create().withId("scope"))
             .register()
 

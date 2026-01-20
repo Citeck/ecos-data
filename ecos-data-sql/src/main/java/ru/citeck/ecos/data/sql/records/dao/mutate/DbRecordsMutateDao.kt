@@ -1084,8 +1084,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         val attributes = record.attributes
         attributes.remove(DbRecord.ATT_CUSTOM_ID)
 
-        val extIdTemplate = typeInfo.extIdTemplate
-        if (extIdTemplate.isEmpty()) {
+        val localIdTemplate = typeInfo.localIdTemplate
+        if (localIdTemplate.isEmpty()) {
             return attributes[ATT_ID].asText()
         }
         if (record.id.isNotBlank()) {
@@ -1093,7 +1093,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         }
 
         val record = MutLocalRecForExtId(attributes, typeInfo, mutComputeCtx)
-        return daoCtx.recordsServiceFactory.recordsTemplateService.resolve(extIdTemplate, record)
+        return daoCtx.recordsServiceFactory.recordsTemplateService.resolve(localIdTemplate, record)
     }
 
     /**
@@ -1124,8 +1124,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             entityToMutate.extId = customExtId
             return null
         } else {
-            val extIdTemplate = mutCtx.typeInfo.extIdTemplate
-            if (extIdTemplate.isNotEmpty()) {
+            val localIdTemplate = mutCtx.typeInfo.localIdTemplate
+            if (localIdTemplate.isNotEmpty()) {
                 // copying by mutation with other id doesn't supported for records with templated ext id
                 return null
             }

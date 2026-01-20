@@ -17,7 +17,7 @@ class TypeRegistration(
     private val register: (TypeInfo) -> DbRecordsTestBase.RecordsDaoTestCtx
 ) {
 
-    private var extIdTemplate: String? = null
+    private var localIdTemplate: String? = null
     private var parentRef: EntityRef = EntityRef.EMPTY
     private var numTemplateRef: EntityRef = EntityRef.EMPTY
     private var queryPermsPolicy: QueryPermsPolicy = QueryPermsPolicy.DEFAULT
@@ -35,8 +35,8 @@ class TypeRegistration(
         return this
     }
 
-    fun withExtIdTemplate(extIdTemplate: String): TypeRegistration {
-        this.extIdTemplate = extIdTemplate
+    fun withLocalIdTemplate(localIdTemplate: String): TypeRegistration {
+        this.localIdTemplate = localIdTemplate
         return this
     }
 
@@ -129,7 +129,7 @@ class TypeRegistration(
         return register(
             TypeInfo.create()
                 .withId(typeId)
-                .withExtIdTemplate(extIdTemplate)
+                .withLocalIdTemplate(localIdTemplate)
                 .withQueryPermsPolicy(queryPermsPolicy)
                 .withNumTemplateRef(numTemplateRef)
                 .withParentRef(parentRef)
