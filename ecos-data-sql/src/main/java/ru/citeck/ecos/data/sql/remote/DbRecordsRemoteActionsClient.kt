@@ -6,11 +6,11 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 interface DbRecordsRemoteActionsClient {
 
-    fun migrateRef(
+    fun migrateRemoteRef(
+        targetApp: String,
         fromRef: EntityRef,
         toRef: EntityRef,
-        migratedBy: String,
-        targetApps: Collection<String>
+        migratedBy: String
     )
 
     fun updateRemoteAssocs(

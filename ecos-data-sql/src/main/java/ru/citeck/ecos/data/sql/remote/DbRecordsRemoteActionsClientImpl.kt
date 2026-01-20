@@ -33,23 +33,21 @@ class DbRecordsRemoteActionsClientImpl : DbRecordsRemoteActionsClient {
         this.recordsService = recordsService
     }
 
-    override fun migrateRef(
+    override fun migrateRemoteRef(
+        targetApp: String,
         fromRef: EntityRef,
         toRef: EntityRef,
-        migratedBy: String,
-        targetApps: Collection<String>
+        migratedBy: String
     ) {
-        for (appName in targetApps) {
-            execRemoteAction(
-                appName = appName,
-                actionType = MigrateRecordRefAction.TYPE,
-                config = MigrateRecordRefAction.Params(
-                    fromRef = fromRef,
-                    toRef = toRef,
-                    migratedBy = migratedBy
-                )
+        execRemoteAction(
+            appName = targetApp,
+            actionType = MigrateRecordRefAction.TYPE,
+            config = MigrateRecordRefAction.Params(
+                fromRef = fromRef,
+                toRef = toRef,
+                migratedBy = migratedBy
             )
-        }
+        )
     }
 
     override fun updateRemoteAssocs(

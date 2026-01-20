@@ -1262,12 +1262,33 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                             migratedBy = mutCtx.currentUserRefId
                         )
                     }
-                    daoCtx.remoteActionsClient?.migrateRef(
-                        fromRef = beforeAfterRef.first,
-                        toRef = beforeAfterRef.second,
-                        migratedBy = mutCtx.currentUser,
-                        targetApps = assocsService.findSourceExternalApps(entityToMutate.refId)
-                    )
+                    val appsWithSrcAssocs = assocsService.findSourceExternalApps(entityToMutate.refId)
+                    if (appsWithSrcAssocs.isNotEmpty()) {
+                        log.debug {
+                            "Found external apps with links to " +
+                                "migrated ref '${beforeAfterRef.first}': ${appsWithSrcAssocs.joinToString()}"
+                        }
+                        for (appName in appsWithSrcAssocs) {
+                            try {
+                                daoCtx.remoteActionsClient?.migrateRemoteRef(
+                                    targetApp = appName,
+                                    fromRef = beforeAfterRef.first,
+                                    toRef = beforeAfterRef.second,
+                                    migratedBy = mutCtx.currentUser,
+                                )
+                            } catch (e: Throwable) {
+                                val ex = RuntimeException(
+                                    "Remote ref migration failed. " +
+                                        "TargetApp: '$appName' " +
+                                        "fromRef: '${beforeAfterRef.first}' " +
+                                        "toRef: '${beforeAfterRef.second}' " +
+                                        "migratedBy: '${mutCtx.currentUser}'"
+                                )
+                                ex.addSuppressed(e)
+                                throw ex
+                            }
+                        }
+                    }
                     val entityInfo = daoCtx.getEntityMeta(entityToMutate)
                     daoCtx.listeners.forEach {
                         it.onRecordRefChangedEvent(
