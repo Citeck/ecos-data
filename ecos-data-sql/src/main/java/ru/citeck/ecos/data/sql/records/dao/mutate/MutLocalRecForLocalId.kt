@@ -25,8 +25,23 @@ class MutLocalRecForLocalId(
     }
 
     private val attDefById = typeInfo.model.getAllAttributes().associateBy { it.id }
+    private val currentResolvingAtts = HashSet<String>(4)
 
     override fun getAtt(name: String): Any? {
+        if (name.isBlank()) {
+            return null
+        }
+        val wasAddedToResolvingAtts = currentResolvingAtts.add(name)
+        return try {
+            getAttImpl(name, !wasAddedToResolvingAtts)
+        } finally {
+            if (wasAddedToResolvingAtts) {
+                currentResolvingAtts.remove(name)
+            }
+        }
+    }
+
+    private fun getAttImpl(name: String, isRecursiveCall: Boolean): Any? {
         val attDef = when (name) {
             "id" -> ATT_ID_DEF
             RecordConstants.ATT_DOC_NUM -> {
@@ -48,22 +63,24 @@ class MutLocalRecForLocalId(
             }
             else -> attDefById[name] ?: error("Attribute is not found: '$name'")
         }
-        if (attDef.computed.type != ComputedAttType.NONE) {
-            if (attDef.computed.type == ComputedAttType.COUNTER && attributes.has(name)) {
-                val counterValue = attributes[name]
-                if (isNonEmptyCounterValue(counterValue)) {
-                    return counterValue
+        if (!isRecursiveCall) {
+            if (attDef.computed.type != ComputedAttType.NONE) {
+                if (attDef.computed.type == ComputedAttType.COUNTER && attributes.has(name)) {
+                    val counterValue = attributes[name]
+                    if (isNonEmptyCounterValue(counterValue)) {
+                        return counterValue
+                    }
                 }
+                return mutComputeCtx.calculateAtt(
+                    this,
+                    name,
+                    attDef.type,
+                    attDef.computed
+                )
             }
-            return mutComputeCtx.calculateAtt(
-                this,
-                name,
-                attDef.type,
-                attDef.computed
-            )
-        }
-        if (!attributes.has(name)) {
-            error("Attribute '$name' required for localIdTemplate is not present. Type: '${typeInfo.id}'")
+            if (!attributes.has(name)) {
+                error("Attribute '$name' required for localIdTemplate is not present. Type: '${typeInfo.id}'")
+            }
         }
         val rawValue = attributes[name]
         if (DbRecordsUtils.isAssocLikeAttribute(attDef)) {
