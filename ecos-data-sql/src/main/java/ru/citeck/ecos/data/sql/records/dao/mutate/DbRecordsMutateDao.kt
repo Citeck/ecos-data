@@ -1092,7 +1092,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             return ""
         }
 
-        val record = MutLocalRecForExtId(attributes, typeInfo, mutComputeCtx)
+        val record = MutLocalRecForLocalId(attributes, typeInfo, mutComputeCtx)
         return daoCtx.recordsServiceFactory.recordsTemplateService.resolve(localIdTemplate, record)
     }
 

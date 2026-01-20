@@ -15,7 +15,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttType
 import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
-class DbRecordsCustomExtIdTest : DbRecordsTestBase() {
+class DbRecordsCustomLocalIdTest : DbRecordsTestBase() {
 
     @Test
     fun assocTest() {
