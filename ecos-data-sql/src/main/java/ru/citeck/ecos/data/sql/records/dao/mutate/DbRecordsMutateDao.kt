@@ -618,7 +618,6 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         val operations = daoCtx.mutAttOperationHandler.extractAttValueOperations(recAttributes)
             .filter { !recAttributes.has(it.getAttName()) }
 
-        val allAssocsValues = LinkedHashMap<String, DbAssocAttValuesContainer>()
         if (operations.isNotEmpty()) {
             val currentAtts: Map<String, Any?> = if (isNewEntity) {
                 emptyMap()
@@ -633,7 +632,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     recAttributes[it.getAttName()] = newValue
                 } else if (newValue is DbAssocAttValuesContainer) {
                     changedByOperationsAtts.add(it.getAttName())
-                    allAssocsValues[it.getAttName()] = newValue
+                    mutCtx.allAssocsValues[it.getAttName()] = newValue
                 }
             }
         }
@@ -689,44 +688,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         recAttributes.forEach { att, newValue ->
             val attDef: EcosAttColumnDef = mutCtx.typeAttColumnsByAtt[att] ?: return@forEach
             if (DbRecordsUtils.isAssocLikeAttribute(attDef.attribute)) {
-                if (!allAssocsValues.containsKey(att)) {
-                    val valuesBefore = if (isNewEntity) {
-                        emptyList()
-                    } else {
-                        assocsService.getTargetAssocs(entityToMutate.refId, att, DbFindPage(0, 100))
-                            .entities.map { it.targetId }
-                    }
-                    if (valuesBefore.size == 100) {
-                        error(
-                            "You can't edit large associations by providing full values list. " +
-                                "Please, use att_add_... and att_rem_... to work with it. " +
-                                "Assoc: $att Record: $globalRef"
-                        )
-                    }
-                    val refsBefore = recordRefService.getEntityRefsByIds(valuesBefore).map {
-                        it.toString()
-                    }.toSet()
-
-                    val assocValuesContainer = DbAssocAttValuesContainer(
-                        entityToMutate,
-                        daoCtx,
-                        refsBefore,
-                        DbRecordsUtils.isChildAssocAttribute(attDef.attribute),
-                        attDef.attribute
-                    )
-                    allAssocsValues[att] = assocValuesContainer
-
-                    val newValuesStrings = DbAttValueUtils.anyToSetOfStrings(newValue)
-                    val added = newValuesStrings.filterTo(LinkedHashSet()) {
-                        !refsBefore.contains(it)
-                    }
-                    assocValuesContainer.addAll(added)
-
-                    val removed = refsBefore.filterTo(LinkedHashSet()) {
-                        !newValuesStrings.contains(it)
-                    }
-                    assocValuesContainer.removeAll(removed)
-                }
+                registerAssocValuesContainerIfRequired(att, newValue, mutCtx)
             } else if (attDef.attribute.type == AttributeType.OPTIONS && recAttributes.has(att)) {
                 val value = recAttributes[att]
                 if (value.isTextual() && value.asText().isEmpty()) {
@@ -803,7 +765,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             currentUserRefId,
             isMutationFromChild,
             perms,
-            allAssocsValues
+            mutCtx.allAssocsValues
         )
         val optionalAtts = DbRecord.OPTIONAL_COLUMNS.filter { !mutCtx.typeColumnNames.contains(it.name) }
         if (optionalAtts.isNotEmpty()) {
@@ -893,7 +855,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             record,
             changedAssocs,
             mutCtx.typeAttColumns,
-            allAssocsValues,
+            mutCtx.allAssocsValues,
             disableEvents,
             currentUser,
             metaAfterSave.globalRef
@@ -910,6 +872,56 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         }
 
         return recAfterSave
+    }
+
+    private fun registerAssocValuesContainerIfRequired(att: String, newValue: DataValue, mutCtx: MutationContext) {
+
+        val entityToMutate = mutCtx.entityToMutate
+        val allAssocsValues = mutCtx.allAssocsValues
+
+        val attDef: EcosAttColumnDef = mutCtx.typeAttColumnsByAtt[att] ?: return
+        if (allAssocsValues.containsKey(att) || !DbRecordsUtils.isAssocLikeAttribute(attDef.attribute)) {
+            return
+        }
+        val valuesBefore = if (mutCtx.isNewEntity) {
+            emptyList()
+        } else {
+            assocsService.getTargetAssocs(
+                sourceId = mutCtx.entityToMutate.refId,
+                attribute = att,
+                page = DbFindPage(0, 100)
+            ).entities.map { it.targetId }
+        }
+        if (valuesBefore.size == 100) {
+            error(
+                "You can't edit large associations by providing full values list. " +
+                    "Please, use att_add_... and att_rem_... to work with it. " +
+                    "Assoc: $att Record: ${daoCtx.getGlobalRef(mutCtx.entityToMutate.extId)}"
+            )
+        }
+        val refsBefore = recordRefService.getEntityRefsByIds(valuesBefore).map {
+            it.toString()
+        }.toSet()
+
+        val assocValuesContainer = DbAssocAttValuesContainer(
+            entityToMutate,
+            daoCtx,
+            refsBefore,
+            DbRecordsUtils.isChildAssocAttribute(attDef.attribute),
+            attDef.attribute
+        )
+        allAssocsValues[att] = assocValuesContainer
+
+        val newValuesStrings = DbAttValueUtils.anyToSetOfStrings(newValue)
+        val added = newValuesStrings.filterTo(LinkedHashSet()) {
+            !refsBefore.contains(it)
+        }
+        assocValuesContainer.addAll(added)
+
+        val removed = refsBefore.filterTo(LinkedHashSet()) {
+            !newValuesStrings.contains(it)
+        }
+        assocValuesContainer.removeAll(removed)
     }
 
     private fun processAssocsAfterMutation(
@@ -998,6 +1010,10 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             mutCtx.computeContext.preCalculatedComputedAtts
         )
 
+        atts.forEach { att, newValue ->
+            registerAssocValuesContainerIfRequired(att, newValue, mutCtx)
+        }
+
         daoCtx.mutAssocHandler.replaceRefsById(atts, typeAttColumns)
 
         val fullColumns = ArrayList(columns)
@@ -1013,7 +1029,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             changedAssocs,
             true,
             currentUserRefId,
-            false
+            false,
+            multiAssocValues = mutCtx.allAssocsValues
         )
         for (column in calculatedMutatedColumns) {
             mutatedColumns[column.name] = column

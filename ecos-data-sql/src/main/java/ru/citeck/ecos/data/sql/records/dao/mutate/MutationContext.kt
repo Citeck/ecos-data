@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.records.dao.mutate
 
 import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
+import ru.citeck.ecos.data.sql.records.dao.atts.DbAssocAttValuesContainer
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records3.record.atts.dto.LocalRecordAtts
@@ -27,6 +28,7 @@ class MutationContext(
     val typeColumns = typeAttColumns.map { it.column }.toMutableList()
     val typeColumnNames = typeColumns.map { it.name }.toMutableSet()
     val typeAspects = typeInfo.aspects.map { it.ref }.toSet()
+    val allAssocsValues: MutableMap<String, DbAssocAttValuesContainer> = LinkedHashMap()
 
     init {
         typeAttColumns.forEach { typeAttColumnsByAtt[it.attribute.id] = it }

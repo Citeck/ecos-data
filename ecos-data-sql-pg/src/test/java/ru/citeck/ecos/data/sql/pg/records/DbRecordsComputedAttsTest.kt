@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
+import ru.citeck.ecos.data.sql.records.DbRecordsControlAtts
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttDef
@@ -14,6 +15,7 @@ import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.records2.RecordConstants
+import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
@@ -225,5 +227,69 @@ class DbRecordsComputedAttsTest : DbRecordsTestBase() {
                 assertThat(columns.containsKey(getComputedAttId(type))).describedAs(type.toString()).isTrue
             }
         }
+    }
+
+    @Test
+    fun computedAssocTest() {
+
+        registerType()
+            .withAttributes(
+                AttributeDef.create().withId("assoc").withType(AttributeType.ASSOC),
+                AttributeDef.create()
+                    .withId("computedAssoc")
+                    .withType(AttributeType.ASSOC)
+                    .withComputed(
+                        ComputedAttDef.create()
+                            .withType(ComputedAttType.ATTRIBUTE)
+                            .withConfig(ObjectData.create().set("attribute", "assoc"))
+                            .withStoringType(ComputedAttStoringType.ON_MUTATE)
+                            .build()
+                    )
+            )
+            .register()
+
+        val ref0 = createRecord("id" to "target")
+        val ref1 = createRecord("id" to "source", "assoc" to ref0)
+
+        assertThat(records.getAtt(ref1, "assoc?id").asText().toEntityRef()).isEqualTo(ref0)
+        assertThat(records.getAtt(ref1, "computedAssoc?id").asText().toEntityRef()).isEqualTo(ref0)
+
+        fun assertQuery(att: String, expected: List<EntityRef>) {
+            val refs = records.query(
+                baseQuery.copy()
+                    .withQuery(Predicates.eq(att, ref0)).build()
+            ).getRecords()
+            assertThat(refs).containsExactlyElementsOf(expected)
+        }
+
+        assertQuery("assoc", listOf(ref1))
+        assertQuery("computedAssoc", listOf(ref1))
+
+        registerType()
+            .withAttributes(
+                AttributeDef.create().withId("assoc").withType(AttributeType.ASSOC),
+                AttributeDef.create().withId("computedAssoc").withType(AttributeType.ASSOC),
+                AttributeDef.create()
+                    .withId("computedAssoc2")
+                    .withType(AttributeType.ASSOC)
+                    .withComputed(
+                        ComputedAttDef.create()
+                            .withType(ComputedAttType.ATTRIBUTE)
+                            .withConfig(ObjectData.create().set("attribute", "assoc"))
+                            .withStoringType(ComputedAttStoringType.ON_MUTATE)
+                            .build()
+                    )
+            )
+            .register()
+
+        assertQuery("assoc", listOf(ref1))
+        assertQuery("computedAssoc", listOf(ref1))
+        assertQuery("computedAssoc2", emptyList())
+
+        records.mutateAtt(ref1, DbRecordsControlAtts.UPDATE_CALCULATED_ATTS, true)
+
+        assertQuery("assoc", listOf(ref1))
+        assertQuery("computedAssoc", listOf(ref1))
+        assertQuery("computedAssoc2", listOf(ref1))
     }
 }
