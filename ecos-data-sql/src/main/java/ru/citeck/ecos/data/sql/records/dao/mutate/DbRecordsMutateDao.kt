@@ -1464,12 +1464,19 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                 continue
             }
             if (perms?.hasAttWritePerms(dbColumnDef.name) == false) {
-                val msg = "Permission Denied. User $currentUser can't change attribute ${dbColumnDef.name} " +
-                    "for record ${daoCtx.getGlobalRef(recToMutate.extId)}"
+                val exception = I18nRuntimeException(
+                    "ecos-data.permission-denied.user-cannot-change-attribute",
+                    mapOf(
+                        "user" to currentUser,
+                        "attribute" to dbColumnDef.name,
+                        "recordRef" to daoCtx.getGlobalRef(recToMutate.extId)
+                    )
+                )
+
                 if (isMutationFromChild) {
-                    error(msg)
+                    throw exception
                 } else {
-                    log.warn { msg }
+                    log.warn { exception.message }
                 }
             } else {
                 notEmptyColumns.add(dbColumnDef)
