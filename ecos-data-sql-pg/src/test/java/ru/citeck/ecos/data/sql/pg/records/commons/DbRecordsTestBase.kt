@@ -10,6 +10,7 @@ import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.commons.utils.NameUtils
+import ru.citeck.ecos.commons.utils.TmplUtils
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
@@ -312,7 +313,7 @@ abstract class DbRecordsTestBase {
             delegationService = CustomDelegationService()
             workspaceService = CustomWorkspaceService()
 
-            val numCounters = mutableMapOf<EntityRef, AtomicLong>()
+            val numCounters = mutableMapOf<String, AtomicLong>()
             modelServiceFactory = object : ModelServiceFactory() {
 
                 override fun createAspectsRepo(): AspectsRepo {
@@ -357,7 +358,11 @@ abstract class DbRecordsTestBase {
                 override fun createEcosModelAppApi(): EcosModelAppApi {
                     return object : EcosModelAppApi {
                         override fun getNextNumberForModel(model: ObjectData, templateRef: EntityRef): Long {
-                            return numCounters.computeIfAbsent(templateRef) { AtomicLong() }.incrementAndGet()
+                            val numTemplateDef = numTemplates[templateRef.getLocalId()]
+                                ?: error("Num template is not found: $templateRef")
+                            val keyTemplate = numTemplateDef.counterKey.ifBlank { templateRef.getLocalId() }
+                            val keyValue = TmplUtils.applyAtts(keyTemplate, model).asText()
+                            return numCounters.computeIfAbsent(keyValue) { AtomicLong() }.incrementAndGet()
                         }
                     }
                 }
