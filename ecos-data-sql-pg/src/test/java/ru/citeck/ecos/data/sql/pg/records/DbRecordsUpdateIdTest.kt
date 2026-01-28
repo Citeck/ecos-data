@@ -20,7 +20,9 @@ import ru.citeck.ecos.model.lib.num.dto.NumTemplateDef
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.utils.ModelUtils
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 
 class DbRecordsUpdateIdTest : DbRecordsTestBase() {
 
@@ -163,6 +165,66 @@ class DbRecordsUpdateIdTest : DbRecordsTestBase() {
 
         val newRef2 = records.mutateAtt(newRef, DbRecordsControlAtts.UPDATE_ID, true)
         assertThat(newRef2.getLocalId()).isEqualTo("SD-1-Q")
+
+        val refWithSd = createRecord("project" to sdProject)
+        assertThat(refWithSd.getLocalId()).isEqualTo("SD-2-Q")
+
+        val refWithEpt = updateRecord(
+            refWithSd,
+            "project" to eptProject,
+            DbRecordsControlAtts.UPDATE_ID to true
+        )
+        assertThat(refWithEpt.getLocalId()).isEqualTo("EPT-2-Q")
+
+        updateRecord(refWithEpt, DbRecordsControlAtts.UPDATE_COUNTER_ATT to "_docNum")
+        assertThat(records.getAtt(refWithEpt, RecordConstants.ATT_DOC_NUM).asInt()).isEqualTo(3)
+
+        updateRecord(refWithEpt, DbRecordsControlAtts.UPDATE_COUNTER_ATT to "attWithCounter")
+        assertThat(records.getAtt(refWithEpt, "attWithCounter").asInt()).isEqualTo(3)
+
+        val refWithSdWithUpdatedDocNum = updateRecord(
+            refWithEpt,
+            "project" to sdProject,
+            DbRecordsControlAtts.UPDATE_COUNTER_ATT to "attWithCounter",
+            DbRecordsControlAtts.UPDATE_ID to true
+        )
+        assertThat(refWithSdWithUpdatedDocNum.getLocalId()).isEqualTo("SD-4-Q")
+
+        registerTypeWithLocalIdTemplate("\${project.key}-\${_docNum}")
+
+        val refWithDocNumInLocalId = updateRecord(
+            refWithSdWithUpdatedDocNum,
+            DbRecordsControlAtts.UPDATE_ID to true
+        )
+
+        assertThat(refWithDocNumInLocalId.getLocalId()).isEqualTo("SD-3")
+
+        val refWithDocNumInLocalIdAndEptProject = updateRecord(
+            refWithDocNumInLocalId,
+            "project" to eptProject,
+            DbRecordsControlAtts.UPDATE_ID to true
+        )
+
+        assertThat(refWithDocNumInLocalIdAndEptProject.getLocalId()).isEqualTo("EPT-3")
+
+        val refWithDocNumInLocalIdAndSdProject = updateRecord(
+            refWithDocNumInLocalIdAndEptProject,
+            "project" to sdProject,
+            DbRecordsControlAtts.UPDATE_COUNTER_ATT to "_docNum",
+            DbRecordsControlAtts.UPDATE_ID to true
+        )
+
+        assertThat(refWithDocNumInLocalIdAndSdProject.getLocalId()).isEqualTo("SD-4")
+        assertThat(records.getAtt(refWithDocNumInLocalIdAndSdProject, "_docNum?num").asInt()).isEqualTo(4)
+        assertThat(records.getAtt(refWithDocNumInLocalIdAndSdProject, "attWithCounter?num").asInt()).isEqualTo(4)
+
+        updateRecord(
+            refWithDocNumInLocalIdAndSdProject,
+            DbRecordsControlAtts.UPDATE_COUNTER_ATT to listOf("_docNum", "attWithCounter")
+        )
+
+        assertThat(records.getAtt(refWithDocNumInLocalIdAndSdProject, "_docNum?num").asInt()).isEqualTo(5)
+        assertThat(records.getAtt(refWithDocNumInLocalIdAndSdProject, "attWithCounter?num").asInt()).isEqualTo(5)
     }
 
     @Test
@@ -200,6 +262,8 @@ class DbRecordsUpdateIdTest : DbRecordsTestBase() {
         assertThat(events[0].after.getLocalId()).isEqualTo("uiserv\$function-enabled-new")
 
         assertThat(records.getAtt(ref, "_notExists").asBoolean()).isEqualTo(true)
+        assertThat(records.getAtt(ref, "_movedToRef?id").asText()).isEqualTo(newRef.toString())
+        assertThat(records.getAtt(ref, "_movedToRef.scope").asText()).isEqualTo("uiserv")
 
         assertThat(records.getAtt(newRef, "id").asText()).isEqualTo("function-enabled-new")
         val json2 = records.getAtt(newRef, "?json")
@@ -209,20 +273,63 @@ class DbRecordsUpdateIdTest : DbRecordsTestBase() {
                 .set("scope", "uiserv")
         )
 
-        val migrationRecords = mainCtx.selectAllFromTable("ed_record_ref_migration")
+        val migrationRecords = mainCtx.selectAllFromTable("ed_record_ref_move_history")
         assertThat(migrationRecords).hasSize(1)
         val migrationRecord = migrationRecords[0]
 
-        val refsService = recordsDao.getRecordsDaoCtx().recordRefService
-        val migratedFrom = refsService.getEntityRefById(migrationRecord["__from_ref"] as Long)
-        val migratedTo = refsService.getEntityRefById(migrationRecord["__to_ref"] as Long)
+        val migratedFrom = (migrationRecord["__moved_from"] as String).toEntityRef()
+        val migratedTo = (migrationRecord["__moved_to"] as String).toEntityRef()
         assertThat(migratedFrom.getLocalId()).isEqualTo("uiserv\$function-enabled")
         assertThat(migratedTo.getLocalId()).isEqualTo("uiserv\$function-enabled-new")
 
         val newRef2 = records.mutateAtt(newRef, DbRecordsControlAtts.UPDATE_ID, "qwerty")
         assertThat(records.getAtt(newRef2, "id").asText()).isEqualTo("qwerty")
 
-        val migrationRecords2 = mainCtx.selectAllFromTable("ed_record_ref_migration")
+        val migrationRecords2 = mainCtx.selectAllFromTable("ed_record_ref_move_history")
         assertThat(migrationRecords2).hasSize(2)
+    }
+
+    @Test
+    fun testWithChangeLocalIdToPrevValue() {
+
+        fun regTypeWithIdTemplate(template: String) {
+            registerType()
+                .withLocalIdTemplate(template)
+                .withAttributes(
+                    AttributeDef.create().withId("scope"),
+                    AttributeDef.create().withId("assoc").withType(AttributeType.ASSOC)
+                )
+                .register()
+        }
+
+        regTypeWithIdTemplate("\${scope}$\${id}")
+
+        val initialRef = createRecord("scope" to "uiserv", "id" to "custom-id")
+        assertThat(initialRef.getLocalId()).isEqualTo("uiserv\$custom-id")
+
+        regTypeWithIdTemplate("\${scope}___\${id}")
+
+        assertThat(records.getAtt(initialRef, "scope").asText()).isEqualTo("uiserv")
+        val newRef = records.mutateAtt(initialRef, DbRecordsControlAtts.UPDATE_ID, true)
+
+        assertThat(records.getAtt(initialRef, "scope").asText()).isEqualTo("")
+        assertThat(records.getAtt(newRef, "scope").asText()).isEqualTo("uiserv")
+
+        regTypeWithIdTemplate("\${scope}$\${id}")
+
+        assertThat(records.getAtt(initialRef, "scope").asText()).isEqualTo("")
+        assertThat(records.getAtt(newRef, "scope").asText()).isEqualTo("uiserv")
+
+        val oldRef = records.mutateAtt(newRef, DbRecordsControlAtts.UPDATE_ID, true)
+        assertThat(oldRef).isEqualTo(initialRef)
+
+        assertThat(records.getAtt(initialRef, "scope").asText()).isEqualTo("uiserv")
+        assertThat(records.getAtt(newRef, "scope").asText()).isEqualTo("")
+
+        assertThat(records.getAtt(newRef, "_movedToRef?id").asText()).isEqualTo(initialRef.toString())
+
+        // assocs to moved refs should be created with movedTo ref
+        val refWithAssoc = createRecord("assoc" to newRef, "scope" to "test", "id" to "test")
+        assertThat(records.getAtt(refWithAssoc, "assoc?id").asText()).isEqualTo(initialRef.toString())
     }
 }

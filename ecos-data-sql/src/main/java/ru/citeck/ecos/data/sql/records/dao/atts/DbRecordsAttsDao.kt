@@ -9,6 +9,7 @@ import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records3.record.atts.schema.resolver.AttContext
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.txn.lib.TxnContext
+import ru.citeck.ecos.webapp.api.entity.ifEmpty
 
 class DbRecordsAttsDao(
     private val daoCtx: DbRecordsDaoCtx
@@ -44,21 +45,26 @@ class DbRecordsAttsDao(
                     DbEmptyRecord(daoCtx)
                 } else {
 
-                    log.trace { "[Get record atts] Process $id inside transaction" }
+                    val globalRef = daoCtx.getGlobalRef(id)
+                    log.trace { "[Get record atts] Process '$globalRef' inside transaction" }
 
                     val record = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
                         dataService.findByExtId(id, queryCtx.expressionsCtx.getExpressions())
                     }?.let {
-                        log.trace { "[Get record atts] Entity was found for id $id" }
+                        log.trace { "[Get record atts] Entity was found for id '$globalRef'" }
                         DbRecord(daoCtx, queryCtx.expressionsCtx.mapEntityAtts(it), queryCtx)
                     }
-                    log.trace { "[Get record atts] DbRecord was created for id $id" }
+                    log.trace { "[Get record atts] DbRecord was created for id '$globalRef'" }
 
-                    if (record == null || !record.isCurrentUserHasReadPerms()) {
-                        log.trace { "[Get record atts] User doesn't have permissions for $id or record doesn't exists" }
+                    if (record == null) {
+                        log.trace { "[Get record atts] record '$globalRef' doesn't exists" }
+                        val movedToRef = daoCtx.recordRefService.getMovedToRef(globalRef)
+                        NonExistentDbRecord(id, movedToRef.ifEmpty { null })
+                    } else if (!record.isCurrentUserHasReadPerms()) {
+                        log.trace { "[Get record atts] User doesn't have permissions for '$globalRef'" }
                         NonExistentDbRecord(id)
                     } else {
-                        log.trace { "[Get record atts] Record $id available and will be returned from getRecordAtts" }
+                        log.trace { "[Get record atts] Record '$globalRef' available and will be returned from getRecordAtts" }
                         record
                     }
                 }

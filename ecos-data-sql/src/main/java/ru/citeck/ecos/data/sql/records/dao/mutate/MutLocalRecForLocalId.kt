@@ -4,9 +4,6 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
-import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
-import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttDef
-import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttStoringType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
@@ -20,7 +17,6 @@ class MutLocalRecForLocalId(
 ) : AttValue {
 
     companion object {
-        private const val COUNTER_CONFIG_TEMPLATE_KEY = "numTemplateRef"
         private val ATT_ID_DEF = AttributeDef.create().withId("id").build()
     }
 
@@ -48,24 +44,16 @@ class MutLocalRecForLocalId(
                 if (typeInfo.numTemplateRef.isEmpty()) {
                     return null
                 }
-                val config = ObjectData.create()
-                config[COUNTER_CONFIG_TEMPLATE_KEY] = typeInfo.numTemplateRef
-                AttributeDef.create()
-                    .withId(RecordConstants.ATT_DOC_NUM)
-                    .withType(AttributeType.NUMBER)
-                    .withComputed(
-                        ComputedAttDef.create()
-                            .withType(ComputedAttType.COUNTER)
-                            .withConfig(config)
-                            .withStoringType(ComputedAttStoringType.ON_CREATE)
-                            .build()
-                    ).build()
+                mutComputeCtx.createDocNumAttDef(typeInfo.numTemplateRef)
             }
             else -> attDefById[name] ?: error("Attribute is not found: '$name'")
         }
         if (!isRecursiveCall) {
             if (attDef.computed.type != ComputedAttType.NONE) {
-                if (attDef.computed.type == ComputedAttType.COUNTER && attributes.has(name)) {
+                if (attDef.computed.type == ComputedAttType.COUNTER &&
+                    attributes.has(name) &&
+                    !mutComputeCtx.counterAttsToUpdate.contains(name)
+                ) {
                     val counterValue = attributes[name]
                     if (isNonEmptyCounterValue(counterValue)) {
                         return counterValue

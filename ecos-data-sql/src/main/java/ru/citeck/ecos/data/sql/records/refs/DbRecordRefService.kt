@@ -11,10 +11,11 @@ import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.time.Instant
+import java.util.UUID
 
 class DbRecordRefService(
     private val appName: String,
-    private val schemaCtx: DbSchemaContext
+    schemaCtx: DbSchemaContext
 ) {
 
     companion object {
@@ -34,10 +35,10 @@ class DbRecordRefService(
         schemaCtx
     )
 
-    private val migDataService: DbDataService<DbRecordRefMigrationEntity> = DbDataServiceImpl(
-        DbRecordRefMigrationEntity::class.java,
+    private val moveHistDataService: DbDataService<DbRecordRefMoveHistoryEntity> = DbDataServiceImpl(
+        DbRecordRefMoveHistoryEntity::class.java,
         DbDataServiceConfig.create {
-            withTable(DbRecordRefMigrationEntity.TABLE)
+            withTable(DbRecordRefMoveHistoryEntity.TABLE)
         },
         schemaCtx
     )
@@ -46,26 +47,31 @@ class DbRecordRefService(
         val fromRefEntity = refsDataService.findByExtId(
             fixEntityRef(fromRef).toString()
         ) ?: return false
-        return migrateRef(fromRefEntity, toRef, migratedBy)
+        return moveRef(fromRefEntity, toRef, migratedBy)
+    }
+
+    fun getMovedToRef(fromRef: EntityRef): EntityRef {
+        val movedToId = refsDataService.findByExtId(fromRef.toString())?.movedTo ?: return EntityRef.EMPTY
+        return getEntityRefById(movedToId)
     }
 
     /**
      * Migrates the record ref and returns the before/after values.
      * Returns null if migration is not required.
      */
-    fun migrateRef(fromRefId: Long, toRef: EntityRef, migratedBy: Long): Pair<EntityRef, EntityRef>? {
+    fun moveRef(fromRefId: Long, toRef: EntityRef, migratedBy: Long): Pair<EntityRef, EntityRef>? {
         val fromRefEntity = refsDataService.findById(fromRefId) ?: error(
             "Ref with id $fromRefId is not registered. " +
                 "Migration to $toRef is not allowed."
         )
         val refBefore = EntityRef.valueOf(fromRefEntity.extId)
-        if (!migrateRef(fromRefEntity, toRef, migratedBy)) {
+        if (!moveRef(fromRefEntity, toRef, migratedBy)) {
             return null
         }
         return refBefore to EntityRef.valueOf(fromRefEntity.extId)
     }
 
-    private fun migrateRef(fromRefEntity: DbRecordRefEntity, toRef: EntityRef, migratedBy: Long): Boolean {
+    private fun moveRef(fromRefEntity: DbRecordRefEntity, toRef: EntityRef, movedBy: Long): Boolean {
 
         val fromRef = EntityRef.valueOf(fromRefEntity.extId)
         val fixedToRef = fixEntityRef(
@@ -80,33 +86,64 @@ class DbRecordRefService(
             // nothing to migrate
             return false
         }
-        val toRefIdInDb = getIdByEntityRef(fixedToRef)
-        if (toRefIdInDb != -1L) {
-            error(
-                "Ref $targetRefStr is already registered. " +
-                    "Migration from '${fromRefEntity.extId}' is not allowed."
-            )
-        }
-
         log.info { "Migrate ref from $fromRef to $fixedToRef" }
 
-        fromRefEntity.extId = targetRefStr
-        refsDataService.save(fromRefEntity)
+        val toRefEntity = refsDataService.findByExtId(fixedToRef.toString())
+        if (toRefEntity != null) {
+            // In db already registered new ref, but maybe we want
+            // to return ref back to previous value? Let's check.
+            if (toRefEntity.movedTo != fromRefEntity.id) {
+                error(
+                    "Ref $targetRefStr is already registered. " +
+                        "Migration from '${fromRefEntity.extId}' is not allowed."
+                )
+            }
 
-        val oldRefEntity = DbRecordRefEntity()
-        oldRefEntity.extId = fromRef.toString()
-        val oldRefId = refsDataService.save(oldRefEntity).id
+            val fromRefExtId = fromRefEntity.extId
+            val toRefExtId = toRefEntity.extId
 
-        val migrationEntity = DbRecordRefMigrationEntity()
-        migrationEntity.migratedBy = migratedBy
-        migrationEntity.fromRef = oldRefId
-        migrationEntity.toRef = fromRefEntity.id
-        migrationEntity.time = Instant.now()
+            // avoid unique extId constraint limit
+            toRefEntity.extId = UUID.randomUUID().toString()
+            refsDataService.save(toRefEntity)
 
-        migDataService.save(migrationEntity)
+            fromRefEntity.extId = toRefExtId
+            refsDataService.save(fromRefEntity)
 
-        getIdsByRefsTxnCache().remove(fromRef)
-        getRefsByIdsTxnCache().remove(fromRefEntity.id)
+            toRefEntity.extId = fromRefExtId
+            refsDataService.save(toRefEntity)
+
+            getIdsByRefsTxnCache().let {
+                it.remove(fromRef)
+                it.remove(fixedToRef)
+            }
+            getRefsByIdsTxnCache().let {
+                it.remove(fromRefEntity.id)
+                it.remove(toRefEntity.id)
+            }
+        } else {
+
+            val fromRefStr = fromRefEntity.extId
+
+            fromRefEntity.extId = targetRefStr
+            refsDataService.save(fromRefEntity)
+
+            val oldRefEntity = DbRecordRefEntity()
+            oldRefEntity.extId = fromRef.toString()
+            oldRefEntity.movedTo = fromRefEntity.id
+            refsDataService.save(oldRefEntity)
+
+            val historyEntity = DbRecordRefMoveHistoryEntity()
+            historyEntity.movedBy = movedBy
+            historyEntity.movedFrom = fromRefStr
+            historyEntity.movedTo = targetRefStr
+            historyEntity.movedAt = Instant.now()
+            historyEntity.refId = fromRefEntity.id
+
+            moveHistDataService.save(historyEntity)
+
+            getIdsByRefsTxnCache().remove(fromRef)
+            getRefsByIdsTxnCache().remove(fromRefEntity.id)
+        }
 
         return true
     }
@@ -163,11 +200,7 @@ class DbRecordRefService(
      * Get record identifiers for references
      */
     fun getIdByEntityRefsMap(refs: Collection<EntityRef>): Map<EntityRef, Long> {
-        val refsList = if (refs is List<EntityRef>) {
-            refs
-        } else {
-            refs.toList()
-        }
+        val refsList = refs as? List<EntityRef> ?: refs.toList()
         val ids = getIdByEntityRefs(refsList)
         val result = LinkedHashMap<EntityRef, Long>()
         for (i in refs.indices) {
@@ -210,9 +243,10 @@ class DbRecordRefService(
         val entities = refsDataService.findAll(predicate)
         for (entity in entities) {
             val ref = EntityRef.valueOf(entity.extId)
-            idsByRefs[ref] = entity.id
+            val refId = entity.movedTo ?: entity.id
+            idsByRefs[ref] = refId
             if (txnCache.size < TXN_CACHE_MAX_SIZE) {
-                txnCache[ref] = entity.id
+                txnCache[ref] = refId
             }
         }
         return fixedRefs.map { idsByRefs[it] ?: -1 }

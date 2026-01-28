@@ -29,9 +29,18 @@ class MutationContext(
     val typeColumnNames = typeColumns.map { it.name }.toMutableSet()
     val typeAspects = typeInfo.aspects.map { it.ref }.toSet()
     val allAssocsValues: MutableMap<String, DbAssocAttValuesContainer> = LinkedHashMap()
+    val postMutationActions: MutableList<(DbEntity) -> DbEntity> = ArrayList()
 
     init {
         typeAttColumns.forEach { typeAttColumnsByAtt[it.attribute.id] = it }
+    }
+
+    fun runPostMutationAtts(entity: DbEntity): DbEntity {
+        var result = entity
+        for (action in postMutationActions) {
+            result = action.invoke(result)
+        }
+        return result
     }
 
     fun addTypeAttColumn(column: EcosAttColumnDef) {

@@ -25,7 +25,9 @@ class DbRecordRefEntity {
     @Constraints(DbColumnConstraint.NOT_NULL)
     var extId: String = ""
 
+    var movedTo: Long? = null
+
     override fun toString(): String {
-        return "{\"id\":$id,\"extId\":\"$extId\"}"
+        return "{\"id\":$id,\"extId\":\"$extId\",\"movedTo\":$movedTo}"
     }
 }
