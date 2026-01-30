@@ -1231,8 +1231,11 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             }
         }
         if (record.attributes.has(DbRecordsControlAtts.UPDATE_ID)) {
+            if (!config.allowRecordIdUpdate) {
+                error("Record ID updating disabled for '${daoCtx.appName}/${config.id}'")
+            }
             if (!isRunAsSystemOrAdmin) {
-                error("Id update allowed only for admin. Record: $record sourceId: '${config.id}'")
+                error("Id update allowed only for admin. Record: $record sourceId: '${daoCtx.appName}/${config.id}'")
             }
             val updateIdValue = record.attributes[DbRecordsControlAtts.UPDATE_ID]
             record.attributes.remove(DbRecordsControlAtts.UPDATE_ID)

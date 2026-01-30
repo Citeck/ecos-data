@@ -13,7 +13,8 @@ data class DbRecordsDaoConfig(
     val authEnabled: Boolean,
     val enableTotalCount: Boolean,
     val allowedRecordIdPattern: String,
-    val recordIdMaxLength: Int
+    val recordIdMaxLength: Int,
+    val allowRecordIdUpdate: Boolean
 ) {
 
     companion object {
@@ -50,6 +51,7 @@ data class DbRecordsDaoConfig(
         var enableTotalCount: Boolean = true
         var allowedRecordIdPattern: String = """^(\w+|\w[\w$/.-]+\w)$"""
         var recordIdMaxLength: Int = 128
+        var allowRecordIdUpdate: Boolean = false
 
         constructor(base: DbRecordsDaoConfig) : this() {
             this.id = base.id
@@ -62,6 +64,7 @@ data class DbRecordsDaoConfig(
             this.enableTotalCount = base.enableTotalCount
             this.allowedRecordIdPattern = base.allowedRecordIdPattern
             this.recordIdMaxLength = base.recordIdMaxLength
+            this.allowRecordIdUpdate = base.allowRecordIdUpdate
         }
 
         fun withId(id: String?): Builder {
@@ -114,6 +117,11 @@ data class DbRecordsDaoConfig(
             return this
         }
 
+        fun withAllowRecordIdUpdate(allowRecordIdUpdate: Boolean?): Builder {
+            this.allowRecordIdUpdate = allowRecordIdUpdate ?: false
+            return this
+        }
+
         fun build(): DbRecordsDaoConfig {
             if (!VALID_ID_PATTERN.matches(id)) {
                 error("Invalid records DAO id - '$id'. Valid pattern: $VALID_ID_PATTERN")
@@ -137,7 +145,8 @@ data class DbRecordsDaoConfig(
                 authEnabled,
                 enableTotalCount,
                 allowedRecordIdPattern,
-                recordIdMaxLength
+                recordIdMaxLength,
+                allowRecordIdUpdate
             )
         }
     }

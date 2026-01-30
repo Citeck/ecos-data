@@ -491,6 +491,7 @@ abstract class DbRecordsTestBase {
         tableRef: DbTableRef = DEFAULT_TABLE_REF,
         typeRef: EntityRef = ModelUtils.getTypeRef(REC_TEST_TYPE_ID),
         sourceId: String = RECS_DAO_ID,
+        allowRecordIdUpdate: Boolean = true,
         enableTotalCount: Boolean = true
     ): RecordsDaoTestCtx {
 
@@ -629,6 +630,7 @@ abstract class DbRecordsTestBase {
             DbRecordsDaoConfig.create {
                 withId(sourceId)
                 withTypeRef(typeRef)
+                withAllowRecordIdUpdate(allowRecordIdUpdate)
                 withEnableTotalCount(enableTotalCount)
             },
             modelServiceFactory,
