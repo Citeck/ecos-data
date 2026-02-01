@@ -32,6 +32,10 @@
     "ecos-data.type-not-found-by-id": [
       "Type with id '{{typeId}}' was not found.",
       "Тип с идентификатором '{{typeId}}' не найден."
+    ],
+    "ecos-data.has-non-unique-attributes": [
+      "{{recordRef}} has non-unique attributes {{attributes}}",
+      "{{recordRef}} имеет не уникальные значения атрибутов {{attributes}}"
     ]
   }
 }

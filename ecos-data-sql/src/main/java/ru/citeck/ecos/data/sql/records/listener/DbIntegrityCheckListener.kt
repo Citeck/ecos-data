@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.records.listener
 
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.commons.exception.I18nRuntimeException
 import ru.citeck.ecos.commons.utils.StringUtils
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
@@ -220,8 +221,12 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
                 }
             }
 
-            error(
-                "$globalRef has non-unique attributes $notUniqueAtts"
+            throw I18nRuntimeException(
+                "ecos-data.has-non-unique-attributes",
+                mapOf(
+                    "recordRef" to globalRef,
+                    "attributes" to notUniqueAtts
+                )
             )
         }
     }
