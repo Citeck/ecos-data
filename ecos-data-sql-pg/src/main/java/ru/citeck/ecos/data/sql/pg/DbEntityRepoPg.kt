@@ -25,10 +25,10 @@ import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.*
-import java.sql.Date
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Instant
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.*
@@ -1155,7 +1155,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             DbColumnType.DOUBLE -> Double::class
             DbColumnType.BOOLEAN -> Boolean::class
             DbColumnType.DATETIME -> Timestamp::class
-            DbColumnType.DATE -> Date::class
+            DbColumnType.DATE -> LocalDate::class
             DbColumnType.LONG -> Long::class
             DbColumnType.JSON -> String::class
             DbColumnType.TEXT -> String::class

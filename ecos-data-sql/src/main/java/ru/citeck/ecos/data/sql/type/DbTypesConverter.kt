@@ -4,12 +4,11 @@ import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.json.Json
 import java.lang.reflect.Array
 import java.net.URI
-import java.sql.Date
 import java.sql.Timestamp
 import java.time.Instant
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
 
@@ -95,8 +94,12 @@ class DbTypesConverter {
         register(Long::class, Instant::class) { Instant.ofEpochMilli(it) }
         register(Instant::class, Long::class) { it.toEpochMilli() }
         register(Instant::class, Timestamp::class) { Timestamp.from(it) }
-        register(Instant::class, Date::class) { Date(it.truncatedTo(ChronoUnit.DAYS).toEpochMilli()) }
-        register(Date::class, Timestamp::class) {
+        register(Instant::class, LocalDate::class) { it.atOffset(ZoneOffset.UTC).toLocalDate() }
+        register(LocalDate::class, Timestamp::class) {
+            Timestamp.from(it.atStartOfDay(ZoneOffset.UTC).toInstant())
+        }
+        register(java.sql.Date::class, LocalDate::class) { it.toLocalDate() }
+        register(java.sql.Date::class, Timestamp::class) {
             Timestamp.from(it.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant())
         }
         register(Timestamp::class, Instant::class) { it.toInstant() }
