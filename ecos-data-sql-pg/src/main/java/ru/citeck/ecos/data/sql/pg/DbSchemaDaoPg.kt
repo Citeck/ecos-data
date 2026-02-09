@@ -46,10 +46,8 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
     }
 
     override fun isTableExists(dataSource: DbDataSource, tableRef: DbTableRef): Boolean {
-        val query = """
-                SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = '${tableRef.schema}' AND tablename = '${tableRef.table}');
-        """.trimIndent()
-        return dataSource.query(query, emptyList()) { rs ->
+        val query = "SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = ? AND tablename = ?)"
+        return dataSource.query(query, listOf(tableRef.schema, tableRef.table)) { rs ->
             rs.next()
             rs.getBoolean(1)
         }
@@ -57,8 +55,8 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
 
     override fun isSchemaExists(dataSource: DbDataSource, schema: String): Boolean {
         return dataSource.query(
-            "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = '$schema')",
-            emptyList()
+            "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = ?)",
+            listOf(schema)
         ) { it.next() && it.getBoolean(1) }
     }
 

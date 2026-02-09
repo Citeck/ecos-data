@@ -101,7 +101,7 @@ class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntit
                 it.authorityId
             }
             if (allowedPermsAuthToDelete.isNotEmpty()) {
-                dataService.forceDelete(
+                dataService.delete(
                     Predicates.and(
                         Predicates.eq(DbPermsEntity.ENTITY_REF_ID, entityRefId),
                         ValuePredicate(DbPermsEntity.AUTHORITY_ID, ValuePredicate.Type.IN, allowedPermsAuthToDelete)

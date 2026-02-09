@@ -15,7 +15,6 @@ class DbFindQuery(
     val assocJoinsWithPredicate: List<AssocJoinWithPredicate>,
     val rawTableJoins: Map<String, RawTableJoin>,
     val predicate: Predicate,
-    val withDeleted: Boolean,
     val sortBy: List<DbFindSort>,
     val groupBy: List<String>,
     val userAuthorities: Set<String>,
@@ -44,7 +43,6 @@ class DbFindQuery(
     class Builder() {
 
         var predicate: Predicate = Predicates.alwaysTrue()
-        var withDeleted: Boolean = false
         var sortBy: List<DbFindSort> = emptyList()
         var groupBy: List<String> = emptyList()
 
@@ -58,7 +56,6 @@ class DbFindQuery(
 
         constructor(base: DbFindQuery) : this() {
             this.predicate = base.predicate.copy()
-            this.withDeleted = base.withDeleted
             this.sortBy = base.sortBy
             this.groupBy = base.groupBy
             this.expressions = HashMap(base.expressions)
@@ -72,11 +69,6 @@ class DbFindQuery(
 
         fun withPredicate(predicate: Predicate?): Builder {
             this.predicate = predicate ?: Predicates.alwaysTrue()
-            return this
-        }
-
-        fun withDeleted(withDeleted: Boolean?): Builder {
-            this.withDeleted = withDeleted ?: false
             return this
         }
 
@@ -148,7 +140,6 @@ class DbFindQuery(
                 assocJoinsWithPredicate = assocJoinWithPredicates,
                 rawTableJoins = rawTableJoins,
                 predicate = predicate,
-                withDeleted = withDeleted,
                 sortBy = sortBy,
                 groupBy = groupBy,
                 userAuthorities = userAuthorities,

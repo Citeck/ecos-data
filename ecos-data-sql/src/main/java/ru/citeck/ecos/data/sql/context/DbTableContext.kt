@@ -39,8 +39,6 @@ interface DbTableContext {
 
     fun hasIdColumn(): Boolean
 
-    fun hasDeleteFlag(): Boolean
-
     fun getDataSource(): DbDataSource
 
     fun getTypesConverter(): DbTypesConverter

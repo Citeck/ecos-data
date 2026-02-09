@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.pg.repo
 
 import org.assertj.core.api.Assertions
+import ru.citeck.ecos.context.lib.ctx.GlobalEcosContext
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
@@ -18,7 +19,8 @@ object SqlDataServiceTestUtils {
             dbDataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test")
+            EcosWebAppApiMock("test"),
+            GlobalEcosContext.getContext()
         )
         val schemaCtx = dsCtx.getSchemaContext("sql-data-service-test-utils-schema")
 

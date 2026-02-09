@@ -90,7 +90,6 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
                 ),
                 listOf(DbFindSort(DbEntity.ID, true)),
                 DbFindPage(0, 100),
-                true,
                 emptyList(),
                 emptyList(),
                 emptyList(),

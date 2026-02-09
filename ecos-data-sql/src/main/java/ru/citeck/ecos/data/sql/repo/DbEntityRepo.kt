@@ -23,7 +23,5 @@ interface DbEntityRepo {
 
     fun delete(context: DbTableContext, predicate: Predicate)
 
-    fun forceDelete(context: DbTableContext, entities: List<Long>)
-
-    fun forceDelete(context: DbTableContext, predicate: Predicate)
+    fun delete(context: DbTableContext, entities: List<Long>)
 }

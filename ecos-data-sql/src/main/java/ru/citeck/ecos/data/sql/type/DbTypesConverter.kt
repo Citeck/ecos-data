@@ -108,5 +108,6 @@ class DbTypesConverter {
         register(String::class, MLText::class) { Json.mapper.read(it, MLText::class.java) ?: MLText.EMPTY }
         register(Long::class, Double::class) { it.toDouble() }
         register(Int::class, Double::class) { it.toDouble() }
+        register(Int::class, Long::class) { it.toLong() }
     }
 }

@@ -49,10 +49,10 @@ class RenameEcosDataTables {
 
             if (context.isTableExists(tableMetaRef)) {
                 val query = "UPDATE ${tableMetaRef.fullName} " +
-                    "SET ${DbTableMetaEntity.EXT_ID} = '${renameToTable.table}' " +
-                    "WHERE ${DbTableMetaEntity.EXT_ID} = '${renameFromTable.table}'"
-                log.info { query }
-                dataSource.update(query, emptyList())
+                    "SET ${DbTableMetaEntity.EXT_ID} = ? " +
+                    "WHERE ${DbTableMetaEntity.EXT_ID} = ?"
+                log.info { "$query [${renameToTable.table}, ${renameFromTable.table}]" }
+                dataSource.update(query, listOf(renameToTable.table, renameFromTable.table))
             }
 
             val metaSchemaVersionKeyBefore = listOf(

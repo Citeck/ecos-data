@@ -82,8 +82,7 @@ class DbAssocsService(
                 Predicates.eq(DbAssocEntity.CHILD, child)
             ),
             emptyList(),
-            DbFindPage.ALL,
-            true
+            DbFindPage.ALL
         )
         val assocsToCreate = LinkedHashSet(targetIds)
         existingAssocs.entities.forEach {
@@ -99,7 +98,6 @@ class DbAssocsService(
                             Predicates.eq(DbAssocEntity.ATTRIBUTE, attId)
                         )
                     )
-                    withDeleted(true)
                     withGroupBy(listOf(DbAssocEntity.SOURCE_ID))
                     addExpression(
                         DbAssocEntity.INDEX,
@@ -116,7 +114,7 @@ class DbAssocsService(
                 maxIdxFindRes.entities[0].index + 1
             }
 
-            deletedDataService.forceDelete(
+            deletedDataService.delete(
                 Predicates.and(
                     Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId),
                     Predicates.eq(DbAssocEntity.ATTRIBUTE, attId),
@@ -240,7 +238,7 @@ class DbAssocsService(
             )
         }
 
-        val existentAssocs = dataService.findAll(createPredicateForIds(targetIds), force)
+        val existentAssocs = dataService.findAll(createPredicateForIds(targetIds))
 
         if (existentAssocs.isEmpty()) {
             return emptyList()
@@ -253,7 +251,7 @@ class DbAssocsService(
 
     private fun deleteByPredicate(predicate: Predicate, force: Boolean) {
         if (force) {
-            dataService.forceDelete(predicate)
+            dataService.delete(predicate)
         } else {
             forEachAssocEntity(predicate, 100) { entities ->
                 deletedDataService.save(
@@ -263,7 +261,7 @@ class DbAssocsService(
                         entity
                     }
                 )
-                dataService.forceDelete(entities)
+                dataService.delete(entities)
                 false
             }
         }
@@ -282,7 +280,7 @@ class DbAssocsService(
         val sort = listOf(DbFindSort(DbAssocEntity.ID, true))
         val page = DbFindPage(0, batchSize)
 
-        var searchRes = dataService.find(predicate, sort, page, true).entities
+        var searchRes = dataService.find(predicate, sort, page).entities
         while (searchRes.isNotEmpty()) {
             if (action.invoke(searchRes)) {
                 break
@@ -293,8 +291,7 @@ class DbAssocsService(
                     Predicates.gt(DbAssocEntity.ID, searchRes.last().id)
                 ),
                 sort,
-                page,
-                true
+                page
             ).entities
         }
     }

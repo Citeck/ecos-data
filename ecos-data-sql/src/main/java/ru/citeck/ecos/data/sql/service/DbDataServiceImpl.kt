@@ -71,8 +71,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     private var columns: List<DbColumnDef>? = null
     private var tableCtx: DbTableContextImpl
 
-    private val hasDeletedFlag: Boolean
-
     private val metaSchemaVersionKey: List<String>
 
     private val permsPolicy: ThreadLocal<QueryPermsPolicy>
@@ -107,8 +105,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
         schemaDao = schemaContext.dataSourceCtx.schemaDao
         entityRepo = schemaContext.dataSourceCtx.entityRepo
-
-        hasDeletedFlag = entityMapper.getEntityColumns().any { it.columnDef.name == DbEntity.DELETED }
 
         tableCtx = DbTableContextImpl(
             config.table,
@@ -172,7 +168,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             return emptyList()
         }
         return execReadOnlyQuery {
-            findByColumn(getTableContext(), DbEntity.ID, ids, false, ids.size)
+            findByColumn(getTableContext(), DbEntity.ID, ids, ids.size)
         }.map {
             convertToEntity(it)
         }
@@ -186,14 +182,12 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         context: DbTableContext,
         column: String,
         values: Collection<Any>,
-        withDeleted: Boolean,
         limit: Int,
         expressions: Map<String, ExpressionToken> = emptyMap()
     ): List<Map<String, Any?>> {
 
         val query = DbFindQuery.create()
             .withPredicate(ValuePredicate(column, ValuePredicate.Type.IN, values))
-            .withDeleted(withDeleted)
             .withExpressions(expressions)
             .build()
 
@@ -222,26 +216,23 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
     private fun findByAnyId(
         id: Any,
-        withDeleted: Boolean = false,
         expressions: Map<String, ExpressionToken> = emptyMap()
     ): T? {
-        return findMapByAnyId(id, withDeleted, expressions)?.let { convertToEntity(it) }
+        return findMapByAnyId(id, expressions)?.let { convertToEntity(it) }
     }
 
     private fun findMapByAnyId(
         id: Any,
-        withDeleted: Boolean = false,
         expressions: Map<String, ExpressionToken> = emptyMap()
     ): Map<String, Any?>? {
         getTableContext()
         return execReadOnlyQuery {
-            findMapByAnyIdInEntityRepo(id, withDeleted, expressions)
+            findMapByAnyIdInEntityRepo(id, expressions)
         }
     }
 
     private fun findMapByAnyIdInEntityRepo(
         id: Any,
-        withDeleted: Boolean = false,
         expressions: Map<String, ExpressionToken> = emptyMap()
     ): Map<String, Any?>? {
         val idColumn = when (id) {
@@ -253,7 +244,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             getTableContext(),
             idColumn,
             listOf(id),
-            withDeleted,
             1,
             expressions
         ).firstOrNull()
@@ -264,14 +254,9 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     override fun findAll(predicate: Predicate): List<T> {
-        return findAll(predicate, false)
-    }
-
-    override fun findAll(predicate: Predicate, withDeleted: Boolean): List<T> {
 
         val srcQuery = DbFindQuery.create()
             .withPredicate(predicate)
-            .withDeleted(withDeleted)
             .build()
         return execReadOnlyQueryWithPredicate(srcQuery, emptyList()) { tableCtx, processedQuery ->
             findInRepo(
@@ -317,23 +302,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         predicate: Predicate,
         sort: List<DbFindSort>,
         page: DbFindPage,
-        withDeleted: Boolean
-    ): DbFindRes<T> {
-        return find(
-            DbFindQuery.create {
-                withPredicate(predicate)
-                withSortBy(sort)
-                withDeleted(withDeleted)
-            },
-            page
-        )
-    }
-
-    override fun find(
-        predicate: Predicate,
-        sort: List<DbFindSort>,
-        page: DbFindPage,
-        withDeleted: Boolean,
         groupBy: List<String>,
         assocTableJoins: List<AssocTableJoin>,
         assocJoinWithPredicates: List<AssocJoinWithPredicate>,
@@ -343,7 +311,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             DbFindQuery.create {
                 withPredicate(predicate)
                 withSortBy(sort)
-                withDeleted(withDeleted)
+
                 withGroupBy(groupBy)
                 withAssocTableJoins(assocTableJoins)
                 withAssocJoinWithPredicates(assocJoinWithPredicates)
@@ -370,7 +338,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         predicate: Predicate,
         sort: List<DbFindSort>,
         page: DbFindPage,
-        withDeleted: Boolean,
         groupBy: List<String>,
         assocTableJoins: List<AssocTableJoin>,
         assocJoinWithPredicates: List<AssocJoinWithPredicate>,
@@ -380,7 +347,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             DbFindQuery.create {
                 withPredicate(predicate)
                 withSortBy(sort)
-                withDeleted(withDeleted)
+
                 withGroupBy(groupBy)
                 withAssocTableJoins(assocTableJoins)
                 withAssocJoinWithPredicates(assocJoinWithPredicates)
@@ -505,27 +472,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             val tableCtx = getTableContext()
 
             val entitiesToSave = entities.map { entity ->
-
-                val entityMap = entityMapper.convertToMap(entity)
-
-                // entities with 'deleted' flag field doesn't really delete from table.
-                // We set deleted = true for it instead. When new record will be created
-                // with same id we should remove old record with deleted flag.
-                if (hasDeletedFlag && entityMap[DbEntity.ID] == DbEntity.NEW_REC_ID) {
-                    val extId = entityMap[DbEntity.EXT_ID] as? String ?: ""
-                    if (extId.isNotBlank()) {
-                        val existingEntityMap = findMapByAnyId(extId, true)
-                        if (existingEntityMap != null) {
-                            // check that entity was deleted before
-                            if (existingEntityMap[DbEntity.DELETED] == true) {
-                                entityRepo.forceDelete(tableCtx, listOf(existingEntityMap[DbEntity.ID] as Long))
-                            } else {
-                                throw IllegalStateException("New entity with same extId, but with new dbId. ExtId: $extId")
-                            }
-                        }
-                    }
-                }
-                entityMap
+                entityMapper.convertToMap(entity)
             }
 
             entityRepo.save(tableCtx, entitiesToSave).map { convertToEntity(it) }
@@ -553,15 +500,26 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
     }
 
-    override fun forceDelete(predicate: Predicate) {
+    override fun delete(entityId: Long) {
         if (!isTableExists()) {
             return
         }
-        if (PredicateUtils.isAlwaysFalse(predicate)) {
+        dataSource.withTransaction(false) {
+            entityRepo.delete(getTableContext(), listOf(entityId))
+        }
+    }
+
+    override fun delete(entities: List<T>) {
+        if (entities.isEmpty() || !isTableExists()) {
             return
         }
         dataSource.withTransaction(false) {
-            entityRepo.forceDelete(getTableContext(), predicate)
+            entityRepo.delete(
+                getTableContext(),
+                entities.map {
+                    entityMapper.convertToMap(it)[DbEntity.ID] as Long
+                }
+            )
         }
     }
 
@@ -579,38 +537,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             }
         }
         return tableCtx
-    }
-
-    override fun forceDelete(entityId: Long) {
-        if (!isTableExists()) {
-            return
-        }
-        dataSource.withTransaction(false) {
-            entityRepo.forceDelete(getTableContext(), listOf(entityId))
-        }
-    }
-
-    override fun forceDelete(entity: T) {
-        if (!isTableExists()) {
-            return
-        }
-        dataSource.withTransaction(false) {
-            entityRepo.forceDelete(getTableContext(), listOf(entityMapper.convertToMap(entity)[DbEntity.ID] as Long))
-        }
-    }
-
-    override fun forceDelete(entities: List<T>) {
-        if (entities.isEmpty() || !isTableExists()) {
-            return
-        }
-        dataSource.withTransaction(false) {
-            entityRepo.forceDelete(
-                getTableContext(),
-                entities.map {
-                    entityMapper.convertToMap(it)[DbEntity.ID] as Long
-                }
-            )
-        }
     }
 
     override fun getTableMeta(): DbTableMetaDto {
@@ -992,7 +918,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         private val tableRef = DbTableRef(schemaCtx.schema, table)
         private val columnsByName = columns.associateBy { it.name }
         private val hasIdColumn = columnsByName.containsKey(DbEntity.ID)
-        private val hasDeleteFlag = columnsByName.containsKey(DbEntity.DELETED)
 
         override fun getWorkspaceService(): DbWorkspaceService {
             return schemaCtx.workspaceService
@@ -1060,10 +985,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
 
         override fun hasIdColumn(): Boolean {
             return hasIdColumn
-        }
-
-        override fun hasDeleteFlag(): Boolean {
-            return hasDeleteFlag
         }
 
         override fun getDataSource(): DbDataSource {

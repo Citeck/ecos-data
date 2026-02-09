@@ -72,7 +72,6 @@ class MigrateMetaFieldsToRefs : DbDomainMigration {
                 Predicates.empty(TEMP_FIELD_TYPE_REF),
                 emptyList(),
                 DbFindPage(0, 100),
-                true,
                 emptyList(),
                 emptyList(),
                 emptyList(),
@@ -125,11 +124,11 @@ class MigrateMetaFieldsToRefs : DbDomainMigration {
                     val typeId = idsByRefs[it.type] ?: error("Type ref ID doesn't found")
                     val modifierId = idsByRefs[it.modifier] ?: error("Modifier ref ID doesn't found")
                     val updateSql = "UPDATE ${tableRef.fullName} SET " +
-                        "$TEMP_FIELD_TYPE_REF=$typeId, " +
-                        "$TEMP_FIELD_CREATOR_REF=$creatorId, " +
-                        "$TEMP_FIELD_MODIFIER_REF=$modifierId WHERE id = ${it.id};"
+                        "$TEMP_FIELD_TYPE_REF=?, " +
+                        "$TEMP_FIELD_CREATOR_REF=?, " +
+                        "$TEMP_FIELD_MODIFIER_REF=? WHERE id = ?;"
 
-                    dataSource.update(updateSql, emptyList())
+                    dataSource.update(updateSql, listOf(typeId, creatorId, modifierId, it.id))
 
                     processedCount++
                     val chunkIdx = processedCount / LOG_CHUNK_SIZE

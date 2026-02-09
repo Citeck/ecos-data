@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.domain
 
+import ru.citeck.ecos.context.lib.ctx.EcosContext
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
@@ -31,6 +32,7 @@ class DbDomainFactory(
     val defaultListeners: List<DbRecordsListener>,
     val dataServiceFactory: DbDataServiceFactory,
     val webAppApi: EcosWebAppApi,
+    val ecosContext: EcosContext,
     val remoteActionsClient: DbRecordsRemoteActionsClient?
 ) {
 
@@ -43,6 +45,7 @@ class DbDomainFactory(
         dataServiceFactory,
         migrationService,
         webAppApi,
+        ecosContext,
         remoteActionsClient
     )
 
@@ -57,6 +60,7 @@ class DbDomainFactory(
             defaultListeners,
             dataServiceFactory,
             webAppApi,
+            ecosContext,
             remoteActionsClient
         )
     }

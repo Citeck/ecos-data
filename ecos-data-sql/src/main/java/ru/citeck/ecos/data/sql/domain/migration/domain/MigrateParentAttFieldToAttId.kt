@@ -71,7 +71,6 @@ class MigrateParentAttFieldToAttId : DbDomainMigration {
                 ),
                 emptyList(),
                 DbFindPage(0, 100),
-                true,
                 emptyList(),
                 emptyList(),
                 emptyList(),
@@ -114,9 +113,9 @@ class MigrateParentAttFieldToAttId : DbDomainMigration {
                     if (parentAttId != -1L) {
 
                         val updateSql = "UPDATE ${tableRef.fullName} SET " +
-                            "$TEMP_FIELD_PARENT_ATT=$parentAttId WHERE id = ${it.id};"
+                            "$TEMP_FIELD_PARENT_ATT=? WHERE id = ?;"
 
-                        dataSource.update(updateSql, emptyList())
+                        dataSource.update(updateSql, listOf(parentAttId, it.id))
 
                         processedCount++
                         val chunkIdx = processedCount / LOG_CHUNK_SIZE

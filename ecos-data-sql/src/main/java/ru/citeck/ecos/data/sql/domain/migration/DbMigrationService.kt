@@ -25,6 +25,7 @@ class DbMigrationService {
         domainMigrations.add(MigrateMetaFieldsToRefs())
         domainMigrations.add(MigrateParentAttFieldToAttId())
         domainMigrations.add(AddStatusModifiedAttField())
+        domainMigrations.add(MoveDeletedToTrashcan())
 
         schemaMigrations.add(ChangeContentCreatorType())
         schemaMigrations.add(RemoveAllowedFlagFromPerms())
@@ -89,6 +90,7 @@ class DbMigrationService {
                 }
                 context.recordRefService.createTableIfNotExists()
                 context.assocsService.createTableIfNotExists()
+                context.trashcanService.createTableIfNotExists()
             }
             if (isNewSchema.get()) {
                 return

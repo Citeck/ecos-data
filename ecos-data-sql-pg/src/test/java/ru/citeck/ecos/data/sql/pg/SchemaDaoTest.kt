@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.pg
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.context.lib.ctx.GlobalEcosContext
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
@@ -25,7 +26,8 @@ class SchemaDaoTest {
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test")
+            EcosWebAppApiMock("test"),
+            GlobalEcosContext.getContext()
         )
         val tableRef = DbTableRef("some-schema", "test-table")
 
@@ -98,7 +100,8 @@ class SchemaDaoTest {
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test")
+            EcosWebAppApiMock("test"),
+            GlobalEcosContext.getContext()
         )
         val tableRef = DbTableRef("some-schema", "test-table")
 

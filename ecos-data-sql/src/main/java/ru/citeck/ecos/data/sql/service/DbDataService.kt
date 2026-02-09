@@ -17,7 +17,7 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
 interface DbDataService<T : Any> {
 
     companion object {
-        const val NEW_TABLE_SCHEMA_VERSION = 6
+        const val NEW_TABLE_SCHEMA_VERSION = 7
     }
 
     fun <T> doWithPermsPolicy(permsPolicy: QueryPermsPolicy?, action: () -> T): T
@@ -40,19 +40,14 @@ interface DbDataService<T : Any> {
 
     fun findAll(predicate: Predicate): List<T>
 
-    fun findAll(predicate: Predicate, withDeleted: Boolean): List<T>
-
     fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<T>
 
     fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage): DbFindRes<T>
-
-    fun find(predicate: Predicate, sort: List<DbFindSort>, page: DbFindPage, withDeleted: Boolean): DbFindRes<T>
 
     fun find(
         predicate: Predicate,
         sort: List<DbFindSort>,
         page: DbFindPage,
-        withDeleted: Boolean,
         groupBy: List<String>,
         assocTableJoins: List<AssocTableJoin>,
         assocJoinWithPredicates: List<AssocJoinWithPredicate>,
@@ -67,7 +62,6 @@ interface DbDataService<T : Any> {
         predicate: Predicate,
         sort: List<DbFindSort>,
         page: DbFindPage,
-        withDeleted: Boolean,
         groupBy: List<String>,
         assocTableJoins: List<AssocTableJoin>,
         assocJoinWithPredicates: List<AssocJoinWithPredicate>,
@@ -94,13 +88,9 @@ interface DbDataService<T : Any> {
 
     fun delete(predicate: Predicate)
 
-    fun forceDelete(predicate: Predicate)
+    fun delete(entityId: Long)
 
-    fun forceDelete(entityId: Long)
-
-    fun forceDelete(entity: T)
-
-    fun forceDelete(entities: List<T>)
+    fun delete(entities: List<T>)
 
     fun getTableRef(): DbTableRef
 

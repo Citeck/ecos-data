@@ -104,7 +104,7 @@ class DbContentServiceImpl(
 
     override fun removeContent(id: Long) {
         val entity = dataService.findById(id) ?: return
-        dataService.forceDelete(entity)
+        dataService.delete(entity)
         val entitiesWithSameStorageAndKey = dataService.find(
             DbFindQuery.create {
                 withPredicate(

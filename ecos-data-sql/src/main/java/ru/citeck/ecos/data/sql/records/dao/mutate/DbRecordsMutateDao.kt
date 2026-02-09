@@ -848,7 +848,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         if (changedAssocs.isEmpty()) {
             val equalsIgnoredAtts = if (disableAudit) emptySet() else AUDIT_ATTS
             if (entityToMutate.equals(entityBeforeMutation, equalsIgnoredAtts)) {
-                return mutCtx.runPostMutationAtts(entityBeforeMutation)
+                return mutCtx.runPostMutationActions(entityBeforeMutation)
             }
         }
 
@@ -877,7 +877,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             )
         }
 
-        return mutCtx.runPostMutationAtts(recAfterSave)
+        return mutCtx.runPostMutationActions(recAfterSave)
     }
 
     private fun registerAssocValuesContainerIfRequired(att: String, newValue: DataValue, mutCtx: MutationContext) {
@@ -1383,7 +1383,11 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     changedAssocs,
                     mutCtx
                 )
-                if (mutatedColumns.isNotEmpty() && entityToMutate != entityBeforeMutation) {
+
+                if (changedAssocs.isNotEmpty() ||
+                    !entityToMutate.equals(entityBeforeMutation, AUDIT_ATTS)
+                ) {
+
                     for (column in mutatedColumns) {
                         if (!fullColumnNames.contains(column.name)) {
                             fullColumns.add(column)
