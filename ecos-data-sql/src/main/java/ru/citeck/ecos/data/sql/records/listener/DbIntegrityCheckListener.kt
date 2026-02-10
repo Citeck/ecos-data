@@ -2,7 +2,6 @@ package ru.citeck.ecos.data.sql.records.listener
 
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.exception.I18nRuntimeException
-import ru.citeck.ecos.commons.utils.StringUtils
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtxAware
@@ -26,6 +25,8 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
 
     companion object {
         private const val CONFIG_PARAM_UNIQUE = "unique"
+        private const val CONFIG_PARAM_UNIQUE_SCOPE = "uniqueScope"
+        private const val UNIQUE_WORKSPACE_SCOPE = "WORKSPACE"
     }
 
     private lateinit var ctx: DbRecordsDaoCtx
@@ -107,7 +108,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             data.changedAtts
         }
         val attsForMandatoryCheck = mutableSetOf<String>()
-        val attsForUniqueCheck = mutableSetOf<String>()
+        val attsForUniqueCheck = mutableSetOf<AttributeDef>()
         for (attributeId in changedAtts) {
             val attributeDef = attsById[attributeId] ?: continue
             if (attributeDef.mandatory) {
@@ -116,7 +117,7 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             if (attributeDef.type == AttributeType.TEXT && !attributeDef.multiple &&
                 attributeDef.config[CONFIG_PARAM_UNIQUE].asBoolean()
             ) {
-                attsForUniqueCheck.add(attributeDef.id)
+                attsForUniqueCheck.add(attributeDef)
             }
             if (attributeDef.type == AttributeType.OPTIONS) {
                 val options = ctx.computedAttsComponent?.getAttOptions(localRef, attributeDef.config)
@@ -170,12 +171,53 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
         data: RecordData,
         localRef: EntityRef,
         globalRef: EntityRef,
-        attsToCheck: Set<String>
+        attsToCheck: Set<AttributeDef>
     ) {
         if (attsToCheck.isEmpty()) {
             return
         }
 
+        val globalCheckAtts = mutableSetOf<String>()
+        val workspaceCheckAtts = mutableSetOf<String>()
+        attsToCheck.forEach {
+            val uniqueScope = it.config[CONFIG_PARAM_UNIQUE_SCOPE].asText()
+            if (uniqueScope == UNIQUE_WORKSPACE_SCOPE) {
+                workspaceCheckAtts.add(it.id)
+            } else {
+                globalCheckAtts.add(it.id)
+            }
+        }
+
+        val workspace = if (workspaceCheckAtts.isNotEmpty() && data.typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
+            ctx.recordsService.getAtt(localRef, "${RecordConstants.ATT_WORKSPACE}?localId").asText()
+        } else {
+            null
+        }
+
+        if (globalCheckAtts.isNotEmpty()) {
+            performUniqueCheck(
+                localRef,
+                globalRef,
+                globalCheckAtts
+            )
+        }
+
+        if (workspaceCheckAtts.isNotEmpty()) {
+            performUniqueCheck(
+                localRef,
+                globalRef,
+                workspaceCheckAtts,
+                workspace
+            )
+        }
+    }
+
+    private fun performUniqueCheck(
+        localRef: EntityRef,
+        globalRef: EntityRef,
+        attsToCheck: Set<String>,
+        workspace: String? = null
+    ) {
         val valueByAtt = ctx.recordsService.getAtts(localRef, attsToCheck).getAtts()
         val notNullValueByAtt = ObjectData.create()
         valueByAtt.forEach { key, value ->
@@ -202,11 +244,8 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             )
             .withMaxItems(1)
 
-        if (data.typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
-            val workspace = ctx.recordsService.getAtt(localRef, "${RecordConstants.ATT_WORKSPACE}?localId").asText()
-            if (StringUtils.isNotBlank(workspace)) {
-                queryBuilder.withWorkspaces(listOf(workspace))
-            }
+        if (!workspace.isNullOrBlank()) {
+            queryBuilder.withWorkspaces(listOf(workspace))
         }
 
         val query = queryBuilder.build()
