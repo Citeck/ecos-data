@@ -142,7 +142,9 @@ class DbRecordsUniqueAttTest : DbRecordsTestBase() {
                     withId(UNIQUE_ATT)
                     withType(AttributeType.TEXT)
                     withConfig(
-                        ObjectData.create().set("unique", true)
+                        ObjectData.create()
+                            .set("unique", true)
+                            .set("uniqueScope", "WORKSPACE")
                     )
                 }
             )
@@ -219,6 +221,61 @@ class DbRecordsUniqueAttTest : DbRecordsTestBase() {
             )
         }
         assertThat(ex.message).contains("has non-unique attributes {\"uniqueAtt\":\"unique value\"}")
+    }
+
+    @Test
+    fun `uniqueAtt with globalCheck in private workspace test`() {
+        val localUniqueAtt = "localUniqueAtt"
+        val globalUniqueAtt = "globalUniqueAtt"
+
+        val privateWSTypeDao = registerType()
+            .withAttributes(
+                AttributeDef.create {
+                    withId(localUniqueAtt)
+                    withType(AttributeType.TEXT)
+                    withConfig(
+                        ObjectData.create()
+                            .set("unique", true)
+                            .set("uniqueScope", "WORKSPACE")
+                    )
+                },
+                AttributeDef.create {
+                    withId(globalUniqueAtt)
+                    withType(AttributeType.TEXT)
+                    withConfig(
+                        ObjectData.create()
+                            .set("unique", true)
+                            .set("uniqueScope", "GLOBAL")
+                    )
+                }
+            )
+            .withWorkspaceScope(WorkspaceScope.PRIVATE)
+            .register()
+
+        val ws0 = "workspace-0"
+        val ws1 = "workspace-1"
+
+        privateWSTypeDao.createRecord(
+            RecordConstants.ATT_WORKSPACE to ws0,
+            localUniqueAtt to "local-value",
+            globalUniqueAtt to "global-value"
+        )
+
+        privateWSTypeDao.createRecord(
+            RecordConstants.ATT_WORKSPACE to ws1,
+            localUniqueAtt to "local-value",
+            globalUniqueAtt to "different-global"
+        )
+
+        val ex = assertThrows<Exception> {
+            privateWSTypeDao.createRecord(
+                RecordConstants.ATT_WORKSPACE to ws1,
+                localUniqueAtt to "another-local",
+                globalUniqueAtt to "global-value"
+            )
+        }
+        assertThat(ex.message).contains("has non-unique attributes")
+        assertThat(ex.message).contains("globalUniqueAtt")
     }
 
     private fun assertWs(rec: EntityRef, expectedWs: String) {
