@@ -15,9 +15,9 @@ import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import java.lang.reflect.Array
 import java.net.URI
-import java.sql.Date
 import java.sql.Timestamp
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.collections.ArrayList
 import kotlin.collections.LinkedHashMap
@@ -110,7 +110,9 @@ class DbEntityMapperImpl<T : Any>(
                 list.add(convertAdditionalAttValue(Array.get(value, i)))
             }
             return list
-        } else if (value is Date) {
+        } else if (value is LocalDate) {
+            return value.atStartOfDay(ZoneOffset.UTC).toInstant()
+        } else if (value is java.sql.Date) {
             return value.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant()
         } else if (value is Timestamp) {
             return value.toInstant()
