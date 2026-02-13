@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.context
 
+import ru.citeck.ecos.context.lib.ctx.EcosContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.remote.DbRecordsRemoteActionsClient
@@ -17,6 +18,7 @@ class DbDataSourceContext(
     dataServiceFactory: DbDataServiceFactory,
     private val migrationService: DbMigrationService,
     private val webAppApi: EcosWebAppApi,
+    private val ecosContext: EcosContext,
     val remoteActionsClient: DbRecordsRemoteActionsClient? = null
 ) {
     val appName: String = webAppApi.getProperties().appName
@@ -50,7 +52,7 @@ class DbDataSourceContext(
         val newContextWasCreated = AtomicBoolean()
         val result = schemasByName.computeIfAbsent(schema) { k ->
             newContextWasCreated.set(true)
-            DbSchemaContext(k, this, webAppApi)
+            DbSchemaContext(k, this, webAppApi, ecosContext)
         }
         if (newContextWasCreated.get()) {
             migrationService.runSchemaMigrations(result)

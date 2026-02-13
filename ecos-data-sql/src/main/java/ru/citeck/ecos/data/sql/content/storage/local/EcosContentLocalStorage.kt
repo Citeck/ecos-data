@@ -56,7 +56,7 @@ class EcosContentLocalStorage(
 
     override fun deleteContent(storageRef: EntityRef, dataKey: String) {
         dataKeyToEntityIds(dataKey).forEach {
-            dataService.forceDelete(it)
+            dataService.delete(it)
         }
     }
 

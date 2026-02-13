@@ -46,7 +46,6 @@ class AddStatusModifiedAttField : DbDomainMigration {
                 Predicates.notEmpty(DbEntity.STATUS),
                 emptyList(),
                 DbFindPage.FIRST,
-                true,
                 emptyList(),
                 emptyList(),
                 emptyList(),
@@ -90,7 +89,6 @@ class AddStatusModifiedAttField : DbDomainMigration {
                 ),
                 emptyList(),
                 DbFindPage(0, 100),
-                true,
                 emptyList(),
                 emptyList(),
                 emptyList(),
@@ -124,9 +122,9 @@ class AddStatusModifiedAttField : DbDomainMigration {
             context.doInNewTxn {
                 recordsToMigrate.forEach {
                     val updateSql = "UPDATE ${tableRef.fullName} SET " +
-                        "$TEMP_FIELD_STATUS_MODIFIED = '${it.modified}' WHERE id = ${it.id};"
+                        "$TEMP_FIELD_STATUS_MODIFIED = ? WHERE id = ?;"
 
-                    dataSource.update(updateSql, emptyList())
+                    dataSource.update(updateSql, listOf(it.modified, it.id))
 
                     processedCount++
                     val chunkIdx = processedCount / LOG_CHUNK_SIZE

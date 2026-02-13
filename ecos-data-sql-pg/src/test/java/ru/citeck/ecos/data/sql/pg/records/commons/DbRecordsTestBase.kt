@@ -11,6 +11,8 @@ import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.commons.utils.NameUtils
 import ru.citeck.ecos.commons.utils.TmplUtils
+import ru.citeck.ecos.context.lib.ctx.EcosContext
+import ru.citeck.ecos.context.lib.ctx.EcosContextImpl
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
@@ -244,6 +246,8 @@ abstract class DbRecordsTestBase {
     lateinit var delegationService: CustomDelegationService
     lateinit var workspaceService: CustomWorkspaceService
 
+    lateinit var ecosContext: EcosContext
+
     private var mainCtxInitialized = false
     private val registeredRecordsDao = ArrayList<RecordsDaoTestCtx>()
 
@@ -385,11 +389,14 @@ abstract class DbRecordsTestBase {
             workspaceService.impl = modelServiceFactory.workspaceService
 
             dbDataSource = DbDataSourceImpl(jdbcDataSource)
+            ecosContext = EcosContextImpl(null)
+
             dataSourceCtx = DbDataSourceContext(
                 dbDataSource,
                 PgDataServiceFactory(),
                 DbMigrationService(),
-                webAppApi
+                webAppApi,
+                ecosContext
             )
 
             records = recordsServiceFactory.recordsService

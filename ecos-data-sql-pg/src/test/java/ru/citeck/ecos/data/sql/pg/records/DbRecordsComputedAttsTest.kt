@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.pg.records
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
@@ -291,5 +292,58 @@ class DbRecordsComputedAttsTest : DbRecordsTestBase() {
         assertQuery("assoc", listOf(ref1))
         assertQuery("computedAssoc", listOf(ref1))
         assertQuery("computedAssoc2", listOf(ref1))
+    }
+
+    @Test
+    fun updateCalculatedAttsUpdatesDisplayName() {
+
+        registerType(
+            TypeInfo.create {
+                withId(REC_TEST_TYPE_ID)
+                withDispNameTemplate(MLText("Name: \${textAtt}"))
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .build()
+                            )
+                        )
+                    }
+                )
+            }
+        )
+
+        val rec = createRecord("textAtt" to "hello")
+        assertThat(records.getAtt(rec, "?disp").asText()).isEqualTo("Name: hello")
+
+        // Change the display name template
+        registerType(
+            TypeInfo.create {
+                withId(REC_TEST_TYPE_ID)
+                withDispNameTemplate(MLText("Updated: \${textAtt}"))
+                withModel(
+                    TypeModelDef.create {
+                        withAttributes(
+                            listOf(
+                                AttributeDef.create()
+                                    .withId("textAtt")
+                                    .build()
+                            )
+                        )
+                    }
+                )
+            }
+        )
+
+        // Name is still the old one before recalculation
+        assertThat(records.getAtt(rec, "?disp").asText()).isEqualTo("Name: hello")
+
+        // Trigger recalculation of computed attributes (including display name)
+        records.mutateAtt(rec, DbRecordsControlAtts.UPDATE_CALCULATED_ATTS, true)
+
+        // Name should be updated according to the new template
+        assertThat(records.getAtt(rec, "?disp").asText()).isEqualTo("Updated: hello")
     }
 }

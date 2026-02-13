@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.context
 
 import ru.citeck.ecos.context.lib.auth.AuthUser
+import ru.citeck.ecos.context.lib.ctx.EcosContext
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.DbContentServiceImpl
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
@@ -20,6 +21,8 @@ import ru.citeck.ecos.data.sql.schema.DbSchemaListener
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
+import ru.citeck.ecos.data.sql.trashcan.DbTrashcanService
+import ru.citeck.ecos.data.sql.trashcan.DbTrashcanServiceImpl
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
@@ -28,7 +31,8 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 class DbSchemaContext(
     val schema: String,
     val dataSourceCtx: DbDataSourceContext,
-    val webAppApi: EcosWebAppApi
+    val webAppApi: EcosWebAppApi,
+    val ecosContext: EcosContext
 ) {
     companion object {
         const val NEW_SCHEMA_VERSION = 5
@@ -59,6 +63,8 @@ class DbSchemaContext(
 
     val contentStorageService: EcosContentStorageService = EcosContentStorageServiceImpl(webAppApi, this)
     val contentService: DbContentService = DbContentServiceImpl(contentStorageService, this)
+
+    val trashcanService: DbTrashcanService = DbTrashcanServiceImpl(this)
 
     val authoritiesApi: EcosAuthoritiesApi = webAppApi.getAuthoritiesApi()
 
@@ -96,6 +102,7 @@ class DbSchemaContext(
         recordRefService.resetColumnsCache()
         assocsService.resetColumnsCache()
         contentStorageService.resetColumnsCache()
+        trashcanService.resetColumnsCache()
     }
 
     fun isSchemaExists(): Boolean {

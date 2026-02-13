@@ -35,7 +35,7 @@ class MutationContext(
         typeAttColumns.forEach { typeAttColumnsByAtt[it.attribute.id] = it }
     }
 
-    fun runPostMutationAtts(entity: DbEntity): DbEntity {
+    fun runPostMutationActions(entity: DbEntity): DbEntity {
         var result = entity
         for (action in postMutationActions) {
             result = action.invoke(result)

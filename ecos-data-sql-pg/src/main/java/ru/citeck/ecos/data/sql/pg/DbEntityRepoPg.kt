@@ -84,14 +84,12 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         context: DbTableContext,
         column: String,
         values: Collection<Any>,
-        withDeleted: Boolean,
         limit: Int
     ): List<Map<String, Any?>> {
         return find(
             context,
             DbFindQuery.create {
                 withPredicate(ValuePredicate(column, ValuePredicate.Type.IN, values))
-                withDeleted(withDeleted)
             },
             DbFindPage(0, limit),
             false
@@ -149,43 +147,10 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
     }
 
     override fun delete(context: DbTableContext, entity: Map<String, Any?>) {
-        if (context.hasDeleteFlag()) {
-            val mutableEntity = LinkedHashMap(entity)
-            mutableEntity[DbEntity.DELETED] = true
-            saveImpl(context, listOf(mutableEntity))[0]
-        } else {
-            forceDelete(context, listOf(entity[DbEntity.ID] as Long))
-        }
+        delete(context, listOf(entity[DbEntity.ID] as Long))
     }
 
     override fun delete(context: DbTableContext, predicate: Predicate) {
-
-        if (!context.hasDeleteFlag()) {
-            forceDelete(context, predicate)
-        }
-
-        val query = StringBuilder("UPDATE ")
-            .append(context.getTableRef().fullName)
-            .append(" \"$RECORD_TABLE_ALIAS\" SET \"${DbEntity.DELETED}\"=true WHERE ")
-
-        val parameters = arrayListOf<Any?>()
-        toSqlCondition(
-            context,
-            query,
-            RECORD_TABLE_ALIAS,
-            predicate,
-            emptyMap(),
-            emptyMap(),
-            emptyMap(),
-            emptyMap(),
-            emptyMap(),
-            parameters
-        )
-
-        context.getDataSource().update(query.toString(), parameters)
-    }
-
-    override fun forceDelete(context: DbTableContext, predicate: Predicate) {
 
         val query = StringBuilder("DELETE FROM ")
             .append(context.getTableRef().fullName)
@@ -208,11 +173,10 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         context.getDataSource().update(query.toString(), parameters)
     }
 
-    override fun forceDelete(context: DbTableContext, entities: List<Long>) {
-        val identifiersStr = entities.joinToString(",")
+    override fun delete(context: DbTableContext, entities: List<Long>) {
         context.getDataSource().update(
-            "DELETE FROM ${context.getTableRef().fullName} WHERE \"${DbEntity.ID}\" IN ($identifiersStr)",
-            emptyList()
+            "DELETE FROM ${context.getTableRef().fullName} WHERE \"${DbEntity.ID}\" = ANY(?)",
+            listOf(entities.toTypedArray())
         )
     }
 
@@ -271,7 +235,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 context,
                 DbEntity.ID,
                 ids.toList(),
-                true,
                 entities.size
             ).associateBy { it[DbEntity.ID] as Long }
 
@@ -357,14 +320,10 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
         val tableRef = context.getTableRef()
         val typesConverter = context.getTypesConverter()
-        val hasDeletedFlag = context.hasDeleteFlag()
 
         val entitiesToInsert = entities.map { entity ->
 
             val attsToInsert = LinkedHashMap(entity)
-            if (hasDeletedFlag) {
-                attsToInsert[DbEntity.DELETED] = false
-            }
             attsToInsert[DbEntity.UPD_VERSION] = 0L
             attsToInsert
         }
@@ -436,12 +395,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             val valuesForDb = prepareValuesForDb(columns, typesConverter, listOf(attsToUpdate))
             val setPlaceholders = valuesForDb.joinToString(",") { "\"${it.name}\"=${it.placeholder}" }
 
+            val params = valuesForDb.map { it.values[0] }.toMutableList<Any?>()
             var query = "UPDATE ${tableRef.fullName} SET $setPlaceholders " +
-                "WHERE \"${DbEntity.ID}\"='${entity.id}'"
+                "WHERE \"${DbEntity.ID}\"=?"
+            params.add(entity.id)
             if (currentVersion > -1) {
-                query += " AND \"${DbEntity.UPD_VERSION}\"=$currentVersion"
+                query += " AND \"${DbEntity.UPD_VERSION}\"=?"
+                params.add(currentVersion)
             }
-            if (dataSource.update(query, valuesForDb.map { it.values[0] }).first() != 1L) {
+            if (dataSource.update(query, params).first() != 1L) {
                 error("Concurrent modification of record with id: ${entity.id}")
             }
         }
@@ -579,7 +541,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             table,
             COUNT_COLUMN,
             permsColumn,
-            withDeleted = false,
             sqlCondition,
             emptyList(),
             DbFindPage.ALL,
@@ -715,7 +676,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             RECORD_TABLE_ALIAS,
             columns,
             permsColumn,
-            query.withDeleted,
             sqlCondition,
             query.sortBy,
             page,
@@ -771,7 +731,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         table: String,
         selectColumns: List<DbColumnDef>,
         permsColumn: String,
-        withDeleted: Boolean = false,
         condition: String,
         sort: List<DbFindSort> = emptyList(),
         page: DbFindPage = DbFindPage.ALL,
@@ -850,7 +809,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             table,
             selectColumnsStr.toString(),
             permsColumn,
-            withDeleted,
             condition,
             convertedSortBy,
             page,
@@ -900,7 +858,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         table: String,
         selectColumns: String,
         permsColumn: String,
-        withDeleted: Boolean,
         condition: String,
         sort: List<DbFindSort> = emptyList(),
         page: DbFindPage = DbFindPage.ALL,
@@ -912,14 +869,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         delegatedAuthorities: List<Pair<Set<Long>, Set<String>>>
     ): String {
 
-        val delCondition = if (context.hasDeleteFlag() && !withDeleted) {
-            "\"$table\".\"${DbEntity.DELETED}\"!=true"
-        } else {
-            ""
-        }
-
         val permsCondition = getPermsCondition(context, permsColumn, userAuthorities, delegatedAuthorities)
-        val fullCondition = joinConditionsByAnd(delCondition, condition, permsCondition)
+        val fullCondition = joinConditionsByAnd(condition, permsCondition)
 
         val query = StringBuilder()
         query.append("SELECT ")

@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.pg.meta.schema
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.context.lib.ctx.GlobalEcosContext
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.datasource.DbDataSourceImpl
@@ -50,7 +51,8 @@ class DbSchemaMetaTest {
             dataSource,
             PgDataServiceFactory(),
             DbMigrationService(),
-            EcosWebAppApiMock("test")
+            EcosWebAppApiMock("test"),
+            GlobalEcosContext.getContext()
         )
         val schemaCtx = dsCtx.getSchemaContext("")
         val dbSchemaDao = dsCtx.schemaDao

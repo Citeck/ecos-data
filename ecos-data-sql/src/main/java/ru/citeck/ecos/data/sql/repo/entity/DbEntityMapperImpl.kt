@@ -82,8 +82,12 @@ class DbEntityMapperImpl<T : Any>(
             if (entityField == null) {
                 additionalAtts[k] = convertAdditionalAttValue(v)
             } else {
-                entityAtts[entityField.fieldName] = converter.convert(v, entityField.fieldType)
-                    ?: entityField.defaultValue
+                val convertedValue = if (entityField.columnDef.multiple && entityField.fieldType == List::class && v != null) {
+                    convertArrayToList(v)
+                } else {
+                    converter.convert(v, entityField.fieldType) ?: entityField.defaultValue
+                }
+                entityAtts[entityField.fieldName] = convertedValue
             }
         }
         if (entityAtts.containsKey(DbEntity.REF_ID) && entityAtts[DbEntity.REF_ID] == null) {
@@ -139,6 +143,21 @@ class DbEntityMapperImpl<T : Any>(
         return rawAtts
     }
 
+    private fun convertArrayToList(value: Any): List<Any?> {
+        if (value is List<*>) {
+            return value
+        }
+        if (value::class.java.isArray) {
+            val length = Array.getLength(value)
+            val result = ArrayList<Any?>(length)
+            for (i in 0 until length) {
+                result.add(Array.get(value, i))
+            }
+            return result
+        }
+        return listOf(value)
+    }
+
     private fun hasField(type: KClass<*>, fieldName: String): Boolean {
         val properties = BeanUtils.getProperties(type.java)
         return properties.any { it.getName() == fieldName }
@@ -163,6 +182,7 @@ class DbEntityMapperImpl<T : Any>(
                 val field = type.java.getDeclaredField(prop.getName())
                 val constraints = field.getAnnotation(Constraints::class.java)?.value?.toList() ?: emptyList()
                 val explicitColumnType = field.getAnnotation(ColumnType::class.java)?.value
+                val isMultiple = List::class.java.isAssignableFrom(prop.getPropClass())
 
                 val fieldType = explicitColumnType ?: when {
                     prop.getName() == "id" -> DbColumnType.BIGSERIAL
@@ -175,6 +195,7 @@ class DbEntityMapperImpl<T : Any>(
                     prop.getPropClass().kotlin == Instant::class -> DbColumnType.DATETIME
                     prop.getPropClass().kotlin == ByteArray::class -> DbColumnType.BINARY
                     prop.getPropClass().kotlin == URI::class -> DbColumnType.TEXT
+                    isMultiple -> error("List field '${prop.getName()}' requires explicit @ColumnType")
                     else -> error("Unknown type: ${prop.getPropClass()}")
                 }
 
@@ -192,6 +213,7 @@ class DbEntityMapperImpl<T : Any>(
                     DbColumnDef.create {
                         withName(columnName)
                         withType(fieldType)
+                        withMultiple(isMultiple)
                         withConstraints(constraints)
                     }
                 ) { obj -> prop.getReadMethod()!!.invoke(obj) }

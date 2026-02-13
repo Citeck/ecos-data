@@ -92,6 +92,7 @@ class DbRecordsDaoCtx(
     val permsDao: DbRecordsPermsDao by lazySingleton { DbRecordsPermsDao(this) }
 
     val authoritiesApi = dataService.getTableContext().getAuthoritiesApi()
+    val trashcanService = tableCtx.getSchemaCtx().trashcanService
 
     private val recsUpdatedInThisTxnKey = IdentityKey()
 

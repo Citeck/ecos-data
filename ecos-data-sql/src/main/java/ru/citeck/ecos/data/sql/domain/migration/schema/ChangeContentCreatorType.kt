@@ -53,7 +53,6 @@ class ChangeContentCreatorType : DbSchemaMigration {
                 Predicates.empty(TEMP_CREATOR_COLUMN_NAME),
                 emptyList(),
                 DbFindPage(0, 100),
-                true,
                 emptyList(),
                 emptyList(),
                 emptyList(),
@@ -75,9 +74,9 @@ class ChangeContentCreatorType : DbSchemaMigration {
                     )
                     val entityId = entity[DbContentEntity.ID] as Long
                     val updateSql = "UPDATE ${tableRef.fullName} SET " +
-                        "$TEMP_CREATOR_COLUMN_NAME=$creatorId WHERE id = $entityId;"
+                        "$TEMP_CREATOR_COLUMN_NAME=? WHERE id = ?;"
 
-                    context.dataSourceCtx.dataSource.update(updateSql, emptyList())
+                    context.dataSourceCtx.dataSource.update(updateSql, listOf(creatorId, entityId))
                     processed++
                 }
                 entities = findNext()

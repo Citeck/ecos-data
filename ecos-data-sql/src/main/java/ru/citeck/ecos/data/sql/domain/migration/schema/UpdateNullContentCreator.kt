@@ -30,10 +30,10 @@ class UpdateNullContentCreator : DbSchemaMigration {
 
         val tableRef = context.getTableRef(DbContentEntity.TABLE)
         val updateSql = "UPDATE ${tableRef.fullName} SET " +
-            "${DbContentEntity.CREATOR}=$anonCreatorId WHERE ${DbContentEntity.CREATOR} " +
+            "${DbContentEntity.CREATOR}=? WHERE ${DbContentEntity.CREATOR} " +
             "IS NULL OR ${DbContentEntity.CREATOR} = -1;"
 
-        val updateRes = context.dataSourceCtx.dataSource.update(updateSql, emptyList())
+        val updateRes = context.dataSourceCtx.dataSource.update(updateSql, listOf(anonCreatorId))
 
         log.info { "Migration completed. Updated: $updateRes" }
     }

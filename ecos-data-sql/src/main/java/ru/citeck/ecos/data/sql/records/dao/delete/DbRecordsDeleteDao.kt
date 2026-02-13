@@ -151,8 +151,25 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
                     }
                 }
             }
-            dataService.forceDelete(entity)
+            dataService.delete(entity)
         } else {
+            val contentIds = ArrayList<Long>()
+            meta.allAttributes.forEach { (attId, attDef) ->
+                if (attDef.type == AttributeType.CONTENT) {
+                    DbAttValueUtils.forEachLongValue(entity.attributes[attId]) {
+                        contentIds.add(it)
+                    }
+                }
+            }
+            val deletedByRefId = ctx.getOrCreateUserRefId(AuthContext.getCurrentUser())
+            val deletedAsRefId = ctx.getOrCreateUserRefId(AuthContext.getCurrentRunAsUser())
+            ctx.trashcanService.moveToTrashcan(
+                entity,
+                ctx.tableRef.table,
+                contentIds,
+                deletedByRefId,
+                deletedAsRefId
+            )
             dataService.delete(entity)
         }
         ctx.assocsService.removeAssocs(entity.refId, isForceDeletion)
