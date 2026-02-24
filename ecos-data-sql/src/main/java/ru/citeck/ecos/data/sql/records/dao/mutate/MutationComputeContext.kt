@@ -52,11 +52,16 @@ class MutationComputeContext(
             if (attDef.computed.type != ComputedAttType.COUNTER) {
                 continue
             }
+            val computedDef = if (attDef.computed.storingType == ComputedAttStoringType.ON_EMPTY) {
+                attDef.computed.copy { storingType = ComputedAttStoringType.ON_MUTATE }
+            } else {
+                attDef.computed
+            }
             atts[counterAtt] = calculateAtt(
                 record = record,
                 attId = counterAtt,
                 attributeType = attDef.type,
-                attComputedDef = attDef.computed
+                attComputedDef = computedDef
             )
         }
     }

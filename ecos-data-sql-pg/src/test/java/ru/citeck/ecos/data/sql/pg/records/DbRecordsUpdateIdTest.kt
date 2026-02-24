@@ -100,23 +100,61 @@ class DbRecordsUpdateIdTest : DbRecordsTestBase() {
 
     @Test
     fun testIdUpdateWithCounterUpdateWithChangedPropInKeyTemplate() {
+        testIdUpdateWithCounterAndProjectMove(
+            counterAtt = "_docNum",
+            counterStoringType = ComputedAttStoringType.ON_CREATE,
+            useTypeNumTemplate = true
+        )
+    }
+
+    @Test
+    fun testIdUpdateWithOnEmptyCounterUpdate() {
+        testIdUpdateWithCounterAndProjectMove(
+            counterAtt = "customCounter",
+            counterStoringType = ComputedAttStoringType.ON_EMPTY,
+            useTypeNumTemplate = false
+        )
+    }
+
+    private fun testIdUpdateWithCounterAndProjectMove(
+        counterAtt: String,
+        counterStoringType: ComputedAttStoringType,
+        useTypeNumTemplate: Boolean
+    ) {
+        val numTemplateId = "test-num-$counterAtt"
 
         registerNumTemplate(
             NumTemplateDef.create()
-                .withId("test-num")
+                .withId(numTemplateId)
                 .withCounterKey("ept-project-{{project.key}}")
                 .withModelAttributes(listOf("project.key"))
                 .build()
         )
 
-        registerType()
-            .withNumTemplateRef(EntityRef.valueOf("test-num"))
-            .withLocalIdTemplate("{{project.key}}-{{_docNum}}")
-            .withAttributes(
-                AttributeDef.create().withId("text"),
-                AttributeDef.create().withId("project").withType(AttributeType.ASSOC)
+        val typeReg = registerType()
+            .withLocalIdTemplate("{{project.key}}-{{$counterAtt}}")
+
+        if (useTypeNumTemplate) {
+            typeReg.withNumTemplateRef(EntityRef.valueOf(numTemplateId))
+                .withAttributes(
+                    AttributeDef.create().withId("project").withType(AttributeType.ASSOC)
+                )
+        } else {
+            typeReg.withAttributes(
+                AttributeDef.create().withId("project").withType(AttributeType.ASSOC),
+                AttributeDef.create()
+                    .withId(counterAtt)
+                    .withType(AttributeType.NUMBER)
+                    .withComputed(
+                        ComputedAttDef.create()
+                            .withType(ComputedAttType.COUNTER)
+                            .withConfig(ObjectData.create().set("numTemplateRef", numTemplateId))
+                            .withStoringType(counterStoringType)
+                            .build()
+                    )
             )
-            .register()
+        }
+        typeReg.register()
 
         val projectCtx = registerType()
             .withId("project")
@@ -131,32 +169,32 @@ class DbRecordsUpdateIdTest : DbRecordsTestBase() {
 
         val ref0 = createRecord("project" to sdProject)
         assertThat(ref0.getLocalId()).isEqualTo("SD-1")
-        assertThat(records.getAtt(ref0, "_docNum?num").asInt()).isEqualTo(1)
+        assertThat(records.getAtt(ref0, "$counterAtt?num").asInt()).isEqualTo(1)
 
         repeat(5) {
-            records.mutateAtt(ref0, DbRecordsControlAtts.UPDATE_COUNTER_ATT, "_docNum")
+            updateRecord(ref0, DbRecordsControlAtts.UPDATE_COUNTER_ATT to counterAtt)
         }
-        assertThat(records.getAtt(ref0, "_docNum?num").asInt()).isEqualTo(6)
+        assertThat(records.getAtt(ref0, "$counterAtt?num").asInt()).isEqualTo(6)
 
         val ref1 = updateRecord(
             ref0,
             "project" to eptProject,
-            DbRecordsControlAtts.UPDATE_COUNTER_ATT to "_docNum",
+            DbRecordsControlAtts.UPDATE_COUNTER_ATT to counterAtt,
             DbRecordsControlAtts.UPDATE_ID to true
         )
 
         assertThat(ref1.getLocalId()).isEqualTo("EPT-1")
-        assertThat(records.getAtt(ref1, "_docNum?num").asInt()).isEqualTo(1)
+        assertThat(records.getAtt(ref1, "$counterAtt?num").asInt()).isEqualTo(1)
 
         val ref2 = updateRecord(
             ref1,
             "project" to sdProject,
-            DbRecordsControlAtts.UPDATE_COUNTER_ATT to "_docNum",
+            DbRecordsControlAtts.UPDATE_COUNTER_ATT to counterAtt,
             DbRecordsControlAtts.UPDATE_ID to true
         )
 
         assertThat(ref2.getLocalId()).isEqualTo("SD-7")
-        assertThat(records.getAtt(ref2, "_docNum?num").asInt()).isEqualTo(7)
+        assertThat(records.getAtt(ref2, "$counterAtt?num").asInt()).isEqualTo(7)
     }
 
     @Test
