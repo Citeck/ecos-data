@@ -63,6 +63,7 @@ class DbRecord(
         const val ATT_CUSTOM_ID = "_customId"
 
         const val ASSOC_SRC_ATT_PREFIX = "assoc_src_"
+        const val ASSOC_WORKSPACE_MANAGED_BY = "workspaceManagedBy"
 
         const val ASPECT_VERSIONABLE = "versionable"
 
@@ -788,11 +789,27 @@ class DbRecord(
         val ws = workspace
         if (!ws.isNullOrEmpty() && ws != WS_DEFAULT) {
             val runAs = AuthContext.getCurrentRunAsAuth()
-            if (!ctx.workspaceService.getUserWorkspaces(runAs.getUser()).contains(ws)) {
+            val userWs = ctx.workspaceService.getUserWorkspaces(runAs.getUser())
+            if (!userWs.contains(ws) && !isUserHasAccessByManagedWorkspace(userWs)) {
                 return false
             }
         }
         return permsValue.getRecordPerms().hasReadPerms()
+    }
+
+    private fun isUserHasAccessByManagedWorkspace(userWorkspaces: Set<String>): Boolean {
+        val sourceAssocs = ctx.assocsService.getSourceAssocs(
+            entity.refId,
+            ASSOC_WORKSPACE_MANAGED_BY,
+            DbFindPage.FIRST
+        )
+        if (sourceAssocs.entities.isEmpty()) {
+            return false
+        }
+        val wsRefs = ctx.recordRefService.getEntityRefsByIds(
+            sourceAssocs.entities.map { it.sourceId }
+        )
+        return wsRefs.any { userWorkspaces.contains(it.getLocalId()) }
     }
 
     private fun isCurrentUserHasAttReadPerms(attribute: String): Boolean {
