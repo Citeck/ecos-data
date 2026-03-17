@@ -18,12 +18,12 @@
 
     <properties>
 
-        <revision>1.64.2</revision>
+        <revision>1.64.3</revision>
 
         <ecos.commons.version>3.8.5</ecos.commons.version>
         <ecos.records.version>3.76.12</ecos.records.version>
 
-        <ecos.model-lib.version>2.39.1</ecos.model-lib.version>
+        <ecos.model-lib.version>2.39.2</ecos.model-lib.version>
         <ecos.txn-lib.version>1.4.4</ecos.txn-lib.version>
 
         <ecos.test-commons.version>1.13.0</ecos.test-commons.version>

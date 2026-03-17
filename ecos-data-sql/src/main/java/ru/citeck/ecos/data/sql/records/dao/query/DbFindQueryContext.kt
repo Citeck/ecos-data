@@ -5,7 +5,6 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
-import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
@@ -13,6 +12,7 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
@@ -59,7 +59,7 @@ class DbFindQueryContext(
 
     init {
         mainTypeInfo.getAttributesById().values.forEach {
-            if (DbRecordsUtils.isAssocLikeAttribute(it)) {
+            if (AttributeType.isAssocLike(it.type)) {
                 val typeRef = it.config["typeRef"].asText()
                 if (typeRef.isNotBlank()) {
                     assocsTypes[it.id] = typeRef.toEntityRef().getLocalId()

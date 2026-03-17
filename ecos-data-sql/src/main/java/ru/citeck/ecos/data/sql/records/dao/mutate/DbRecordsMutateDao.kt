@@ -680,6 +680,12 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                         "to change system attributes: $deniedAtts. Record: $globalRef"
                 )
             }
+            if (recAttributes.has(DbRecord.ATT_VISIBLE_IN_WORKSPACES)) {
+                error(
+                    "Permission denied. You should be in system context " +
+                        "to change attribute: ${DbRecord.ATT_VISIBLE_IN_WORKSPACES}. Record: $globalRef"
+                )
+            }
         }
 
         daoCtx.mutAssocHandler.preProcessContentAtts(
@@ -692,7 +698,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         recAttributes.forEach { att, newValue ->
             val attDef: EcosAttColumnDef = mutCtx.typeAttColumnsByAtt[att] ?: return@forEach
-            if (DbRecordsUtils.isAssocLikeAttribute(attDef.attribute)) {
+            if (DbRecordsUtils.isStoredInAssocsTable(attDef.attribute.type)) {
                 registerAssocValuesContainerIfRequired(att, newValue, mutCtx)
             } else if (attDef.attribute.type == AttributeType.OPTIONS && recAttributes.has(att)) {
                 val value = recAttributes[att]
@@ -886,7 +892,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         val allAssocsValues = mutCtx.allAssocsValues
 
         val attDef: EcosAttColumnDef = mutCtx.typeAttColumnsByAtt[att] ?: return
-        if (allAssocsValues.containsKey(att) || !DbRecordsUtils.isAssocLikeAttribute(attDef.attribute)) {
+        if (allAssocsValues.containsKey(att) || !DbRecordsUtils.isStoredInAssocsTable(attDef.attribute.type)) {
             return
         }
         val valuesBefore = if (mutCtx.isNewEntity) {

@@ -60,6 +60,7 @@ class DbRecordsMandatoryAttsTest : DbRecordsTestBase() {
             AttributeType.PERSON -> EntityRef.valueOf("person@admin")
             AttributeType.AUTHORITY_GROUP -> EntityRef.valueOf("authority-group@ECOS_ADMINISTRATORS")
             AttributeType.AUTHORITY -> EntityRef.valueOf("person@admin")
+            AttributeType.ENTITY_REF -> EntityRef.valueOf("abc@def")
             AttributeType.TEXT -> "text"
             AttributeType.OPTIONS -> "option"
             AttributeType.MLTEXT -> MLText("abcd")

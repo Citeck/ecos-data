@@ -232,7 +232,7 @@ class DbRecEventsHandler(private val ctx: DbRecordsDaoCtx) {
         val attsAfter = mutableMapOf<String, Any?>()
 
         attributes.values.forEach {
-            if (!DbRecordsUtils.isAssocLikeAttribute(it)) {
+            if (!DbRecordsUtils.isStoredInAssocsTable(it.type)) {
                 attsBefore[it.id] = recBefore.getAtt(it.id)
                 attsAfter[it.id] = recAfter.getAtt(it.id)
             }

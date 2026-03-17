@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.utils.DbDateUtils
+import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceDesc
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
@@ -147,19 +148,34 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
             ) ?: return RecsQueryRes()
             if (availableWorkspaces.isNotEmpty()) {
                 val existingWsIds = dbWsService.getIdsForExistingWsInAnyOrder(availableWorkspaces)
-                val wsCondition = if (availableWorkspaces.contains("")) {
-                    if (existingWsIds.isEmpty()) {
-                        Predicates.empty(DbEntity.WORKSPACE)
-                    } else {
-                        Predicates.or(
-                            Predicates.empty(DbEntity.WORKSPACE),
-                            Predicates.inVals(DbEntity.WORKSPACE, existingWsIds)
-                        )
+
+                val wsConditions = ArrayList<Predicate>()
+                if (availableWorkspaces.contains("")) {
+                    wsConditions.add(Predicates.empty(DbEntity.WORKSPACE))
+                }
+                if (existingWsIds.isNotEmpty()) {
+                    wsConditions.add(Predicates.inVals(DbEntity.WORKSPACE, existingWsIds))
+                }
+                if (dataService.getTableContext().hasColumn(DbRecord.ATT_VISIBLE_IN_WORKSPACES)) {
+                    val wsEntityRefs = availableWorkspaces
+                        .filter { it.isNotEmpty() }
+                        .map { DbWorkspaceDesc.getRef(it) }
+                    if (wsEntityRefs.isNotEmpty()) {
+                        val wsRefIds = recordRefService.getIdByEntityRefs(wsEntityRefs).filter { it >= 0 }
+                        if (wsRefIds.isNotEmpty()) {
+                            wsConditions.add(
+                                Predicates.inVals(DbRecord.ATT_VISIBLE_IN_WORKSPACES, wsRefIds)
+                            )
+                        }
                     }
-                } else if (existingWsIds.isEmpty()) {
+                }
+                if (wsConditions.isEmpty()) {
                     return RecsQueryRes()
+                }
+                val wsCondition = if (wsConditions.size == 1) {
+                    wsConditions[0]
                 } else {
-                    Predicates.inVals(DbEntity.WORKSPACE, existingWsIds)
+                    Predicates.or(*wsConditions.toTypedArray())
                 }
                 val andPred = if (predicate is AndPredicate) {
                     predicate
@@ -504,7 +520,7 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
                                 )
                             }
                         }
-                        if (newPred is ValuePredicate && DbRecordsUtils.isAssocLikeAttribute(attDef)) {
+                        if (newPred is ValuePredicate && DbRecordsUtils.isStoredInAssocsTable(attDef?.type)) {
                             val assocAtt = newPred.getAttribute()
                             newPred = if (newPred.getValue().isNull()) {
                                 EmptyPredicate(assocAtt)
@@ -726,11 +742,11 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
 
         return DbRecordsQueryUtils.mapAttributePredicates(predicate, true) {
             val attId = it.getAttribute()
-            val attDef = typeData.getAttribute(attId)
+            val attDef = typeData.getAttribute(attId) ?: DbRecord.GLOBAL_ATTS[attId]
             var newPred = it
             if (attId != DbRecord.ATT_ASPECTS &&
                 newPred is ValuePredicate &&
-                (DbRecordsUtils.isAssocLikeAttribute(attDef) || PROPS_WITH_REFS.contains(attId))
+                (AttributeType.isAssocLike(attDef?.type) || PROPS_WITH_REFS.contains(attId))
             ) {
                 newPred = ValuePredicate(
                     newPred.getAttribute(),

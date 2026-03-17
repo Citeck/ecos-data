@@ -36,24 +36,12 @@ object DbRecordsUtils {
         return def.type == AttributeType.ASSOC && def.config.get("child", false)
     }
 
-    fun isAssocLikeAttribute(def: AttributeDef?): Boolean {
-        return isAssocLikeAttribute(def?.type)
-    }
-
-    fun isEntityRefAttribute(type: AttributeType?): Boolean {
-        type ?: return false
-        // EntityRef attribute type may be added in future
-        // if (type == AttributeType.ENTITY_REF) {
-        //     return true
-        // }
-        return isAssocLikeAttribute(type)
-    }
-
-    fun isAssocLikeAttribute(type: AttributeType?): Boolean {
-        type ?: return false
-        return type == AttributeType.ASSOC ||
-            type == AttributeType.PERSON ||
-            type == AttributeType.AUTHORITY_GROUP ||
-            type == AttributeType.AUTHORITY
+    /**
+     * Returns true for association types stored in the ed_associations table
+     * (ASSOC, PERSON, AUTHORITY_GROUP, AUTHORITY).
+     * Does NOT include ENTITY_REF — it stores refs directly in the record table column.
+     */
+    fun isStoredInAssocsTable(type: AttributeType?): Boolean {
+        return AttributeType.isAssocLike(type) && type != AttributeType.ENTITY_REF
     }
 }

@@ -1,7 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao.atts
 
 import ru.citeck.ecos.commons.data.MLText
-import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsContext
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -58,6 +57,6 @@ class DbRecordAttEdge(
     }
 
     override fun isAssociation(): Boolean {
-        return DbRecordsUtils.isAssocLikeAttribute(def)
+        return AttributeType.isAssocLike(def.type)
     }
 }

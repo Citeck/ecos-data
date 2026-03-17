@@ -58,12 +58,12 @@ class DbRecord(
         const val ATT_IS_DRAFT = "_isDraft"
         const val ATT_STAGE = "_stage"
         const val ATT_STATUS_MODIFIED = "_statusModified"
+        const val ATT_VISIBLE_IN_WORKSPACES = "_visibleInWorkspaces"
         const val ATT_PATH_BY_ASSOC = "_pathByAssoc"
         const val ATT_PATH_BY_PARENT = "_pathByParent"
         const val ATT_CUSTOM_ID = "_customId"
 
         const val ASSOC_SRC_ATT_PREFIX = "assoc_src_"
-        const val ASSOC_WORKSPACE_MANAGED_BY = "workspaceManagedBy"
 
         const val ASPECT_VERSIONABLE = "versionable"
 
@@ -122,6 +122,12 @@ class DbRecord(
                 withName(ATT_STATUS_MODIFIED)
                 withType(DbColumnType.DATETIME)
                 withIndex(DbColumnIndexDef(true))
+            },
+            DbColumnDef.create {
+                withName(ATT_VISIBLE_IN_WORKSPACES)
+                withType(DbColumnType.LONG)
+                withMultiple(true)
+                withIndex(DbColumnIndexDef(true))
             }
         )
 
@@ -157,6 +163,11 @@ class DbRecord(
             AttributeDef.create()
                 .withId(ATT_STATUS_MODIFIED)
                 .withType(AttributeType.DATETIME)
+                .build(),
+            AttributeDef.create()
+                .withId(ATT_VISIBLE_IN_WORKSPACES)
+                .withType(AttributeType.ENTITY_REF)
+                .withMultiple(true)
                 .build()
         ).associateBy { it.id }
 
@@ -213,7 +224,7 @@ class DbRecord(
         }
 
         allAttDefs.values.forEach {
-            if (DbRecordsUtils.isAssocLikeAttribute(it) && it.multiple) {
+            if (DbRecordsUtils.isStoredInAssocsTable(it.type) && it.multiple) {
                 val assocs = recData[it.id]
                 if (assocs is Collection<*> && assocs.size == 10) {
                     recData[it.id] = ctx.assocsService.getTargetAssocs(
@@ -241,10 +252,9 @@ class DbRecord(
                     }
 
                     DbColumnType.LONG -> {
-                        if (it.name == RecordConstants.ATT_PARENT) {
-                            attTypes[it.name] = AttributeType.ASSOC
-                        } else if (it.name == ATT_ASPECTS) {
-                            attTypes[it.name] = AttributeType.ASSOC
+                        val globalAtt = GLOBAL_ATTS[it.name]
+                        if (globalAtt != null) {
+                            attTypes[it.name] = globalAtt.type
                         }
                     }
                     else -> {
@@ -263,7 +273,7 @@ class DbRecord(
             assocIdValues.add(entity.modifier)
         }
 
-        attTypes.filter { DbRecordsUtils.isEntityRefAttribute(it.value) }.keys.forEach { attId ->
+        attTypes.filter { AttributeType.isAssocLike(it.value) }.keys.forEach { attId ->
             val value = recData[attId]
             if (value is Iterable<*>) {
                 for (elem in value) {
@@ -295,7 +305,7 @@ class DbRecord(
                     val assocId = recDataEntry.key.substring(0, dotIdx)
                     val innerAssocAttsById = getInnerAssocAtts(assocId)
                     val attDef = innerAssocAttsById[recDataEntry.key.substring(dotIdx + 1)]
-                    if (DbRecordsUtils.isAssocLikeAttribute(attDef)) {
+                    if (AttributeType.isAssocLike(attDef?.type)) {
                         DbAttValueUtils.forEachLongValue(recDataEntry.value) {
                             assocIdValues.add(it)
                         }
@@ -349,7 +359,7 @@ class DbRecord(
     }
 
     private fun convertValue(attId: String, attType: AttributeType, attDef: AttributeDef?, value: Any?): Any? {
-        if (DbRecordsUtils.isEntityRefAttribute(attType)) {
+        if (AttributeType.isAssocLike(attType)) {
             return if (attId == ATT_ASPECTS) {
                 val fullAspects = LinkedHashSet<String>()
                 typeInfo.aspects.forEach {
@@ -576,7 +586,7 @@ class DbRecord(
     fun getAttsForOperations(): Map<String, Any?> {
 
         fun getValueForOperations(attribute: String, value: Any?, attDef: AttributeDef): Any? {
-            return if (attribute != ATT_ASPECTS && DbRecordsUtils.isAssocLikeAttribute(attDef)) {
+            return if (attribute != ATT_ASPECTS && DbRecordsUtils.isStoredInAssocsTable(attDef.type)) {
                 DbAssocAttValuesContainer(
                     entity,
                     ctx,
@@ -613,8 +623,11 @@ class DbRecord(
             nonSystemAttDefs
         }
 
-        val attIds = LinkedHashSet<String>(attDefs.keys)
+        val attIds = LinkedHashSet(attDefs.keys)
         attIds.add(ATT_ASPECTS)
+        if (additionalAtts.containsKey(ATT_VISIBLE_IN_WORKSPACES)) {
+            attIds.add(ATT_VISIBLE_IN_WORKSPACES)
+        }
         attIds.removeIf { !isCurrentUserHasAttReadPerms(it) }
 
         val resultAtts = LinkedHashMap<String, Any?>()
@@ -790,26 +803,22 @@ class DbRecord(
         if (!ws.isNullOrEmpty() && ws != WS_DEFAULT) {
             val runAs = AuthContext.getCurrentRunAsAuth()
             val userWs = ctx.workspaceService.getUserWorkspaces(runAs.getUser())
-            if (!userWs.contains(ws) && !isUserHasAccessByManagedWorkspace(userWs)) {
+            if (!userWs.contains(ws) && !isUserHasAccessByVisibleInWorkspaces(userWs)) {
                 return false
             }
         }
         return permsValue.getRecordPerms().hasReadPerms()
     }
 
-    private fun isUserHasAccessByManagedWorkspace(userWorkspaces: Set<String>): Boolean {
-        val sourceAssocs = ctx.assocsService.getSourceAssocs(
-            entity.refId,
-            ASSOC_WORKSPACE_MANAGED_BY,
-            DbFindPage.FIRST
-        )
-        if (sourceAssocs.entities.isEmpty()) {
-            return false
+    private fun isUserHasAccessByVisibleInWorkspaces(userWorkspaces: Set<String>): Boolean {
+        val visibleInWs = additionalAtts[ATT_VISIBLE_IN_WORKSPACES] ?: return false
+        return when (visibleInWs) {
+            is Collection<*> -> visibleInWs.any { ref ->
+                ref is EntityRef && userWorkspaces.contains(ref.getLocalId())
+            }
+            is EntityRef -> userWorkspaces.contains(visibleInWs.getLocalId())
+            else -> false
         }
-        val wsRefs = ctx.recordRefService.getEntityRefsByIds(
-            sourceAssocs.entities.map { it.sourceId }
-        )
-        return wsRefs.any { userWorkspaces.contains(it.getLocalId()) }
     }
 
     private fun isCurrentUserHasAttReadPerms(attribute: String): Boolean {

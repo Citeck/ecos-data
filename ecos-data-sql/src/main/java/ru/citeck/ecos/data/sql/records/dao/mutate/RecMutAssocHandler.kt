@@ -56,7 +56,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                     contentStorage,
                     creatorRefId
                 )
-            } else if (DbRecordsUtils.isAssocLikeAttribute(column.attribute)) {
+            } else if (DbRecordsUtils.isStoredInAssocsTable(column.attribute.type)) {
                 val assocValue = recAttributes[column.attribute.id]
                 val convertedValue = preProcessContentAssocBeforeMutate(
                     recToMutate.extId,
@@ -144,15 +144,14 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
     fun replaceRefsById(recAttributes: ObjectData, columns: List<EcosAttColumnDef>) {
 
         val entityRefAtts = columns.filter {
-            DbRecordsUtils.isEntityRefAttribute(it.attribute.type)
+            AttributeType.isAssocLike(it.attribute.type)
         }.map { it.attribute.id }
             .toMutableList()
 
-        if (recAttributes.has(RecordConstants.ATT_PARENT)) {
-            entityRefAtts.add(RecordConstants.ATT_PARENT)
-        }
-        if (recAttributes.has(DbRecord.ATT_ASPECTS)) {
-            entityRefAtts.add(DbRecord.ATT_ASPECTS)
+        DbRecord.GLOBAL_ATTS.values.forEach { att ->
+            if (AttributeType.isAssocLike(att.type) && recAttributes.has(att.id)) {
+                entityRefAtts.add(att.id)
+            }
         }
 
         if (entityRefAtts.isNotEmpty()) {
@@ -161,7 +160,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 if (recAttributes.has(attId)) {
                     extractRecordRefs(recAttributes[attId], entityRefs)
                 } else {
-                    OperationType.values().forEach { op ->
+                    OperationType.entries.forEach { op ->
                         val attValue = recAttributes[op.prefix + attId]
                         extractRecordRefs(attValue, entityRefs)
                     }
@@ -179,7 +178,7 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 if (recAttributes.has(attId)) {
                     recAttributes[attId] = replaceRecordRefsToId(recAttributes[attId], idByRef)
                 } else {
-                    OperationType.values().forEach { op ->
+                    OperationType.entries.forEach { op ->
                         val attWithPrefix = op.prefix + attId
                         if (recAttributes.has(attWithPrefix)) {
                             val value = recAttributes[attWithPrefix]

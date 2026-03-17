@@ -2,8 +2,8 @@ package ru.citeck.ecos.data.sql.records.dao.mutate
 
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
-import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
+import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.attributes.dto.computed.ComputedAttType
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
@@ -71,7 +71,7 @@ class MutLocalRecForLocalId(
             }
         }
         val rawValue = attributes[name]
-        if (DbRecordsUtils.isAssocLikeAttribute(attDef)) {
+        if (AttributeType.isAssocLike(attDef.type)) {
             return convertToAssocValue(rawValue)
         }
         return rawValue

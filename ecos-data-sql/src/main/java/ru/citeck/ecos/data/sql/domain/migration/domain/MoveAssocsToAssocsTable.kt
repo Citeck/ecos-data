@@ -54,7 +54,7 @@ class MoveAssocsToAssocsTable : DbDomainMigration {
             val childAssocsAtts = mutableListOf<AttributeDef>()
 
             for (attDef in attributes.values) {
-                if (DbRecordsUtils.isAssocLikeAttribute(attDef)) {
+                if (DbRecordsUtils.isStoredInAssocsTable(attDef.type)) {
                     if (attDef.config["child"].asBoolean()) {
                         childAssocsAtts.add(attDef)
                     } else {
