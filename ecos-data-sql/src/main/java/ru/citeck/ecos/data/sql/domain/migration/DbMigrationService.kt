@@ -32,6 +32,7 @@ class DbMigrationService {
         schemaMigrations.add(AddDeletedAssocsTable())
         schemaMigrations.add(UpdateContentTables())
         schemaMigrations.add(UpdateNullContentCreator())
+        schemaMigrations.add(MakeAttributesExtIdUnique())
     }
 
     fun runDomainMigrations(context: DbDomainMigrationContext) {
@@ -89,6 +90,9 @@ class DbMigrationService {
                     }
                 }
                 context.recordRefService.createTableIfNotExists()
+                context.authorityService.createTableIfNotExists()
+                context.attributesService.createTableIfNotExists()
+                context.workspaceService.createTableIfNotExists()
                 context.assocsService.createTableIfNotExists()
                 context.trashcanService.createTableIfNotExists()
             }

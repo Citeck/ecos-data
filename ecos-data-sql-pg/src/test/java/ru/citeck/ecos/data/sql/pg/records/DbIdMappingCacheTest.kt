@@ -5,24 +5,22 @@ import org.junit.jupiter.api.Test
 import ru.citeck.ecos.data.sql.pg.records.commons.DbRecordsTestBase
 import ru.citeck.ecos.data.sql.records.DbRecordsControlAtts
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
-import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 class DbIdMappingCacheTest : DbRecordsTestBase() {
 
     @Test
-    fun cacheHitAfterLookupTest() {
+    fun lookupAndReverseLookupTest() {
         registerType()
             .withAttributes(AttributeDef.create().withId("text"))
             .register()
 
         val ref = createRecord("text" to "value")
 
-        // First lookup populates cache
         val id = dbRecordRefService.getIdByEntityRef(ref)
         assertThat(id).isGreaterThan(0)
 
-        // Second lookup should return same result (from cache)
+        // Repeated lookup returns same id
         val id2 = dbRecordRefService.getIdByEntityRef(ref)
         assertThat(id2).isEqualTo(id)
 
@@ -34,10 +32,7 @@ class DbIdMappingCacheTest : DbRecordsTestBase() {
     @Test
     fun cacheConsistencyAfterMoveRefTest() {
         registerType()
-            .withAttributes(
-                AttributeDef.create().withId("text"),
-                AttributeDef.create().withId("assoc").withType(AttributeType.ASSOC)
-            )
+            .withAttributes(AttributeDef.create().withId("text"))
             .register()
 
         val ref = createRecord("text" to "abc")
@@ -131,7 +126,7 @@ class DbIdMappingCacheTest : DbRecordsTestBase() {
     }
 
     @Test
-    fun batchLookupCachesResultsTest() {
+    fun batchLookupAndReverseLookupTest() {
         registerType()
             .withAttributes(AttributeDef.create().withId("text"))
             .register()
@@ -145,7 +140,7 @@ class DbIdMappingCacheTest : DbRecordsTestBase() {
         assertThat(ids[0]).isGreaterThan(0)
         assertThat(ids[1]).isGreaterThan(0)
 
-        // Single lookups should return same results (from cache)
+        // Single lookups return same ids
         assertThat(dbRecordRefService.getIdByEntityRef(ref1)).isEqualTo(ids[0])
         assertThat(dbRecordRefService.getIdByEntityRef(ref2)).isEqualTo(ids[1])
 

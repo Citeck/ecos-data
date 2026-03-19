@@ -14,6 +14,7 @@ import ru.citeck.ecos.data.sql.meta.table.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsServiceImpl
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
+import ru.citeck.ecos.data.sql.records.attnames.DbEcosAttributesService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceService
 import ru.citeck.ecos.data.sql.repo.entity.auth.DbAuthorityEntity
@@ -36,7 +37,7 @@ class DbSchemaContext(
     val ecosContext: EcosContext
 ) {
     companion object {
-        const val NEW_SCHEMA_VERSION = 5
+        const val NEW_SCHEMA_VERSION = 6
     }
 
     val schemaMetaService: DbSchemaMetaService = DbSchemaMetaServiceImpl(this)
@@ -58,6 +59,7 @@ class DbSchemaContext(
     val authorityService: DbAuthorityService = DbAuthorityService(authorityDataService)
     val entityPermsService: DbEntityPermsService = DbEntityPermsServiceImpl(this)
     val recordRefService: DbRecordRefService = DbRecordRefService(dataSourceCtx.appName, this)
+    val attributesService: DbEcosAttributesService = DbEcosAttributesService(this)
     val assocsService: DbAssocsService = DbAssocsService(dataSourceCtx.appName, this)
     val workspaceService: DbWorkspaceService = DbWorkspaceService(this)
 
@@ -102,6 +104,8 @@ class DbSchemaContext(
         authorityService.resetColumnsCache()
         entityPermsService.resetColumnsCache()
         recordRefService.resetColumnsCache()
+        attributesService.resetColumnsCache()
+        workspaceService.resetColumnsCache()
         assocsService.resetColumnsCache()
         contentStorageService.resetColumnsCache()
         trashcanService.resetColumnsCache()

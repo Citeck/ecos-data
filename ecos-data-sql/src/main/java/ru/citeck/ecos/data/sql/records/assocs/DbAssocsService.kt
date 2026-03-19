@@ -1,7 +1,6 @@
 package ru.citeck.ecos.data.sql.records.assocs
 
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
-import ru.citeck.ecos.data.sql.records.attnames.DbEcosAttributesService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefEntity
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -42,7 +41,7 @@ class DbAssocsService(
         schemaCtx
     )
 
-    private val attsService = DbEcosAttributesService(schemaCtx)
+    private val attsService = schemaCtx.attributesService
 
     fun getIdsForAtts(attributes: Collection<String>, createIfNotExists: Boolean = false): Map<String, Long> {
         return attsService.getIdsForAtts(attributes, createIfNotExists)

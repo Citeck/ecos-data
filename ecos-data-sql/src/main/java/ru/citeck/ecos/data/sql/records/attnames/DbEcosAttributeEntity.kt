@@ -6,7 +6,7 @@ import ru.citeck.ecos.data.sql.repo.entity.annotation.Index
 import ru.citeck.ecos.data.sql.repo.entity.annotation.Indexes
 
 @Indexes(
-    Index(columns = [DbEcosAttributeEntity.EXT_ID])
+    Index(columns = [DbEcosAttributeEntity.EXT_ID], unique = true)
 )
 class DbEcosAttributeEntity {
 

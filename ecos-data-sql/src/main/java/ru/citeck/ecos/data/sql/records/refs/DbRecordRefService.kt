@@ -5,7 +5,6 @@ import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.DbIdMappingService
-import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.time.Instant
@@ -210,12 +209,6 @@ class DbRecordRefService(
         return ids.map {
             val extId = extIdsByIds[it] ?: error("Ref doesn't found for id $it")
             EntityRef.valueOf(extId.toEntityRef())
-        }
-    }
-
-    fun createTableIfNotExists() {
-        TxnContext.doInTxn {
-            runMigrations(mock = false, diff = true)
         }
     }
 

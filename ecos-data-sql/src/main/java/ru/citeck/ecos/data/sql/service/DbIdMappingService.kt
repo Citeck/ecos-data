@@ -6,6 +6,7 @@ import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
+import ru.citeck.ecos.txn.lib.TxnContext
 
 /**
  * Base service for Long <-> String mapping tables with non-transactional Caffeine cache.
@@ -134,11 +135,8 @@ open class DbIdMappingService<T : Any>(
 
     fun getOrCreateId(extId: String): Long {
         idByExtIdCache.getIfPresent(extId)?.let { return it.effectiveId }
-        val entity = entityMapper.convertToEntity(mapOf(DbEntity.EXT_ID to extId))
-        val id = dataService.saveAtomicallyOrGetExistingByExtId(entity)
-        idByExtIdCache.put(extId, CachedId(id, id))
-        extIdByIdCache.put(id, extId)
-        return id
+        return getOrCreateIds(listOf(extId))[extId]
+            ?: error("Failed to get or create id for '$extId'")
     }
 
     /**
@@ -236,6 +234,12 @@ open class DbIdMappingService<T : Any>(
 
     fun getTableContext(): DbTableContext {
         return dataService.getTableContext()
+    }
+
+    fun createTableIfNotExists() {
+        TxnContext.doInTxn {
+            runMigrations(mock = false, diff = true)
+        }
     }
 
     fun resetColumnsCache() {
