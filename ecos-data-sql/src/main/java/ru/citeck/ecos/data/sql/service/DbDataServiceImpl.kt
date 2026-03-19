@@ -23,7 +23,6 @@ import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapperImpl
-import ru.citeck.ecos.data.sql.repo.entity.auth.DbAuthorityEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
@@ -539,6 +538,10 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return tableCtx
     }
 
+    override fun getEntityMapper(): DbEntityMapper<T> {
+        return entityMapper
+    }
+
     override fun getTableMeta(): DbTableMetaDto {
         val id = tableRef.table
         val metaEntity = tableMetaService?.findByExtId(id) ?: return DbTableMetaDto.create().withId(id).build()
@@ -1000,13 +1003,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
 
         override fun getAuthoritiesIdsMap(authorities: Collection<String>): Map<String, Long> {
-            if (authorities.isEmpty()) {
-                return emptyMap()
-            }
-            val authorityEntities = schemaCtx.authorityDataService.findAll(
-                Predicates.`in`(DbAuthorityEntity.EXT_ID, authorities)
-            )
-            return authorityEntities.associate { it.extId to it.id }
+            return schemaCtx.authorityService.getIdsByExtIds(authorities)
         }
 
         override fun isSameSchema(other: DbTableContext): Boolean {

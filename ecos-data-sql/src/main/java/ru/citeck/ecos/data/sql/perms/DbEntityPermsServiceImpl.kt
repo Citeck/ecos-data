@@ -25,7 +25,7 @@ class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntit
 
     private val dataSource = schemaCtx.dataSourceCtx.dataSource
     private val dataService: DbDataService<DbPermsEntity>
-    private val authorityService = schemaCtx.authorityDataService
+    private val authorityService = schemaCtx.authorityService
 
     init {
         dataService = DbDataServiceImpl(
@@ -131,29 +131,7 @@ class DbEntityPermsServiceImpl(private val schemaCtx: DbSchemaContext) : DbEntit
     }
 
     private fun ensureAuthoritiesExists(authorities: Set<String>): Map<String, Long> {
-
-        if (authorities.isEmpty()) {
-            return emptyMap()
-        }
-
-        val authorityEntities = authorityService.findAll(
-            Predicates.`in`(DbAuthorityEntity.EXT_ID, authorities)
-        )
-        val authoritiesId = mutableMapOf<String, Long>()
-
-        for (authEntity in authorityEntities) {
-            authoritiesId[authEntity.extId] = authEntity.id
-        }
-
-        for (authority in authorities) {
-            if (!authoritiesId.containsKey(authority)) {
-                val authEntity = DbAuthorityEntity()
-                authEntity.extId = authority
-                authoritiesId[authority] = authorityService.save(authEntity, emptyList()).id
-            }
-        }
-
-        return authoritiesId
+        return authorityService.getOrCreateIds(authorities)
     }
 
     override fun isTableExists(): Boolean {

@@ -4,6 +4,7 @@ import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
+import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
@@ -112,4 +113,6 @@ interface DbDataService<T : Any> {
     ): List<String>
 
     fun getTableContext(): DbTableContext
+
+    fun getEntityMapper(): DbEntityMapper<T>
 }

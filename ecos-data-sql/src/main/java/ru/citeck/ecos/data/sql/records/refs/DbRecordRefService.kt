@@ -2,11 +2,9 @@ package ru.citeck.ecos.data.sql.records.refs
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
-import ru.citeck.ecos.data.sql.repo.entity.DbEntity
-import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
-import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.data.sql.service.DbIdMappingService
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
@@ -16,26 +14,21 @@ import java.util.UUID
 class DbRecordRefService(
     private val appName: String,
     schemaCtx: DbSchemaContext
-) {
-
-    companion object {
-        private const val TXN_CACHE_MAX_SIZE = 1000
-
-        private val log = KotlinLogging.logger {}
-    }
-
-    private val idsByRefsCacheTxnKey = Any()
-    private val refsByIdsCacheTxnKey = Any()
-
-    private val refsDataService: DbDataService<DbRecordRefEntity> = DbDataServiceImpl(
+) : DbIdMappingService<DbRecordRefEntity>(
+    DbDataServiceImpl(
         DbRecordRefEntity::class.java,
         DbDataServiceConfig.create {
             withTable(DbRecordRefEntity.TABLE)
         },
         schemaCtx
     )
+) {
 
-    private val moveHistDataService: DbDataService<DbRecordRefMoveHistoryEntity> = DbDataServiceImpl(
+    companion object {
+        private val log = KotlinLogging.logger {}
+    }
+
+    private val moveHistDataService = DbDataServiceImpl(
         DbRecordRefMoveHistoryEntity::class.java,
         DbDataServiceConfig.create {
             withTable(DbRecordRefMoveHistoryEntity.TABLE)
@@ -44,14 +37,14 @@ class DbRecordRefService(
     )
 
     fun migrateRefIfExists(fromRef: EntityRef, toRef: EntityRef, migratedBy: Long): Boolean {
-        val fromRefEntity = refsDataService.findByExtId(
+        val fromRefEntity = findByExtId(
             fixEntityRef(fromRef).toString()
         ) ?: return false
         return moveRef(fromRefEntity, toRef, migratedBy)
     }
 
     fun getMovedToRef(fromRef: EntityRef): EntityRef {
-        val movedToId = refsDataService.findByExtId(fromRef.toString())?.movedTo ?: return EntityRef.EMPTY
+        val movedToId = findByExtId(fromRef.toString())?.movedTo ?: return EntityRef.EMPTY
         return getEntityRefById(movedToId)
     }
 
@@ -60,7 +53,7 @@ class DbRecordRefService(
      * Returns null if migration is not required.
      */
     fun moveRef(fromRefId: Long, toRef: EntityRef, migratedBy: Long): Pair<EntityRef, EntityRef>? {
-        val fromRefEntity = refsDataService.findById(fromRefId) ?: error(
+        val fromRefEntity = findById(fromRefId) ?: error(
             "Ref with id $fromRefId is not registered. " +
                 "Migration to $toRef is not allowed."
         )
@@ -88,7 +81,7 @@ class DbRecordRefService(
         }
         log.info { "Migrate ref from $fromRef to $fixedToRef" }
 
-        val toRefEntity = refsDataService.findByExtId(fixedToRef.toString())
+        val toRefEntity = findByExtId(fixedToRef.toString())
         if (toRefEntity != null) {
             // In db already registered new ref, but maybe we want
             // to return ref back to previous value? Let's check.
@@ -104,33 +97,27 @@ class DbRecordRefService(
 
             // avoid unique extId constraint limit
             toRefEntity.extId = UUID.randomUUID().toString()
-            refsDataService.save(toRefEntity)
+            save(toRefEntity)
 
             fromRefEntity.extId = toRefExtId
-            refsDataService.save(fromRefEntity)
+            save(fromRefEntity)
 
             toRefEntity.extId = fromRefExtId
-            refsDataService.save(toRefEntity)
+            save(toRefEntity)
 
-            getIdsByRefsTxnCache().let {
-                it.remove(fromRef)
-                it.remove(fixedToRef)
-            }
-            getRefsByIdsTxnCache().let {
-                it.remove(fromRefEntity.id)
-                it.remove(toRefEntity.id)
-            }
+            invalidateById(fromRefEntity.id)
+            invalidateById(toRefEntity.id)
         } else {
 
             val fromRefStr = fromRefEntity.extId
 
             fromRefEntity.extId = targetRefStr
-            refsDataService.save(fromRefEntity)
+            save(fromRefEntity)
 
             val oldRefEntity = DbRecordRefEntity()
             oldRefEntity.extId = fromRef.toString()
             oldRefEntity.movedTo = fromRefEntity.id
-            refsDataService.save(oldRefEntity)
+            save(oldRefEntity)
 
             val historyEntity = DbRecordRefMoveHistoryEntity()
             historyEntity.movedBy = movedBy
@@ -141,8 +128,7 @@ class DbRecordRefService(
 
             moveHistDataService.save(historyEntity)
 
-            getIdsByRefsTxnCache().remove(fromRef)
-            getRefsByIdsTxnCache().remove(fromRefEntity.id)
+            invalidateById(fromRefEntity.id)
         }
 
         return true
@@ -152,18 +138,18 @@ class DbRecordRefService(
      * Get or create record identifier for reference
      */
     fun getOrCreateIdByEntityRef(ref: EntityRef): Long {
-        return getOrCreateIdByEntityRefs(listOf(ref))[0]
+        return getOrCreateId(fixEntityRef(ref).toString())
     }
 
     /**
      * Get or create record references
      */
     fun getOrCreateIdByEntityRefsMap(refs: Collection<EntityRef>): Map<EntityRef, Long> {
-        val refsList = refs as? List<EntityRef> ?: refs.toList()
-        val ids = getOrCreateIdByEntityRefs(refsList)
+        val fixedRefs = refs.map { fixEntityRef(it) }
+        val idsByExtId = getOrCreateIds(fixedRefs.map { it.toString() })
         val result = LinkedHashMap<EntityRef, Long>()
-        for ((idx, ref) in refsList.withIndex()) {
-            result[ref] = ids[idx]
+        for (ref in fixedRefs) {
+            idsByExtId[ref.toString()]?.let { result[ref] = it }
         }
         return result
     }
@@ -172,28 +158,13 @@ class DbRecordRefService(
      * Get or create record references
      */
     fun getOrCreateIdByEntityRefs(refs: List<EntityRef>): List<Long> {
-        val txnCache = getIdsByRefsTxnCache()
-        val refsIds = getIdByEntityRefs(refs)
-        val result = LongArray(refs.size)
-        for ((idx, id) in refsIds.withIndex()) {
-            if (id == -1L) {
-                val entity = DbRecordRefEntity()
-                val ref = fixEntityRef(refs[idx])
-                entity.extId = ref.toString()
-                val createdId = refsDataService.saveAtomicallyOrGetExistingByExtId(entity)
-                result[idx] = createdId
-                if (txnCache.size < TXN_CACHE_MAX_SIZE) {
-                    txnCache[ref] = createdId
-                }
-            } else {
-                result[idx] = id
-            }
-        }
-        return result.toList()
+        val fixedRefs = refs.map { fixEntityRef(it) }
+        val idsByExtId = getOrCreateIds(fixedRefs.map { it.toString() })
+        return fixedRefs.map { idsByExtId[it.toString()] ?: error("Ref not found: $it") }
     }
 
     fun getIdByEntityRef(ref: EntityRef): Long {
-        return getIdByEntityRefs(listOf(ref))[0]
+        return getIdByExtId(fixEntityRef(ref).toString())
     }
 
     /**
@@ -201,12 +172,13 @@ class DbRecordRefService(
      */
     fun getIdByEntityRefsMap(refs: Collection<EntityRef>): Map<EntityRef, Long> {
         val refsList = refs as? List<EntityRef> ?: refs.toList()
-        val ids = getIdByEntityRefs(refsList)
+        val fixedRefs = refsList.map { fixEntityRef(it) }
+        val idsByExtId = getIdsByExtIds(fixedRefs.map { it.toString() })
         val result = LinkedHashMap<EntityRef, Long>()
-        for (i in refs.indices) {
-            val id = ids[i]
-            if (id != -1L) {
-                result[refsList[i]] = id
+        for (ref in fixedRefs) {
+            val id = idsByExtId[ref.toString()]
+            if (id != null) {
+                result[ref] = id
             }
         }
         return result
@@ -216,109 +188,35 @@ class DbRecordRefService(
      * Get record identifiers for references or -1 if reference is not registered
      */
     fun getIdByEntityRefs(refs: List<EntityRef>): List<Long> {
-
         val fixedRefs = refs.map { fixEntityRef(it) }
-
-        val refsToQuery = HashSet<EntityRef>()
-        val idsByRefs = HashMap<EntityRef, Long>()
-
-        val txnCache = getIdsByRefsTxnCache()
-        if (txnCache.isEmpty()) {
-            refsToQuery.addAll(fixedRefs)
-        } else {
-            for (ref in fixedRefs) {
-                val idFromCache = txnCache[ref]
-                if (idFromCache != null) {
-                    idsByRefs[ref] = idFromCache
-                } else {
-                    refsToQuery.add(ref)
-                }
-            }
-        }
-
-        val predicate = Predicates.`in`(
-            DbEntity.EXT_ID,
-            refsToQuery.map { it.toString() }
-        )
-        val entities = refsDataService.findAll(predicate)
-        for (entity in entities) {
-            val ref = EntityRef.valueOf(entity.extId)
-            val refId = entity.movedTo ?: entity.id
-            idsByRefs[ref] = refId
-            if (txnCache.size < TXN_CACHE_MAX_SIZE) {
-                txnCache[ref] = refId
-            }
-        }
-        return fixedRefs.map { idsByRefs[it] ?: -1 }
+        val idsByExtId = getIdsByExtIds(fixedRefs.map { it.toString() })
+        return fixedRefs.map { idsByExtId[it.toString()] ?: -1 }
     }
 
     fun getEntityRefsByIdsMap(ids: Collection<Long>): Map<Long, EntityRef> {
-        if (ids.isEmpty()) {
-            return emptyMap()
-        }
-        val idsList = ids.toList()
-        val refs = getEntityRefsByIds(idsList)
-        val result = HashMap<Long, EntityRef>(ids.size)
-        for (idx in ids.indices) {
-            result[idsList[idx]] = refs[idx]
-        }
-        return result
+        return getExtIdsByIds(ids).mapValues { EntityRef.valueOf(it.value.toEntityRef()) }
     }
 
     fun getEntityRefById(id: Long): EntityRef {
-        return getEntityRefsByIds(listOf(id))[0]
+        val extId = getExtIdById(id)
+        if (extId.isEmpty()) {
+            error("Ref doesn't found for id $id")
+        }
+        return EntityRef.valueOf(extId.toEntityRef())
     }
 
     fun getEntityRefsByIds(ids: List<Long>): List<EntityRef> {
-
-        val txnCache = getRefsByIdsTxnCache()
-
-        val idsToQuery = HashSet<Long>()
-        val refsByIds = HashMap<Long, EntityRef>()
-        if (txnCache.isEmpty()) {
-            idsToQuery.addAll(ids)
-        } else {
-            for (id in ids) {
-                val ref = txnCache[id]
-                if (ref != null) {
-                    refsByIds[id] = ref
-                } else {
-                    idsToQuery.add(id)
-                }
-            }
+        val extIdsByIds = getExtIdsByIds(ids)
+        return ids.map {
+            val extId = extIdsByIds[it] ?: error("Ref doesn't found for id $it")
+            EntityRef.valueOf(extId.toEntityRef())
         }
-
-        val entities = refsDataService.findByIds(idsToQuery)
-        if (entities.size != idsToQuery.size) {
-            error("RecordRef's count doesn't match. Ids: $ids Refs: ${entities.map { it.extId }}")
-        }
-
-        for (entity in entities) {
-            val ref = EntityRef.valueOf(entity.extId.toEntityRef())
-            refsByIds[entity.id] = ref
-            if (txnCache.size < TXN_CACHE_MAX_SIZE) {
-                txnCache[entity.id] = ref
-            }
-        }
-        return ids.map { refsByIds[it] ?: error("Ref doesn't found for id $it") }
     }
 
     fun createTableIfNotExists() {
         TxnContext.doInTxn {
-            refsDataService.runMigrations(mock = false, diff = true)
+            runMigrations(mock = false, diff = true)
         }
-    }
-
-    fun runMigrations(mock: Boolean, diff: Boolean): List<String> {
-        return refsDataService.runMigrations(mock, diff)
-    }
-
-    fun resetColumnsCache() {
-        refsDataService.resetColumnsCache()
-    }
-
-    fun getDataService(): DbDataService<DbRecordRefEntity> {
-        return refsDataService
     }
 
     private fun fixEntityRef(entityRef: EntityRef): EntityRef {
@@ -329,13 +227,5 @@ class DbRecordRefService(
             return EntityRef.create("alfresco", "", entityRef.getLocalId())
         }
         return entityRef.withDefaultAppName(appName)
-    }
-
-    private fun getRefsByIdsTxnCache(): MutableMap<Long, EntityRef> {
-        return TxnContext.getTxnOrNull()?.getData(refsByIdsCacheTxnKey) { HashMap() } ?: HashMap()
-    }
-
-    private fun getIdsByRefsTxnCache(): MutableMap<EntityRef, Long> {
-        return TxnContext.getTxnOrNull()?.getData(idsByRefsCacheTxnKey) { HashMap() } ?: HashMap()
     }
 }

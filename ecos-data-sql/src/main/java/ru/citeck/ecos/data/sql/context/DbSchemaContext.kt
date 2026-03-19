@@ -17,6 +17,7 @@ import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceService
 import ru.citeck.ecos.data.sql.repo.entity.auth.DbAuthorityEntity
+import ru.citeck.ecos.data.sql.repo.entity.auth.DbAuthorityService
 import ru.citeck.ecos.data.sql.schema.DbSchemaListener
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
@@ -47,13 +48,14 @@ class DbSchemaContext(
             .build(),
         this
     )
-    val authorityDataService: DbDataService<DbAuthorityEntity> = DbDataServiceImpl(
+    private val authorityDataService: DbDataService<DbAuthorityEntity> = DbDataServiceImpl(
         DbAuthorityEntity::class.java,
         DbDataServiceConfig.create()
             .withTable(DbAuthorityEntity.TABLE)
             .build(),
         this
     )
+    val authorityService: DbAuthorityService = DbAuthorityService(authorityDataService)
     val entityPermsService: DbEntityPermsService = DbEntityPermsServiceImpl(this)
     val recordRefService: DbRecordRefService = DbRecordRefService(dataSourceCtx.appName, this)
     val assocsService: DbAssocsService = DbAssocsService(dataSourceCtx.appName, this)
@@ -97,7 +99,7 @@ class DbSchemaContext(
         schemaMetaService.resetColumnsCache()
         contentService.resetColumnsCache()
         tableMetaService.resetColumnsCache()
-        authorityDataService.resetColumnsCache()
+        authorityService.resetColumnsCache()
         entityPermsService.resetColumnsCache()
         recordRefService.resetColumnsCache()
         assocsService.resetColumnsCache()

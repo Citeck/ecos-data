@@ -150,7 +150,7 @@ class DbAssocsService(
                 ScalarToken("/")
             )
         )
-        val refsTableCtx = schemaCtx.recordRefService.getDataService().getTableContext()
+        val refsTableCtx = schemaCtx.recordRefService.getTableContext()
 
         val query = DbFindQuery.create()
             .withPredicate(Predicates.eq(DbAssocEntity.TARGET_ID, targetId))
@@ -188,7 +188,7 @@ class DbAssocsService(
                 ScalarToken("@")
             )
         )
-        val refsTableCtx = schemaCtx.recordRefService.getDataService().getTableContext()
+        val refsTableCtx = schemaCtx.recordRefService.getTableContext()
 
         val query = DbFindQuery.create()
             .withPredicate(
