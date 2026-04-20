@@ -18,6 +18,7 @@ import ru.citeck.ecos.records3.record.dao.atts.RecordAttsDao
 import ru.citeck.ecos.records3.record.request.RequestContext
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
+import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.util.*
 
 class DbRecordsContentAttTest : DbRecordsTestBase() {
@@ -369,5 +370,44 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
 
         assertThat(records.getAtt(contentRecord, "_has._content?bool").asBoolean()).isTrue()
         assertThat(records.getAtt(record, "_has._content?bool").asBoolean()).isTrue()
+    }
+
+    @Test
+    fun previewInfoForTextualContentTest() {
+        val contentAttName = "content"
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId(contentAttName)
+                    withType(AttributeType.CONTENT)
+                }
+            )
+        )
+
+        val checkTextualPreview: (MimeType, String) -> Unit = { mimeType, ext ->
+            val rec = createRecord(
+                contentAttName to createTempRecord(
+                    "sample.$ext",
+                    mimeType,
+                    "content".toByteArray()
+                )
+            )
+
+            val previewInfo = records.getAtt(rec, "$contentAttName.previewInfo?json")
+
+            assertThat(previewInfo.isObject()).isTrue()
+            val originalUrl = previewInfo["originalUrl"].asText()
+            assertThat(originalUrl).isNotBlank
+            assertThat(previewInfo["url"].asText()).isEqualTo(originalUrl)
+            assertThat(previewInfo["mimetype"].asText()).isEqualTo(mimeType.toString())
+            assertThat(previewInfo["ext"].asText()).isEqualTo(ext)
+        }
+
+        checkTextualPreview(MimeTypes.TXT_PLAIN, "txt")
+        checkTextualPreview(MimeTypes.TXT_CSV, "csv")
+        checkTextualPreview(MimeTypes.TXT_HTML, "html")
+        checkTextualPreview(MimeTypes.APP_JSON, "json")
+        checkTextualPreview(MimeTypes.APP_XML, "xml")
+        checkTextualPreview(MimeTypes.APP_YAML, "yaml")
     }
 }

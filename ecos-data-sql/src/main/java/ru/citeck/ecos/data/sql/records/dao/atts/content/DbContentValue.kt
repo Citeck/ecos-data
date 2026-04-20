@@ -121,7 +121,7 @@ class DbContentValue(
             ATT_BYTES -> contentData.readContent { it.readBytes() }
             ATT_CONVERTED_TO -> ConvertedToValue()
             "dataKey" -> {
-                return if (AuthContext.isRunAsSystem() || AuthContext.isRunAsAdmin()) {
+                if (AuthContext.isRunAsSystem() || AuthContext.isRunAsAdmin()) {
                     contentData.getDataKey()
                 } else {
                     null
@@ -144,51 +144,57 @@ class DbContentValue(
                 val origMimeType = contentData.getMimeType()
                 val origExtension = contentData.getName().substringAfterLast(".", "")
 
-                val previewData = if (
+                val previewData = when {
                     origMimeType.getType() == "image" ||
-                    origMimeType == MimeTypes.APP_PDF
-                ) {
-                    PreviewData(origUrl, origExtension, origMimeType)
-                } else if (isDefaultContent) {
+                        origMimeType == MimeTypes.APP_PDF ||
+                        origMimeType.isTextual()
+                    -> {
+                        PreviewData(origUrl, origExtension, origMimeType)
+                    }
 
-                    val attsToLoad = listOf(
-                        ATT_URL,
-                        ATT_EXTENSION,
-                        ATT_MIME_TYPE
-                    )
+                    isDefaultContent -> {
 
-                    // todo: replace runAsSystem to assoc with thumbnails
-                    val atts = AuthContext.runAsSystem {
-                        ctx.recordsService.queryOne(
-                            RecordsQuery.create {
-                                withEcosType("thumbnail")
-                                withQuery(
-                                    Predicates.and(
-                                        Predicates.eq(RecordConstants.ATT_PARENT, currentEntityRef),
-                                        Predicates.eq("mimeType", MimeTypes.APP_PDF_TEXT),
-                                        Predicates.eq("srcAttribute", RecordConstants.ATT_CONTENT)
+                        val attsToLoad = listOf(
+                            ATT_URL,
+                            ATT_EXTENSION,
+                            ATT_MIME_TYPE
+                        )
+
+                        // todo: replace runAsSystem to assoc with thumbnails
+                        val atts = AuthContext.runAsSystem {
+                            ctx.recordsService.queryOne(
+                                RecordsQuery.create {
+                                    withEcosType("thumbnail")
+                                    withQuery(
+                                        Predicates.and(
+                                            Predicates.eq(RecordConstants.ATT_PARENT, currentEntityRef),
+                                            Predicates.eq("mimeType", MimeTypes.APP_PDF_TEXT),
+                                            Predicates.eq("srcAttribute", RecordConstants.ATT_CONTENT)
+                                        )
                                     )
-                                )
-                            },
-                            attsToLoad.associateWith {
-                                "${RecordConstants.ATT_CONTENT}.$it"
-                            }
-                        )
+                                },
+                                attsToLoad.associateWith {
+                                    "${RecordConstants.ATT_CONTENT}.$it"
+                                }
+                            )
+                        }
+                        if (atts == null || attsToLoad.any { atts[it].asText().isEmpty() }) {
+                            null
+                        } else {
+                            PreviewData(
+                                atts[ATT_URL].asText(),
+                                atts[ATT_EXTENSION].asText(),
+                                MimeTypes.parse(atts[ATT_MIME_TYPE].asText())
+                            )
+                        }
                     }
-                    if (atts == null || attsToLoad.any { atts[it].asText().isEmpty() }) {
+
+                    else -> {
                         null
-                    } else {
-                        PreviewData(
-                            atts[ATT_URL].asText(),
-                            atts[ATT_EXTENSION].asText(),
-                            MimeTypes.parse(atts[ATT_MIME_TYPE].asText())
-                        )
                     }
-                } else {
-                    null
                 } ?: return null
 
-                return DataValue.createObj()
+                DataValue.createObj()
                     .set(PREVIEW_INFO_ATT_URL, previewData.url)
                     .set(PREVIEW_INFO_ATT_EXT, previewData.ext)
                     .set(PREVIEW_INFO_ATT_MIME_TYPE, previewData.mimeType)
