@@ -33,6 +33,7 @@ class DbMigrationService {
         schemaMigrations.add(UpdateContentTables())
         schemaMigrations.add(UpdateNullContentCreator())
         schemaMigrations.add(MakeAttributesExtIdUnique())
+        schemaMigrations.add(EnsureSystemTablesExist())
     }
 
     fun runDomainMigrations(context: DbDomainMigrationContext) {

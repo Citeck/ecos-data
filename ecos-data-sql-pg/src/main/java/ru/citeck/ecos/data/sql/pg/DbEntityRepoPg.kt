@@ -189,6 +189,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val preparedValues = prepareValuesForDb(columns, typesConverter, listOf(entity))
 
+        if (preparedValues.isEmpty()) {
+            error(
+                "Can't insert entity into ${context.getTableRef().fullName}: " +
+                    "no columns matching entity keys. " +
+                    "Table is not initialized or required columns are missing. " +
+                    "Entity keys: ${entity.keys}, table columns: ${context.getColumns().map { it.name }}"
+            )
+        }
+
         val query = StringBuilder("INSERT INTO ")
             .append(context.getTableRef().fullName)
             .append(" (")
