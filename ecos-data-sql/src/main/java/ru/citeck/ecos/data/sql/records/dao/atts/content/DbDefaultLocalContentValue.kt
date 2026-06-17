@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.records.dao.atts.content
 
+import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.data.sql.content.DbEcosContentData
 import ru.citeck.ecos.records3.record.atts.value.impl.AttValueDelegate
 import ru.citeck.ecos.webapp.api.mime.MimeType
@@ -30,6 +31,13 @@ class DbDefaultLocalContentValue(
     override fun getAtt(name: String): Any? {
         if (name == DbContentValue.ATT_NAME) {
             return getNameWithExt()
+        }
+        if (name == DbContentValue.ATT_PREVIEW_INFO) {
+            val info = super.getAtt(name)
+            if (info is DataValue && info.isObject()) {
+                info["originalName"] = getNameWithExt()
+            }
+            return info
         }
         return super.getAtt(name)
     }

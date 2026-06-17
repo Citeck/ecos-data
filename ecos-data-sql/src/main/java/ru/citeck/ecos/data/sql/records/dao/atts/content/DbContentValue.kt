@@ -59,6 +59,16 @@ class DbContentValue(
 
     private val currentEntityRef: EntityRef = ctx.getGlobalRef(recId)
 
+    // For the default content attribute, build content URLs against the system `_content`
+    // attribute so the download endpoint substitutes the entity display name into
+    // Content-Disposition. Named (non-default) content attributes keep their own attribute in the URL.
+    private val urlAttribute: String
+        get() = if (isDefaultContent) {
+            RecordConstants.ATT_CONTENT
+        } else {
+            attribute
+        }
+
     val contentData: DbEcosContentData by lazy {
         val service = ctx.contentService ?: error("Content service is null")
         service.getContent(contentDbId) ?: error("Content doesn't found by id '$id'")
@@ -117,7 +127,7 @@ class DbContentValue(
             ATT_ENCODING -> contentData.getEncoding()
             ATT_CREATED -> contentData.getCreated()
             ATT_CREATOR -> contentData.getCreator()
-            ATT_URL -> ctx.recContentHandler.createContentUrl(currentEntityRef, attribute)
+            ATT_URL -> ctx.recContentHandler.createContentUrl(currentEntityRef, urlAttribute)
             ATT_BYTES -> contentData.readContent { it.readBytes() }
             ATT_CONVERTED_TO -> ConvertedToValue()
             "dataKey" -> {
@@ -140,7 +150,7 @@ class DbContentValue(
             }
             ATT_PREVIEW_INFO -> {
 
-                val origUrl = ctx.recContentHandler.createContentUrl(currentEntityRef, attribute)
+                val origUrl = ctx.recContentHandler.createContentUrl(currentEntityRef, urlAttribute)
                 val origMimeType = contentData.getMimeType()
                 val origExtension = contentData.getName().substringAfterLast(".", "")
 
@@ -209,7 +219,7 @@ class DbContentValue(
     override fun getAs(type: String): Any? {
         if (type == CONTENT_DATA) {
             return ContentData(
-                ctx.recContentHandler.createContentUrl(recId, attribute),
+                ctx.recContentHandler.createContentUrl(recId, urlAttribute),
                 contentData.getName(),
                 contentData.getSize(),
                 currentEntityRef,

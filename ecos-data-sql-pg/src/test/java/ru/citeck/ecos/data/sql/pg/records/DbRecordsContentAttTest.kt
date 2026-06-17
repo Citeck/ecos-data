@@ -373,6 +373,41 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
     }
 
     @Test
+    fun defaultContentUrlRoundTripTest() {
+        val contentAttName = "content"
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId(contentAttName)
+                    withType(AttributeType.CONTENT)
+                }
+            )
+        )
+
+        val textContent = "text-file-sample content\n"
+        val fileName = "text-file-sample.txt"
+
+        val ref = createRecord(
+            contentAttName to createTempRecord(fileName, MimeTypes.TXT_PLAIN, textContent.toByteArray())
+        )
+
+        val readContent = { recordsDao.getContent(ref.getLocalId(), contentAttName)?.readContent { IOUtils.readAsString(it) } }
+        assertThat(readContent()).isEqualTo(textContent)
+
+        // content-data URL of the default content is built against `_content`
+        val contentDataJson = records.getAtt(ref, "${RecordConstants.ATT_CONTENT}._as.content-data?json")
+        assertThat(contentDataJson["url"].asText()).contains("att=${RecordConstants.ATT_CONTENT}")
+
+        // simulate "save without re-uploading the file": round-trip the same content-data back
+        updateRecord(ref, RecordConstants.ATT_CONTENT to contentDataJson)
+
+        // content must be preserved, not erased
+        assertThat(readContent()).isEqualTo(textContent)
+        assertThat(records.getAtt(ref, "$contentAttName.size").asInt())
+            .isEqualTo(textContent.toByteArray(Charsets.UTF_8).size)
+    }
+
+    @Test
     fun previewInfoForTextualContentTest() {
         val contentAttName = "content"
         registerAtts(

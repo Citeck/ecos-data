@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
+import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
 import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
@@ -178,8 +179,13 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         if (urlData.isTextual() && urlData.isNotEmpty()) {
 
             val recordContentUrl = createContentUrl(record.extId, attribute)
+            // The default-content value serializes its URL against the system `_content` attribute
+            // (so downloads get the entity display name). An unchanged default-content field therefore
+            // round-trips that `_content` URL on save — accept it as a match too, otherwise the
+            // idempotency check fails and the existing content gets silently erased.
+            val defaultContentUrl = createContentUrl(record.extId, RecordConstants.ATT_CONTENT)
 
-            if (urlData.asText() == recordContentUrl) {
+            if (urlData.asText() == recordContentUrl || urlData.asText() == defaultContentUrl) {
                 return record.attributes[attribute]
             }
             if (urlData.asText().startsWith(DataUriUtil.DATA_PREFIX)) {
