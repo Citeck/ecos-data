@@ -21,11 +21,31 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!--
+          compile (was test): the in-mem DbRecordsTestBackend SPI (InMemRecordsTestBackend + its
+          META-INF/services registration) now lives in src/main, so ecos-data-test must be on the
+          compile classpath. It is a local (same-repo, ${project.version}) module, so compile is fine -
+          versions can't diverge. External shared deps are still scoped provided (see parent pom).
+        -->
         <dependency>
             <groupId>ru.citeck.ecos.data</groupId>
             <artifactId>ecos-data-test</artifactId>
             <version>${project.version}</version>
-            <scope>test</scope>
+            <scope>compile</scope>
+        </dependency>
+
+        <!--
+          InMemRecordsTestBackend (src/main) implements DbRecordsTestBackendFactory, whose signature
+          uses EcosWebAppApiMock from ecos-test-commons, so it must be on the compile classpath. The
+          parent pom declares ecos-test-commons directly at test scope (which, being a direct dep,
+          would otherwise win over the transitive one from ecos-data-test); override it to provided -
+          available at compile, not leaked as a transitive compile dep, version pinned by the parent.
+        -->
+        <dependency>
+            <groupId>ru.citeck.ecos.test.commons</groupId>
+            <artifactId>ecos-test-commons</artifactId>
+            <version>${ecos.test-commons.version}</version>
+            <scope>provided</scope>
         </dependency>
 
     </dependencies>
