@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>ecos-data-test</artifactId>
+
+    <parent>
+        <groupId>ru.citeck.ecos.data</groupId>
+        <artifactId>ecos-data-project</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <dependencies>
+
+        <dependency>
+            <groupId>ru.citeck.ecos.data</groupId>
+            <artifactId>ecos-data-sql</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!--
+          The contract-test base classes live in src/main so that consumer backends depend on this
+          module at scope=test (pattern from ecos-webapp-commons' ecos-webapp-lib-spring-test).
+          The test libraries the bases use are therefore declared at compile scope here.
+        -->
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+        </dependency>
+
+        <!--
+          No scope override needed: src/main here compiles against ecos-test-commons (test scope is
+          on this module's own compile classpath), and every consumer already has ecos-test-commons
+          on its test classpath via the root POM. Contrast javafaker below, which the parent declares
+          only at test scope and is NOT inherited by consumers in compile scope, so it needs explicit
+          compile scope here.
+        -->
+        <dependency>
+            <groupId>ru.citeck.ecos.test.commons</groupId>
+            <artifactId>ecos-test-commons</artifactId>
+            <version>${ecos.test-commons.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.javafaker</groupId>
+            <artifactId>javafaker</artifactId>
+            <version>1.0.2</version>
+            <scope>compile</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+
+        <plugins>
+
+            <plugin>
+                <groupId>com.github.gantsign.maven</groupId>
+                <artifactId>ktlint-maven-plugin</artifactId>
+            </plugin>
+
+            <plugin>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-maven-plugin</artifactId>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+            </plugin>
+
+        </plugins>
+
+    </build>
+
+</project>

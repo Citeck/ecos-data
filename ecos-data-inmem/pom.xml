@@ -5,20 +5,13 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>ecos-data-sql-pg</artifactId>
+    <artifactId>ecos-data-inmem</artifactId>
 
     <parent>
         <groupId>ru.citeck.ecos.data</groupId>
         <artifactId>ecos-data-project</artifactId>
         <version>${revision}</version>
     </parent>
-
-    <properties>
-
-        <commons-dbcp2.version>2.12.0_citeck</commons-dbcp2.version>
-        <javax.jta.version>2.0.1</javax.jta.version>
-
-    </properties>
 
     <dependencies>
 
@@ -29,29 +22,9 @@
         </dependency>
 
         <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>provided</scope>
-        </dependency>
-
-        <dependency>
             <groupId>ru.citeck.ecos.data</groupId>
             <artifactId>ecos-data-test</artifactId>
             <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-dbcp2</artifactId>
-            <version>${commons-dbcp2.version}</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>jakarta.transaction</groupId>
-            <artifactId>jakarta.transaction-api</artifactId>
-            <version>${javax.jta.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -76,17 +49,12 @@
                 <artifactId>maven-source-plugin</artifactId>
             </plugin>
 
-            <plugin>
-                <artifactId>maven-jar-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>test-jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-
+            <!--
+              Re-run the backend-neutral record-level contract suite (now in ecos-data-test) against
+              the in-memory backend. dependenciesToScan makes surefire discover the test classes
+              inside the ecos-data-test jar; the system property selects the in-mem backend via the
+              DbRecordsTestBackend SPI. The in-mem module's own tests keep running too.
+            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -95,16 +63,15 @@
                         <dependency>ru.citeck.ecos.data:ecos-data-test</dependency>
                     </dependenciesToScan>
                     <!--
-                      Scope what runs: the shared record-level suite scanned from ecos-data-test,
-                      plus this module's own PG-only engine tests. Mirrors ecos-data-inmem's config
-                      so neither backend can accidentally double-run a stale class in another package.
+                      Only the backend-neutral record-level contract suite is re-run on in-mem.
+                      The in-mem module's own tests (ru.citeck.ecos.data.sql.inmem.*) are included too.
                     -->
                     <includes>
                         <include>ru.citeck.ecos.data.sql.test.records.**</include>
-                        <include>ru.citeck.ecos.data.sql.pg.**</include>
+                        <include>ru.citeck.ecos.data.sql.inmem.**</include>
                     </includes>
                     <systemPropertyVariables>
-                        <ecos.data.test.backend>pg</ecos.data.test.backend>
+                        <ecos.data.test.backend>inmem</ecos.data.test.backend>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

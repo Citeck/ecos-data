@@ -18,7 +18,7 @@
 
     <properties>
 
-        <revision>1.67.0</revision>
+        <revision>1.68.0</revision>
 
         <ecos.commons.version>3.8.5</ecos.commons.version>
         <ecos.records.version>3.76.12</ecos.records.version>
@@ -95,7 +95,9 @@
 
     <modules>
         <module>ecos-data-sql</module>
+        <module>ecos-data-test</module>
         <module>ecos-data-sql-pg</module>
+        <module>ecos-data-inmem</module>
     </modules>
 
 </project>
