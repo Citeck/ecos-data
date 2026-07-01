@@ -42,13 +42,6 @@
             <artifactId>assertj-core</artifactId>
         </dependency>
 
-        <!--
-          No scope override needed: src/main here compiles against ecos-test-commons (test scope is
-          on this module's own compile classpath), and every consumer already has ecos-test-commons
-          on its test classpath via the root POM. Contrast javafaker below, which the parent declares
-          only at test scope and is NOT inherited by consumers in compile scope, so it needs explicit
-          compile scope here.
-        -->
         <dependency>
             <groupId>ru.citeck.ecos.test.commons</groupId>
             <artifactId>ecos-test-commons</artifactId>
@@ -59,7 +52,13 @@
             <groupId>com.github.javafaker</groupId>
             <artifactId>javafaker</artifactId>
             <version>1.0.2</version>
-            <scope>compile</scope>
+            <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.yaml</groupId>
+                    <artifactId>snakeyaml</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
     </dependencies>
