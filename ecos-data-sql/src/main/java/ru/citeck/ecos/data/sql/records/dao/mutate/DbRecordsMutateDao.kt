@@ -1482,7 +1482,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         currentUserRefId: Long,
         isMutationFromChild: Boolean,
         perms: DbRecordPermsContext? = null,
-        multiAssocValues: Map<String, DbAssocAttValuesContainer> = emptyMap()
+        multiAssocValues: MutableMap<String, DbAssocAttValuesContainer> = LinkedHashMap()
     ): List<DbColumnDef> {
 
         if (atts.isEmpty() && multiAssocValues.isEmpty()) {
@@ -1504,6 +1504,12 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                         "recordRef" to daoCtx.getGlobalRef(recToMutate.extId)
                     )
                 )
+                // Values of attributes stored in the assocs table are applied from the
+                // container prepared before the permissions check and shared with the later
+                // mutation stages (computed atts are evaluated in the system context, where
+                // perms are null). Drop the denied value from it, otherwise these stages will
+                // apply the change which was refused here.
+                multiAssocValues.remove(dbColumnDef.name)
 
                 if (isMutationFromChild) {
                     throw exception
