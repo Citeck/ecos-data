@@ -45,6 +45,25 @@ object DbRecordsControlAtts {
     const val UPDATE_CALCULATED_ATTS = "__updateCalculatedAtts"
 
     /**
+     * Change the type of an existing record to the specified one.
+     * Allowed only when the new type has the same sourceId as the current one,
+     * so the record stays in the same records DAO.
+     * Requires write permissions for the record.
+     *
+     * This is a standalone operation: all other attributes of the mutation are ignored
+     * except [ru.citeck.ecos.model.lib.status.constants.StatusConstants.ATT_STATUS],
+     * [DISABLE_AUDIT] and [DISABLE_EVENTS].
+     *
+     * The status attribute passed with a blank value resets the record status. This is
+     * required to change type to the type without statuses in its model.
+     *
+     * When [DISABLE_AUDIT] is set, audit attributes (_created, _creator, _modified,
+     * _modifier, _statusModified) passed by the same mutation are applied to the record:
+     * they are processed before the type updating and their values are saved by it.
+     */
+    const val UPDATE_TYPE = "__updateType"
+
+    /**
      * Atomically increment the specified counter attribute(s).
      * Accepts a single attribute name or a list of attribute names.
      */

@@ -15,6 +15,7 @@ abstract class DbRecordsListenerAdapter : DbRecordsListener {
     override fun onContentChanged(event: DbRecordContentChangedEvent) {}
     override fun onDraftStatusChanged(event: DbRecordDraftStatusChangedEvent) {}
     override fun onStatusChanged(event: DbRecordStatusChangedEvent) {}
+    override fun onTypeChanged(event: DbRecordTypeChangedEvent) {}
 }
 
 interface DbRecordsListener {
@@ -34,7 +35,32 @@ interface DbRecordsListener {
     fun onContentChanged(event: DbRecordContentChangedEvent)
 
     fun onStatusChanged(event: DbRecordStatusChangedEvent)
+
+    /**
+     * Declared with a default empty body, so direct implementations of this interface
+     * (e.g. DbRecordsEcosDefaultEventsEmitter in ecos-webapp-commons) stay compilable
+     * without changes. The default body is not a JVM default method (the build doesn't
+     * use -Xjvm-default), so such implementations must be recompiled against this
+     * version of ecos-data.
+     */
+    fun onTypeChanged(event: DbRecordTypeChangedEvent) {}
 }
+
+/**
+ * Emitted when the record type was changed by
+ * [ru.citeck.ecos.data.sql.records.DbRecordsControlAtts.UPDATE_TYPE] control attribute.
+ * [typeDef] and [aspects] describe the state after the change, as in other events,
+ * and [before] is the type of the record before the change.
+ */
+class DbRecordTypeChangedEvent(
+    val localRef: EntityRef,
+    val globalRef: EntityRef,
+    val isDraft: Boolean,
+    val record: Any,
+    val typeDef: TypeInfo,
+    val aspects: List<AspectInfo>,
+    val before: TypeInfo
+)
 
 class DbRecordRefChangedEvent(
     val before: EntityRef,

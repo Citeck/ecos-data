@@ -31,6 +31,7 @@ import ru.citeck.ecos.data.sql.records.dao.delete.DbRecordsDeleteDao
 import ru.citeck.ecos.data.sql.records.dao.mutate.operation.OperationType
 import ru.citeck.ecos.data.sql.records.dao.perms.DbRecordsPermsDao
 import ru.citeck.ecos.data.sql.records.listener.DbRecordRefChangedEvent
+import ru.citeck.ecos.data.sql.records.listener.DbRecordTypeChangedEvent
 import ru.citeck.ecos.data.sql.records.perms.DbRecordAllowedAllPerms
 import ru.citeck.ecos.data.sql.records.perms.DbRecordPermsContext
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
@@ -79,6 +80,13 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             RecordConstants.ATT_CREATOR,
             RecordConstants.ATT_MODIFIED,
             RecordConstants.ATT_MODIFIER,
+        )
+
+        private val TYPE_UPDATE_CONFLICTING_ATTS = listOf(
+            DbRecordsControlAtts.UPDATE_ID,
+            DbRecordsControlAtts.UPDATE_WORKSPACE,
+            DbRecordsControlAtts.UPDATE_PERMISSIONS,
+            DbRecordsControlAtts.UPDATE_CALCULATED_ATTS
         )
 
         private val MUT_ATTS_MAPPING = mapOf(
@@ -526,6 +534,15 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             }
         }
 
+        // Record type updating
+
+        handleTypeUpdate(
+            mutCtx = mutCtx,
+            aspectRefsInDb = aspectRefsInDb,
+            nowInstant = nowInstant,
+            disableAudit = disableAudit
+        )?.let { return it }
+
         if (entityToMutate.extId.isEmpty()) {
             entityToMutate.extId = UUID.randomUUID().toString()
         }
@@ -804,14 +821,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         if (recAttributes.has(StatusConstants.ATT_STATUS)) {
             val newStatus = recAttributes[StatusConstants.ATT_STATUS].asText()
             if (newStatus.isNotBlank()) {
-                if (typeInfo.model.statuses.any { it.id == newStatus }) {
-                    entityToMutate.status = newStatus
-                } else {
-                    error(
-                        "Unknown status: '$newStatus'. " +
-                            "Available statuses: ${typeInfo.model.statuses.joinToString { it.id }}. Record: $globalRef"
-                    )
-                }
+                checkStatusSupportedByType(newStatus, typeInfo, globalRef)
+                entityToMutate.status = newStatus
             }
         }
 
@@ -984,30 +995,31 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         val mutatedColumns = HashMap<String, DbColumnDef>()
 
+        // stage is calculated by the status, so a blank status resets it too
         val entityStatus = entity.status
+        var stageId = ""
         if (entityStatus.isNotBlank()) {
-            var stageId = ""
             for ((idx, stage) in typeInfo.model.stages.withIndex()) {
                 if (stage.statuses.contains(entityStatus)) {
                     stageId = stage.id.ifBlank { idx.toString() }
                     break
                 }
             }
-            var stageChanged = false
-            if (stageId.isNotEmpty()) {
-                if (entity.attributes[DbRecord.ATT_STAGE] != stageId) {
-                    entity.attributes[DbRecord.ATT_STAGE] = stageId
-                    stageChanged = true
-                }
-            } else {
-                if (entity.attributes[DbRecord.ATT_STAGE] != null) {
-                    entity.attributes[DbRecord.ATT_STAGE] = null
-                    stageChanged = true
-                }
+        }
+        var stageChanged = false
+        if (stageId.isNotEmpty()) {
+            if (entity.attributes[DbRecord.ATT_STAGE] != stageId) {
+                entity.attributes[DbRecord.ATT_STAGE] = stageId
+                stageChanged = true
             }
-            if (stageChanged) {
-                mutatedColumns[DbRecord.COLUMN_STAGE.name] = DbRecord.COLUMN_STAGE
+        } else {
+            if (entity.attributes[DbRecord.ATT_STAGE] != null) {
+                entity.attributes[DbRecord.ATT_STAGE] = null
+                stageChanged = true
             }
+        }
+        if (stageChanged) {
+            mutatedColumns[DbRecord.COLUMN_STAGE.name] = DbRecord.COLUMN_STAGE
         }
 
         if (component == null) {
@@ -1197,6 +1209,18 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         val isRunAsSystemOrAdmin = mutCtx.isRunAsSystemOrAdmin
         val entityToMutate = mutCtx.entityToMutate
 
+        if (record.attributes.has(DbRecordsControlAtts.UPDATE_TYPE)) {
+            // type updating is processed after permissions checking, so other control
+            // operations would silently win over it if they are used in the same mutation
+            val conflictingAtt = TYPE_UPDATE_CONFLICTING_ATTS.find { record.attributes.has(it) }
+            if (conflictingAtt != null) {
+                error(
+                    "${DbRecordsControlAtts.UPDATE_TYPE} can't be used with '$conflictingAtt' " +
+                        "in the same mutation. Record: ${daoCtx.getGlobalRef(record.id)}"
+                )
+            }
+        }
+
         if (record.attributes[DbRecordsControlAtts.UPDATE_PERMISSIONS].asBoolean()) {
             if (!isRunAsSystemOrAdmin) {
                 error("Permissions update allowed only for admin. Record: $record sourceId: '${config.id}'")
@@ -1372,16 +1396,37 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     "Record: ${mutCtx.record} sourceId: '${config.id}'"
             )
         }
+        return recomputeAttsAndSave(
+            mutCtx = mutCtx,
+            entityBeforeMutation = mutCtx.entityToMutate.copy(),
+            extraColumns = emptyList(),
+            changedAssocs = ArrayList()
+        )
+    }
+
+    /**
+     * Recompute calculated attributes, display name and stage for the type from [mutCtx]
+     * and save the entity if anything was changed.
+     *
+     * @return entity after save or entity without changes if nothing was changed
+     */
+    private fun recomputeAttsAndSave(
+        mutCtx: MutationContext,
+        entityBeforeMutation: DbEntity,
+        extraColumns: List<DbColumnDef>,
+        changedAssocs: MutableList<DbAssocRefsDiff>
+    ): DbEntity {
+
         val entityToMutate = mutCtx.entityToMutate
 
         val fullColumns = ArrayList(mutCtx.typeColumns)
+        fullColumns.addAll(extraColumns)
+
         var recAfterSave: DbEntity = entityToMutate
         dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
             AuthContext.runAsSystem {
 
-                val entityBeforeMutation = entityToMutate.copy()
                 val fullColumnNames = fullColumns.mapTo(HashSet()) { it.name }
-                val changedAssocs = ArrayList<DbAssocRefsDiff>()
 
                 val mutatedColumns = computeAttsToStore(
                     computedAttsComponent,
@@ -1419,6 +1464,180 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         return recAfterSave
     }
 
+    /**
+     * Change record type by [DbRecordsControlAtts.UPDATE_TYPE] control attribute.
+     * Type may be changed only to the type with the same sourceId, so the record
+     * stays in the current records DAO. Write permissions are checked before this
+     * method is called and the current type is always taken from the database.
+     *
+     * Status may be changed by the same mutation. When the status attribute is passed
+     * explicitly with a blank value, the status is reset - this is the way to move
+     * a record with status to a type without statuses in its model.
+     *
+     * @return record after type changing or null if type updating was not requested
+     */
+    private fun handleTypeUpdate(
+        mutCtx: MutationContext,
+        aspectRefsInDb: Set<EntityRef>,
+        nowInstant: Instant,
+        disableAudit: Boolean
+    ): DbEntity? {
+
+        val record = mutCtx.record
+        if (!record.attributes.has(DbRecordsControlAtts.UPDATE_TYPE)) {
+            return null
+        }
+        val entityToMutate = mutCtx.entityToMutate
+
+        val newTypeId = EntityRef.valueOf(
+            record.attributes[DbRecordsControlAtts.UPDATE_TYPE].asText()
+        ).getLocalId()
+
+        if (newTypeId.isBlank()) {
+            error(
+                "${DbRecordsControlAtts.UPDATE_TYPE} attribute is empty. " +
+                    "Record: ${daoCtx.getGlobalRef(record.id)}"
+            )
+        }
+        if (mutCtx.isNewEntity) {
+            error(
+                "Type can't be changed for a new record. " +
+                    "Type: '$newTypeId' sourceId: '${config.id}'"
+            )
+        }
+        if (mutCtx.computeContext.counterAttsToUpdate.isNotEmpty()) {
+            error(
+                "${DbRecordsControlAtts.UPDATE_TYPE} can't be used with " +
+                    "'${DbRecordsControlAtts.UPDATE_COUNTER_ATT}' in the same mutation. " +
+                    "Record: ${daoCtx.getGlobalRef(record.id)}"
+            )
+        }
+
+        val currentTypeInfo = mutCtx.typeInfo
+        val isTypeChanged = newTypeId != currentTypeInfo.id
+
+        // status may be changed by the same mutation. Blank value of the explicitly passed
+        // status attribute means that the status should be reset
+        val newStatus = if (record.attributes.has(StatusConstants.ATT_STATUS)) {
+            record.attributes[StatusConstants.ATT_STATUS].asText()
+        } else {
+            entityToMutate.status
+        }
+        if (!isTypeChanged && newStatus == entityToMutate.status) {
+            return entityToMutate
+        }
+
+        validateTypeIdForDao(newTypeId)
+        val newTypeInfo = ecosTypeService.getTypeInfoNotNull(newTypeId)
+
+        val globalRef = daoCtx.getGlobalRef(entityToMutate.extId)
+
+        if (newTypeInfo.sourceId != currentTypeInfo.sourceId) {
+            error(
+                "Type can be changed only to the type with the same sourceId. " +
+                    "Record: $globalRef " +
+                    "Before: '${currentTypeInfo.id}' (sourceId: '${currentTypeInfo.sourceId}') " +
+                    "After: '${newTypeInfo.id}' (sourceId: '${newTypeInfo.sourceId}')"
+            )
+        }
+        if (newTypeInfo.workspaceScope != currentTypeInfo.workspaceScope) {
+            error(
+                "Type can't be changed to the type with another workspace scope. " +
+                    "Record: $globalRef " +
+                    "Before: '${currentTypeInfo.id}' (${currentTypeInfo.workspaceScope}) " +
+                    "After: '${newTypeInfo.id}' (${newTypeInfo.workspaceScope})"
+            )
+        }
+
+        if (newStatus.isNotBlank()) {
+            checkStatusSupportedByType(newStatus, newTypeInfo, globalRef)
+        }
+
+        val entityBeforeMutation = entityToMutate.copy()
+
+        entityToMutate.type = recordRefService.getOrCreateIdByEntityRef(ModelUtils.getTypeRef(newTypeId))
+
+        val extraColumns = ArrayList<DbColumnDef>()
+        if (newStatus != entityToMutate.status) {
+            entityToMutate.status = newStatus
+            if (!disableAudit) {
+                entityToMutate.attributes[DbRecord.ATT_STATUS_MODIFIED] = nowInstant
+            }
+        }
+        // status modified date may also be set explicitly before this method when audit is disabled
+        if (entityToMutate.attributes.containsKey(DbRecord.ATT_STATUS_MODIFIED)) {
+            extraColumns.add(DbRecord.COLUMN_STATUS_MODIFIED)
+        }
+        if (!disableAudit) {
+            entityToMutate.modified = nowInstant
+            entityToMutate.modifier = mutCtx.currentUserRefId
+        }
+
+        val newTypeMutCtx = createMutationContextForType(mutCtx, newTypeInfo, aspectRefsInDb)
+
+        val changedAssocs = ArrayList<DbAssocRefsDiff>()
+        val recAfterSave = recomputeAttsAndSave(
+            mutCtx = newTypeMutCtx,
+            entityBeforeMutation = entityBeforeMutation,
+            extraColumns = extraColumns,
+            changedAssocs = changedAssocs
+        )
+
+        if (!mutCtx.disableEvents) {
+            val metaAfterSave = daoCtx.getEntityMeta(recAfterSave)
+            if (isTypeChanged) {
+                val typeChangedEvent = DbRecordTypeChangedEvent(
+                    localRef = metaAfterSave.localRef,
+                    globalRef = metaAfterSave.globalRef,
+                    isDraft = metaAfterSave.isDraft,
+                    record = DbRecord(daoCtx, recAfterSave),
+                    typeDef = newTypeInfo,
+                    aspects = metaAfterSave.aspectsInfo,
+                    before = currentTypeInfo
+                )
+                daoCtx.listeners.forEach {
+                    it.onTypeChanged(typeChangedEvent)
+                }
+            }
+            daoCtx.recEventsHandler.emitEventsAfterMutation(
+                entityBeforeMutation,
+                recAfterSave,
+                metaAfterSave,
+                false,
+                changedAssocs
+            )
+        }
+
+        return recAfterSave
+    }
+
+    private fun createMutationContextForType(
+        mutCtx: MutationContext,
+        typeInfo: TypeInfo,
+        aspectRefsInDb: Set<EntityRef>
+    ): MutationContext {
+
+        val newMutCtx = MutationContext(
+            record = mutCtx.record,
+            typeInfo = typeInfo,
+            disableEvents = mutCtx.disableEvents,
+            entityToMutate = mutCtx.entityToMutate,
+            typeAttColumns = ArrayList(ecosTypeService.getColumnsForTypes(listOf(typeInfo))),
+            currentUser = mutCtx.currentUser,
+            currentUserRefId = mutCtx.currentUserRefId,
+            isRunAsSystemOrAdmin = mutCtx.isRunAsSystemOrAdmin,
+            isNewEntity = mutCtx.isNewEntity,
+            extIdFromAtts = mutCtx.extIdFromAtts,
+            computeContext = mutCtx.computeContext
+        )
+        if (aspectRefsInDb.isNotEmpty()) {
+            for (column in ecosTypeService.getColumnsForAspects(aspectRefsInDb)) {
+                newMutCtx.addTypeAttColumn(column)
+            }
+        }
+        return newMutCtx
+    }
+
     private fun setNotPresentAttsAsNull(data: ObjectData, attributes: List<AttributeDef>): ObjectData {
         for (att in attributes) {
             if (!data.has(att.id)) {
@@ -1426,6 +1645,45 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             }
         }
         return data
+    }
+
+    private fun checkStatusSupportedByType(status: String, typeInfo: TypeInfo, globalRef: EntityRef) {
+        if (typeInfo.model.statuses.none { it.id == status }) {
+            error(
+                "Status '$status' is not supported by type '${typeInfo.id}'. " +
+                    "Available statuses: ${typeInfo.model.statuses.joinToString { it.id }}. " +
+                    "Record: $globalRef"
+            )
+        }
+    }
+
+    /**
+     * Check that the type may be used for records of this DAO.
+     */
+    private fun validateTypeIdForDao(typeId: String) {
+        if (EntityRef.isNotEmpty(config.typeRef) &&
+            !ecosTypeService.isSubType(typeId, config.typeRef.getLocalId())
+        ) {
+            throw I18nRuntimeException(
+                messageKey = "ecos-data.invalid-type.subtype",
+                messageArgs = mapOf(
+                    "typeId" to typeId,
+                    "sourceId" to config.id,
+                    "cfgType" to config.typeRef.getLocalId()
+                )
+            )
+        }
+        if (!config.typeRef.getLocalId().contains(IdInWs.WS_DELIM) &&
+            typeId.contains(IdInWs.WS_DELIM)
+        ) {
+            throw I18nRuntimeException(
+                messageKey = "ecos-data.invalid-type.ws-scoped",
+                messageArgs = mapOf(
+                    "typeId" to typeId,
+                    "sourceId" to config.id
+                )
+            )
+        }
     }
 
     private fun getTypeIdForRecord(record: LocalRecordAtts): String {
@@ -1437,29 +1695,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         val typeId = EntityRef.valueOf(typeRefStr).getLocalId()
         if (typeId.isNotBlank()) {
-            if (EntityRef.isNotEmpty(config.typeRef) &&
-                !ecosTypeService.isSubType(typeId, config.typeRef.getLocalId())
-            ) {
-                throw I18nRuntimeException(
-                    messageKey = "ecos-data.invalid-type.subtype",
-                    messageArgs = mapOf(
-                        "typeId" to typeId,
-                        "sourceId" to config.id,
-                        "cfgType" to config.typeRef.getLocalId()
-                    )
-                )
-            }
-            if (!config.typeRef.getLocalId().contains(IdInWs.WS_DELIM) &&
-                typeId.contains(IdInWs.WS_DELIM)
-            ) {
-                throw I18nRuntimeException(
-                    messageKey = "ecos-data.invalid-type.ws-scoped",
-                    messageArgs = mapOf(
-                        "typeId" to typeId,
-                        "sourceId" to config.id
-                    )
-                )
-            }
+            validateTypeIdForDao(typeId)
             return typeId
         }
 

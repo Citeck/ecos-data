@@ -88,6 +88,11 @@ class DbRecord(
         val COMPUTABLE_OPTIONAL_COLUMNS = listOf(
             DOC_NUM_COLUMN
         )
+        val COLUMN_STATUS_MODIFIED = DbColumnDef.create {
+            withName(ATT_STATUS_MODIFIED)
+            withType(DbColumnType.DATETIME)
+            withIndex(DbColumnIndexDef(true))
+        }
         val OPTIONAL_COLUMNS = listOf(
             DOC_NUM_COLUMN,
             DbColumnDef.create {
@@ -118,11 +123,7 @@ class DbRecord(
                 withMultiple(true)
                 withIndex(DbColumnIndexDef(true))
             },
-            DbColumnDef.create {
-                withName(ATT_STATUS_MODIFIED)
-                withType(DbColumnType.DATETIME)
-                withIndex(DbColumnIndexDef(true))
-            },
+            COLUMN_STATUS_MODIFIED,
             DbColumnDef.create {
                 withName(ATT_VISIBLE_IN_WORKSPACES)
                 withType(DbColumnType.LONG)
