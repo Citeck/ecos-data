@@ -37,6 +37,23 @@ The suite is the set of `DbRecordsTestBase` subclasses plus the shared base clas
 (`DbRecordsTestBase`) and the helpers `TypeRegistration` and `ContentUtils` — all in package
 `ru.citeck.ecos.data.sql.test.records`.
 
+### Global ecos-data props in tests
+
+Global library properties (`DbEcosDataProps`, in a webapp loaded from the `ecos.webapp.data`
+configuration section) are exposed by `DataMockFactory.dataProps`. Assign it **before** `setUp()`
+runs — i.e. from the `init` block of the test class — because `DbDataSourceContext` is created in
+`setUp()`:
+
+```kotlin
+class MyTest : DbRecordsTestBase() {
+    init {
+        dataProps = DbEcosDataProps(
+            assocs = DbEcosDataProps.AssocsProps(maxCountToEditByFullValuesList = 5)
+        )
+    }
+}
+```
+
 ### Backend SPI
 
 The suite delegates all backend-specific concerns to a pluggable SPI:

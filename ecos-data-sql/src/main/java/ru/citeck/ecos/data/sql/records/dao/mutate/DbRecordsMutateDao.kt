@@ -14,6 +14,7 @@ import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.ecostype.EcosAttColumnDef
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
+import ru.citeck.ecos.data.sql.props.DbEcosDataProps
 import ru.citeck.ecos.data.sql.records.DbRecordsControlAtts
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
@@ -112,6 +113,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
     private var computedAttsComponent: DbComputedAttsComponent? = null
 
     private lateinit var entityPermsService: DbEntityPermsService
+    private lateinit var dataProps: DbEcosDataProps
 
     private lateinit var allowedRecordIdPattern: String
     private lateinit var allowedRecordIdRegex: Regex
@@ -136,6 +138,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         contentDao = daoCtx.contentDao
         workspaceService = daoCtx.workspaceService
         wsDbService = dataService.getTableContext().getWorkspaceService()
+
+        dataProps = daoCtx.tableCtx.getSchemaCtx().dataSourceCtx.props
 
         contentService = daoCtx.contentService
         computedAttsComponent = daoCtx.computedAttsComponent
@@ -906,19 +910,21 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         if (allAssocsValues.containsKey(att) || !DbRecordsUtils.isStoredInAssocsTable(attDef.attribute.type)) {
             return
         }
+        val maxAssocsToEditByFullValuesList = dataProps.assocs.maxCountToEditByFullValuesList
         val valuesBefore = if (mutCtx.isNewEntity) {
             emptyList()
         } else {
             assocsService.getTargetAssocs(
                 sourceId = mutCtx.entityToMutate.refId,
                 attribute = att,
-                page = DbFindPage(0, 100)
+                page = DbFindPage(0, maxAssocsToEditByFullValuesList + 1)
             ).entities.map { it.targetId }
         }
-        if (valuesBefore.size == 100) {
+        if (valuesBefore.size > maxAssocsToEditByFullValuesList) {
             error(
                 "You can't edit large associations by providing full values list. " +
                     "Please, use att_add_... and att_rem_... to work with it. " +
+                    "Max values count to edit by full values list: $maxAssocsToEditByFullValuesList. " +
                     "Assoc: $att Record: ${daoCtx.getGlobalRef(mutCtx.entityToMutate.extId)}"
             )
         }

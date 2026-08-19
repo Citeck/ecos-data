@@ -18,6 +18,7 @@ import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
+import ru.citeck.ecos.data.sql.props.DbEcosDataProps
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.DbRecordsDaoConfig
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocsService
@@ -235,6 +236,12 @@ open class DataMockFactory : AutoCloseable {
 
     lateinit var ecosContext: EcosContext
 
+    /**
+     * Global ecos-data properties. Should be changed before [setUp] call
+     * (e.g. in init block of test class) to take effect.
+     */
+    var dataProps: DbEcosDataProps = DbEcosDataProps()
+
     private var mainCtxInitialized = false
     private val registeredRecordsDao = ArrayList<RecordsDaoTestCtx>()
 
@@ -371,7 +378,8 @@ open class DataMockFactory : AutoCloseable {
                 backend.dataServiceFactory,
                 DbMigrationService(),
                 webAppApi,
-                ecosContext
+                ecosContext,
+                props = dataProps
             )
 
             records = recordsServiceFactory.recordsService
