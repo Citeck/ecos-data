@@ -5,7 +5,9 @@ import ru.citeck.ecos.context.lib.ctx.EcosContext
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.DbContentServiceImpl
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
-import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl
+import ru.citeck.ecos.data.sql.content.upload.DbChunkedUploadService
+import ru.citeck.ecos.data.sql.content.upload.DbContentUploadSessionService
+import ru.citeck.ecos.data.sql.content.upload.DbContentUploadSessionServiceImpl
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.meta.schema.DbSchemaMetaService
@@ -37,7 +39,7 @@ class DbSchemaContext(
     val ecosContext: EcosContext
 ) {
     companion object {
-        const val NEW_SCHEMA_VERSION = 7
+        const val NEW_SCHEMA_VERSION = 8
     }
 
     val schemaMetaService: DbSchemaMetaService = DbSchemaMetaServiceImpl(this)
@@ -65,8 +67,11 @@ class DbSchemaContext(
 
     private val metaSchemaVersionKey = listOf("schema-version")
 
-    val contentStorageService: EcosContentStorageService = EcosContentStorageServiceImpl(webAppApi, this)
-    val contentService: DbContentService = DbContentServiceImpl(contentStorageService, this)
+    val contentStorageService: EcosContentStorageService = dataSourceCtx.createContentStorageService(this)
+
+    val contentService: DbContentService = DbContentServiceImpl(this)
+    val uploadSessionService: DbContentUploadSessionService = DbContentUploadSessionServiceImpl(this)
+    val chunkedUploadService: DbChunkedUploadService = DbChunkedUploadService(this)
 
     val trashcanService: DbTrashcanService = DbTrashcanServiceImpl(this)
 
@@ -109,6 +114,7 @@ class DbSchemaContext(
         assocsService.resetColumnsCache()
         contentStorageService.resetColumnsCache()
         trashcanService.resetColumnsCache()
+        uploadSessionService.resetColumnsCache()
     }
 
     fun isSchemaExists(): Boolean {

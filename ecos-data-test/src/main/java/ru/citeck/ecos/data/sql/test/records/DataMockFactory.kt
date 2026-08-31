@@ -10,6 +10,10 @@ import ru.citeck.ecos.commons.utils.NameUtils
 import ru.citeck.ecos.commons.utils.TmplUtils
 import ru.citeck.ecos.context.lib.ctx.EcosContext
 import ru.citeck.ecos.context.lib.ctx.EcosContextImpl
+import ru.citeck.ecos.data.sql.content.ContentMimeTypeDetector
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceFactory
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
@@ -169,6 +173,9 @@ open class DataMockFactory : AutoCloseable {
                                     .build(),
                                 AttributeDef.create()
                                     .withId("srcAttribute")
+                                    .build(),
+                                AttributeDef.create()
+                                    .withId("status")
                                     .build(),
                                 AttributeDef.create()
                                     .withId("content")
@@ -379,7 +386,11 @@ open class DataMockFactory : AutoCloseable {
                 DbMigrationService(),
                 webAppApi,
                 ecosContext,
-                props = dataProps
+                props = dataProps,
+                mimeTypeDetector = mimeTypeDetectorOverride,
+                contentStorageServiceFactory = EcosContentStorageServiceFactory { schemaCtx ->
+                    contentStorageServiceOverride ?: EcosContentStorageServiceImpl(webAppApi, schemaCtx)
+                }
             )
 
             records = recordsServiceFactory.recordsService
@@ -419,6 +430,24 @@ open class DataMockFactory : AutoCloseable {
 
         mainCtxInitialized = true
     }
+
+    /**
+     * Test seam only, for suites (e.g. `ChunkedUploadContractTest`) that need a fake
+     * [ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService] wired into the schema
+     * used by [createRecordsDao] instead of the real remote-routing implementation. Set (if needed)
+     * before [setUp] runs - e.g. from the test subclass's `init` block, since JUnit5 runs superclass
+     * `@BeforeEach` methods (this class's [setUp]) before the subclass's own.
+     */
+    var contentStorageServiceOverride: EcosContentStorageService? = null
+
+    /**
+     * Test seam only, for suites (e.g. `ChunkedUploadContractTest`) that need a
+     * [ru.citeck.ecos.data.sql.content.ContentMimeTypeDetector] behind the data source context this
+     * factory builds; leaving it null gives the detector-less default. Set (if needed) before
+     * [setUp] runs - e.g. from the test subclass's `init` block, since the context is built there and
+     * never replaced afterwards.
+     */
+    var mimeTypeDetectorOverride: ContentMimeTypeDetector? = null
 
     private fun getOrCreateSchemaCtx(schema: String): DbSchemaContext {
         return schemaContexts.computeIfAbsent(schema) {
@@ -706,7 +735,9 @@ open class DataMockFactory : AutoCloseable {
         mainCtx.cleanRecords()
     }
 
-    /** The id of the backend the SPI resolved (for the `assume*` skip messages). */
+    /**
+     * The id of the backend the SPI resolved, used in the `assume*` skip messages.
+     */
     private val activeBackendId: String
         get() = System.getProperty(DbRecordsTestBackends.BACKEND_PROP, DbRecordsTestBackends.DEFAULT_BACKEND)
 

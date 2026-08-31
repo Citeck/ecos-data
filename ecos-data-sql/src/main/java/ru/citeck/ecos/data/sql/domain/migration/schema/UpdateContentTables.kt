@@ -21,7 +21,19 @@ class UpdateContentTables : DbSchemaMigration {
     }
 
     private fun migrateLocalStorage(context: DbSchemaContext) {
-        val localStorageService = (context.contentStorageService as EcosContentStorageServiceImpl).getLocalStorageService()
+        // Reachable whenever the schema's content storage service is not the built-in one - either a
+        // test double installed through DataMockFactory.contentStorageServiceOverride, or a real
+        // service an application supplied through EcosContentStorageServiceFactory. Neither owns the
+        // local-storage table this migration rewrites, so skipping is the right answer for both.
+        val storageService = context.contentStorageService as? EcosContentStorageServiceImpl
+        if (storageService == null) {
+            log.warn {
+                "Content storage service is not an EcosContentStorageServiceImpl " +
+                    "(${context.contentStorageService::class.java.name}), local storage migration is skipped"
+            }
+            return
+        }
+        val localStorageService = storageService.getLocalStorageService()
         val localStorageDataService = localStorageService.getDataService()
         if (!localStorageDataService.isTableExists()) {
             return

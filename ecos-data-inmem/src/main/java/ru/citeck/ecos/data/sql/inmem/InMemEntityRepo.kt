@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.inmem
 import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
+import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.inmem.datasource.InMemDataSource
 import ru.citeck.ecos.data.sql.inmem.query.InMemQueryEngine
@@ -10,6 +11,7 @@ import ru.citeck.ecos.data.sql.inmem.query.PredicateEvaluator
 import ru.citeck.ecos.data.sql.inmem.query.QueryEvalContext
 import ru.citeck.ecos.data.sql.inmem.query.RowEvalContext
 import ru.citeck.ecos.data.sql.inmem.store.InMemTable
+import ru.citeck.ecos.data.sql.repo.DbConditionalUpdate
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -33,6 +35,10 @@ import java.util.UUID
  *    (array thereof for multiple columns, except JSON) exactly like the PG repo's read/write path.
  *  - **insertIfNoConflictByExtId**: returns null when a row with the same ext-id already exists,
  *    otherwise inserts and returns the new id.
+ *  - **updateByExtIdIfMatches**: compares the expected columns against the stored row and rewrites it
+ *    only on a full match. The single statement the PG backend relies on is replaced by a
+ *    read-compare-write sequence, which is equally atomic here because
+ *    [ru.citeck.ecos.data.sql.inmem.datasource.InMemDataSource] serializes write transactions.
  *  - **find**: delegates to [InMemQueryEngine], which honours the full [DbFindQuery] (predicate,
  *    sort, paging, association joins, computed expressions, grouping/aggregation and PG NULL/empty
  *    + perms semantics).
@@ -190,6 +196,70 @@ class InMemEntityRepo : DbEntityRepo {
         return insertOne(context, table, context.getTypesConverter(), entity)
     }
 
+    override fun updateByExtIdIfMatches(
+        context: DbTableContext,
+        extId: String,
+        expected: Map<String, Any?>,
+        newValues: Map<String, Any?>
+    ): Boolean {
+
+        checkAuth(context)
+
+        if (newValues.isEmpty()) {
+            error("New values are empty. Table: ${context.getTableRef().fullName}")
+        }
+        // an empty condition would turn a compare-and-set into an unconditional overwrite by ext id
+        if (expected.isEmpty()) {
+            error("Expected values are empty. Table: ${context.getTableRef().fullName}")
+        }
+        val setColumns = DbConditionalUpdate.getColumns(context, newValues, "new values")
+        val expectedColumns = DbConditionalUpdate.getColumns(context, expected, "expected values")
+
+        // InMemDataSource serializes write transactions, so read-compare-write here is as atomic
+        // as the single UPDATE statement the PG backend runs.
+        val table = getTable(context) ?: return false
+        val id = table.getIdByExtId(extId) ?: return false
+        val row = table.getRowById(id) ?: return false
+
+        val typesConverter = context.getTypesConverter()
+        for (column in expectedColumns) {
+            if (!isSameValue(row[column.name], convertValue(typesConverter, column, expected[column.name]))) {
+                return false
+            }
+        }
+
+        val newRow = LinkedHashMap(row)
+        for (column in setColumns) {
+            newRow[column.name] = convertValue(typesConverter, column, newValues[column.name])
+        }
+        if (context.hasColumn(DbEntity.UPD_VERSION)) {
+            var newVersion = (row[DbEntity.UPD_VERSION] as? Long ?: 0L) + 1
+            if (newVersion >= Int.MAX_VALUE) {
+                newVersion = 0L
+            }
+            newRow[DbEntity.UPD_VERSION] = newVersion
+        }
+        table.putRow(id, extId, newRow)
+        return true
+    }
+
+    /**
+     * Equality with the semantics of the SQL '=' operator the PG backend compares with: arrays and
+     * byte arrays are compared by content, not by identity.
+     */
+    private fun isSameValue(stored: Any?, expected: Any?): Boolean {
+        if (stored == null || expected == null) {
+            return stored == null && expected == null
+        }
+        if (stored is ByteArray && expected is ByteArray) {
+            return stored.contentEquals(expected)
+        }
+        if (stored is Array<*> && expected is Array<*>) {
+            return stored.contentDeepEquals(expected)
+        }
+        return stored == expected
+    }
+
     override fun delete(context: DbTableContext, entity: Map<String, Any?>) {
         delete(context, listOf(entity[DbEntity.ID] as Long))
     }
@@ -232,17 +302,20 @@ class InMemEntityRepo : DbEntityRepo {
                 // not a persisted column - skip (PG would reject it; the mapper never produces such keys)
                 continue
             }
-            result[key] = if (value == null) {
-                null
-            } else {
-                var expectedType = column.type.type
-                if (column.multiple && column.type != DbColumnType.JSON) {
-                    expectedType = DbTypeUtils.getArrayType(expectedType)
-                }
-                typesConverter.convert(value, expectedType)
-            }
+            result[key] = convertValue(typesConverter, column, value)
         }
         return result
+    }
+
+    private fun convertValue(typesConverter: DbTypesConverter, column: DbColumnDef, value: Any?): Any? {
+        if (value == null) {
+            return null
+        }
+        var expectedType = column.type.type
+        if (column.multiple && column.type != DbColumnType.JSON) {
+            expectedType = DbTypeUtils.getArrayType(expectedType)
+        }
+        return typesConverter.convert(value, expectedType)
     }
 
     private fun checkAuth(context: DbTableContext) {

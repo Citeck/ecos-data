@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.records.dao.atts.content
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.data.sql.content.DbEcosContentData
 import ru.citeck.ecos.records3.record.atts.value.impl.AttValueDelegate
+import ru.citeck.ecos.webapp.api.content.ContentRange
 import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.io.InputStream
 import java.time.Instant
@@ -35,7 +36,7 @@ class DbDefaultLocalContentValue(
         if (name == DbContentValue.ATT_PREVIEW_INFO) {
             val info = super.getAtt(name)
             if (info is DataValue && info.isObject()) {
-                info["originalName"] = getNameWithExt()
+                info[DbContentValue.PREVIEW_INFO_ATT_ORIGINAL_NAME] = getNameWithExt()
             }
             return info
         }
@@ -73,6 +74,9 @@ class DbDefaultLocalContentValue(
         override fun getSize(): Long = value.getSize()
         override fun <T> readContent(action: (InputStream) -> T): T {
             return value.readContent(action)
+        }
+        override fun <T> readContent(range: ContentRange, action: (InputStream) -> T): T {
+            return value.readContent(range, action)
         }
         override fun getStorageRef() = value.getStorageRef()
         override fun getDataKey(): String = value.getDataKey()

@@ -1,6 +1,11 @@
 package ru.citeck.ecos.data.sql.context
 
 import ru.citeck.ecos.context.lib.ctx.EcosContext
+import ru.citeck.ecos.data.sql.content.ContentMimeTypeDetector
+import ru.citeck.ecos.data.sql.content.SafeContentMimeTypeDetector
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceFactory
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceImpl
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.domain.migration.DbMigrationService
 import ru.citeck.ecos.data.sql.props.DbEcosDataProps
@@ -21,8 +26,21 @@ class DbDataSourceContext(
     private val webAppApi: EcosWebAppApi,
     private val ecosContext: EcosContext,
     val remoteActionsClient: DbRecordsRemoteActionsClient? = null,
-    val props: DbEcosDataProps = DbEcosDataProps.DEFAULT
+    val props: DbEcosDataProps = DbEcosDataProps.DEFAULT,
+    mimeTypeDetector: ContentMimeTypeDetector? = null,
+    /**
+     * Builds the content storage service of every schema of this data source, or null to use the
+     * built-in one. Supplied the same way [DbDataServiceFactory] is - see
+     * [EcosContentStorageServiceFactory].
+     */
+    private val contentStorageServiceFactory: EcosContentStorageServiceFactory? = null
 ) {
+    /**
+     * Wrapped on the way in, so that nothing downstream has to defend itself against the
+     * application's detector - see [SafeContentMimeTypeDetector].
+     */
+    val mimeTypeDetector: ContentMimeTypeDetector? = mimeTypeDetector?.let { SafeContentMimeTypeDetector(it) }
+
     val appName: String = webAppApi.getProperties().appName
     val converter: DbTypesConverter = DbTypesConverter()
     val entityRepo: DbEntityRepo = dataServiceFactory.createEntityRepo()
@@ -62,7 +80,19 @@ class DbDataSourceContext(
         return result
     }
 
+    internal fun createContentStorageService(schemaCtx: DbSchemaContext): EcosContentStorageService {
+        val factory = contentStorageServiceFactory ?: return EcosContentStorageServiceImpl(webAppApi, schemaCtx)
+        return factory.create(schemaCtx)
+    }
+
     fun forEachSchema(action: (String, DbSchemaContext) -> Unit) {
         schemasByName.forEach(action)
+    }
+
+    /**
+     * All schema contexts created so far. A schema that has never been touched is not listed.
+     */
+    fun getSchemaContexts(): List<DbSchemaContext> {
+        return schemasByName.values.toList()
     }
 }

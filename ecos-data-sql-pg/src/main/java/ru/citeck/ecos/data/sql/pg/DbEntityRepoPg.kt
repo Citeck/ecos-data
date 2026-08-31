@@ -10,6 +10,7 @@ import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
 import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
+import ru.citeck.ecos.data.sql.repo.DbConditionalUpdate
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -225,6 +226,71 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val ids = context.getDataSource().update(query.toString(), values)
         return ids.firstOrNull()
+    }
+
+    override fun updateByExtIdIfMatches(
+        context: DbTableContext,
+        extId: String,
+        expected: Map<String, Any?>,
+        newValues: Map<String, Any?>
+    ): Boolean {
+
+        checkAuth(context)
+
+        if (newValues.isEmpty()) {
+            error("New values are empty. Table: ${context.getTableRef().fullName}")
+        }
+        // an empty condition would turn a compare-and-set into an unconditional overwrite by ext id
+        if (expected.isEmpty()) {
+            error("Expected values are empty. Table: ${context.getTableRef().fullName}")
+        }
+        val setColumns = DbConditionalUpdate.getColumns(context, newValues, "new values")
+        val expectedColumns = DbConditionalUpdate.getColumns(context, expected, "expected values")
+
+        val typesConverter = context.getTypesConverter()
+        val setValues = prepareValuesForDb(setColumns, typesConverter, listOf(newValues))
+        val expectedValues = prepareValuesForDb(expectedColumns, typesConverter, listOf(expected))
+
+        val params = arrayListOf<Any?>()
+        val query = StringBuilder("UPDATE ")
+            .append(context.getTableRef().fullName)
+            .append(" SET ")
+
+        for (value in setValues) {
+            query.append("\"").append(value.name).append("\"=").append(value.placeholder).append(',')
+            params.add(value.values[0])
+        }
+        query.setLength(query.length - 1)
+
+        if (context.hasColumn(DbEntity.UPD_VERSION)) {
+            // keep the optimistic lock coherent: a reader holding the pre-update row can't save over this change
+            val version = "COALESCE(\"${DbEntity.UPD_VERSION}\",0)+1"
+            query.append(",\"").append(DbEntity.UPD_VERSION).append("\"=")
+                .append("CASE WHEN ").append(version).append(">=").append(Int.MAX_VALUE)
+                .append(" THEN 0 ELSE ").append(version).append(" END")
+        }
+
+        query.append(" WHERE \"").append(DbEntity.EXT_ID).append("\"=?")
+        params.add(extId)
+        for (value in expectedValues) {
+            query.append(" AND \"").append(value.name).append("\"")
+            val expectedValue = value.values[0]
+            if (expectedValue == null) {
+                query.append(" IS NULL")
+            } else {
+                query.append("=").append(value.placeholder)
+                params.add(expectedValue)
+            }
+        }
+
+        val updatedRows = context.getDataSource().update(query.toString(), params).firstOrNull() ?: 0L
+        if (updatedRows > 1) {
+            error(
+                "Conditional update matched $updatedRows rows instead of one. " +
+                    "Table: ${context.getTableRef().fullName} extId: $extId"
+            )
+        }
+        return updatedRows == 1L
     }
 
     override fun save(context: DbTableContext, entities: List<Map<String, Any?>>): List<Map<String, Any?>> {

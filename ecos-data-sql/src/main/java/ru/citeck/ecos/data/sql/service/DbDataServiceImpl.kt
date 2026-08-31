@@ -455,6 +455,19 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         )
     }
 
+    override fun updateByExtIdIfMatches(
+        extId: String,
+        expected: Map<String, Any?>,
+        newValues: Map<String, Any?>
+    ): Boolean {
+        if (extId.isEmpty() || !isTableExists()) {
+            return false
+        }
+        return dataSource.withTransaction(false) {
+            entityRepo.updateByExtIdIfMatches(getTableContext(), extId, expected, newValues)
+        }
+    }
+
     override fun save(entity: T, columns: List<DbColumnDef>): T {
         return save(listOf(entity), columns)[0]
     }

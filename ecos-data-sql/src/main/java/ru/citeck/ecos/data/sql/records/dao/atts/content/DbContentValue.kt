@@ -8,10 +8,12 @@ import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.mime.ContentPreviewKind
 import ru.citeck.ecos.webapp.api.mime.MimeType
 
 class DbContentValue(
@@ -47,14 +49,38 @@ class DbContentValue(
         const val ATT_PREVIEW_INFO = "previewInfo"
         const val ATT_CONVERTED_TO = "convertedTo"
 
+        const val PREVIEW_INFO_ATT_ORIGINAL_NAME = "originalName"
+
         private const val PREVIEW_INFO_ATT_URL = "url"
         private const val PREVIEW_INFO_ATT_EXT = "ext"
-        private const val PREVIEW_INFO_ATT_MIME_TYPE = "mimetype"
+
+        // legacy lowercase key, kept alongside the camelCase one
+        private const val PREVIEW_INFO_ATT_MIME_TYPE_LEGACY = "mimetype"
+        private const val PREVIEW_INFO_ATT_MIME_TYPE = "mimeType"
+        private const val PREVIEW_INFO_ATT_SIZE = "size"
+        private const val PREVIEW_INFO_ATT_KIND = "kind"
+        private const val PREVIEW_INFO_ATT_STATUS = "status"
         private const val PREVIEW_INFO_ATT_ORIGINAL_URL = "originalUrl"
-        private const val PREVIEW_INFO_ATT_ORIGINAL_NAME = "originalName"
         private const val PREVIEW_INFO_ATT_ORIGINAL_EXT = "originalExt"
+        private const val PREVIEW_INFO_ATT_ORIGINAL_MIME_TYPE = "originalMimeType"
+        private const val PREVIEW_INFO_ATT_ORIGINAL_SIZE = "originalSize"
+
+        private const val THUMBNAIL_TYPE_ID = "thumbnail"
+        private const val THUMBNAIL_ATT_STATUS = "status"
+        private const val THUMBNAIL_ATT_SRC_ATTRIBUTE = "srcAttribute"
+
+        private const val THUMBNAIL_STATUS_PROCESSED = "PROCESSED"
+        private const val THUMBNAIL_STATUS_FAILED = "FAILED"
 
         private const val TRANSFORM_WEBAPI_PATH = "/tfm/transform"
+
+        /**
+         * Wire form of the [ContentPreviewKind] and [PreviewStatus] enums. Both are rendered the
+         * same way so that neither of them needs a second list of literals next to its constants.
+         */
+        private fun toPreviewInfoValue(value: Enum<*>): String {
+            return value.name.lowercase()
+        }
     }
 
     private val currentEntityRef: EntityRef = ctx.getGlobalRef(recId)
@@ -148,71 +174,134 @@ class DbContentValue(
                     else -> null
                 }
             }
-            ATT_PREVIEW_INFO -> {
-
-                val origUrl = ctx.recContentHandler.createContentUrl(currentEntityRef, urlAttribute)
-                val origMimeType = contentData.getMimeType()
-                val origExtension = contentData.getName().substringAfterLast(".", "")
-
-                val previewData = when {
-                    origMimeType.getType() == "image" ||
-                        origMimeType == MimeTypes.APP_PDF ||
-                        origMimeType.isTextual()
-                    -> {
-                        PreviewData(origUrl, origExtension, origMimeType)
-                    }
-
-                    isDefaultContent -> {
-
-                        val attsToLoad = listOf(
-                            ATT_URL,
-                            ATT_EXTENSION,
-                            ATT_MIME_TYPE
-                        )
-
-                        // todo: replace runAsSystem to assoc with thumbnails
-                        val atts = AuthContext.runAsSystem {
-                            ctx.recordsService.queryOne(
-                                RecordsQuery.create {
-                                    withEcosType("thumbnail")
-                                    withQuery(
-                                        Predicates.and(
-                                            Predicates.eq(RecordConstants.ATT_PARENT, currentEntityRef),
-                                            Predicates.eq("mimeType", MimeTypes.APP_PDF_TEXT),
-                                            Predicates.eq("srcAttribute", RecordConstants.ATT_CONTENT)
-                                        )
-                                    )
-                                },
-                                attsToLoad.associateWith {
-                                    "${RecordConstants.ATT_CONTENT}.$it"
-                                }
-                            )
-                        }
-                        if (atts == null || attsToLoad.any { atts[it].asText().isEmpty() }) {
-                            null
-                        } else {
-                            PreviewData(
-                                atts[ATT_URL].asText(),
-                                atts[ATT_EXTENSION].asText(),
-                                MimeTypes.parse(atts[ATT_MIME_TYPE].asText())
-                            )
-                        }
-                    }
-
-                    else -> {
-                        null
-                    }
-                } ?: return null
-
-                DataValue.createObj()
-                    .set(PREVIEW_INFO_ATT_URL, previewData.url)
-                    .set(PREVIEW_INFO_ATT_EXT, previewData.ext)
-                    .set(PREVIEW_INFO_ATT_MIME_TYPE, previewData.mimeType)
-                    .set(PREVIEW_INFO_ATT_ORIGINAL_URL, origUrl)
-                    .set(PREVIEW_INFO_ATT_ORIGINAL_NAME, contentData.getName())
-                    .set(PREVIEW_INFO_ATT_ORIGINAL_EXT, origExtension)
-            }
+            ATT_PREVIEW_INFO -> getPreviewInfo()
             else -> null
+        }
+    }
+
+    /**
+     * Describe what the UI may render for this content and in which state that renderable thing is.
+     *
+     * The result is never null for an existing content: when there is nothing to render the
+     * renderable part is empty ([ContentPreviewKind.NONE] and a blank url) and the status says why,
+     * while the original always stays fully described so that at least a download link can be built.
+     */
+    private fun getPreviewInfo(): DataValue {
+
+        val origUrl = ctx.recContentHandler.createContentUrl(currentEntityRef, urlAttribute)
+        val origMimeType = contentData.getMimeType()
+        val origName = contentData.getName()
+        val origExtension = origName.substringAfterLast(".", "")
+        val origSize = contentData.getSize()
+
+        val preview = resolvePreview(origUrl, origMimeType, origExtension, origSize)
+
+        return DataValue.createObj()
+            .set(PREVIEW_INFO_ATT_URL, preview.url)
+            .set(PREVIEW_INFO_ATT_EXT, preview.ext)
+            .set(PREVIEW_INFO_ATT_MIME_TYPE_LEGACY, preview.mimeType)
+            .set(PREVIEW_INFO_ATT_MIME_TYPE, preview.mimeType)
+            .set(PREVIEW_INFO_ATT_SIZE, preview.size)
+            .set(PREVIEW_INFO_ATT_KIND, toPreviewInfoValue(preview.kind))
+            .set(PREVIEW_INFO_ATT_STATUS, toPreviewInfoValue(preview.status))
+            .set(PREVIEW_INFO_ATT_ORIGINAL_URL, origUrl)
+            .set(PREVIEW_INFO_ATT_ORIGINAL_NAME, origName)
+            .set(PREVIEW_INFO_ATT_ORIGINAL_EXT, origExtension)
+            .set(PREVIEW_INFO_ATT_ORIGINAL_MIME_TYPE, origMimeType.toString())
+            .set(PREVIEW_INFO_ATT_ORIGINAL_SIZE, origSize)
+    }
+
+    private fun resolvePreview(
+        origUrl: String,
+        origMimeType: MimeType,
+        origExtension: String,
+        origSize: Long
+    ): PreviewData {
+
+        val nativeKind = origMimeType.getPreviewKind()
+        if (nativeKind != ContentPreviewKind.NONE) {
+            return PreviewData(
+                origUrl,
+                origExtension,
+                origMimeType.toString(),
+                origSize,
+                nativeKind,
+                PreviewStatus.READY
+            )
+        }
+
+        // findThumbnail is one query per content value, and previewInfo is requested over whole
+        // lists of records, so widening it past the default content attribute would multiply that
+        // N+1 by the number of content attributes a record has. Kept to the default attribute, as
+        // it was before chunked upload, until the lookup is batched over a page of records.
+        if (!isDefaultContent) {
+            return PreviewData.nothing(PreviewStatus.UNSUPPORTED)
+        }
+
+        // A converter declared for this mime type gets its thumbnail record created in the same
+        // transaction as the content change, so the absence of the record means no converter at all.
+        val thumbnail = findThumbnail() ?: return PreviewData.nothing(PreviewStatus.UNSUPPORTED)
+
+        return when (thumbnail[THUMBNAIL_ATT_STATUS].asText()) {
+            THUMBNAIL_STATUS_PROCESSED -> thumbnailPreview(thumbnail)
+            THUMBNAIL_STATUS_FAILED -> PreviewData.nothing(PreviewStatus.FAILED)
+            else -> PreviewData.nothing(PreviewStatus.PROCESSING)
+        }
+    }
+
+    private fun thumbnailPreview(thumbnail: RecordAtts): PreviewData {
+
+        val url = thumbnail[ATT_URL].asText()
+        if (url.isBlank()) {
+            return PreviewData.nothing(PreviewStatus.FAILED)
+        }
+        val mimeType = thumbnail[ATT_MIME_TYPE].asText()
+        val kind = MimeTypes.parseOrElse(mimeType, MimeTypes.APP_BIN).getPreviewKind()
+        if (kind == ContentPreviewKind.NONE) {
+            return PreviewData.nothing(PreviewStatus.FAILED)
+        }
+        return PreviewData(
+            url,
+            thumbnail[ATT_EXTENSION].asText(),
+            mimeType,
+            thumbnail[ATT_SIZE].asLong(0L),
+            kind,
+            PreviewStatus.READY
+        )
+    }
+
+    /**
+     * Thumbnails are bound to the source attribute they were generated from, so the lookup is keyed
+     * by the attribute this value represents. Only [resolvePreview]'s default-content gate reaches
+     * here, so that key is always `_content` today - which is also the only source automatic
+     * thumbnail creation ever records. A record without content is a different outcome than a
+     * missing record and is reported by the blank content attributes of the returned atts.
+     */
+    private fun findThumbnail(): RecordAtts? {
+
+        val attsToLoad = mapOf(
+            ATT_URL to "${RecordConstants.ATT_CONTENT}.$ATT_URL",
+            ATT_EXTENSION to "${RecordConstants.ATT_CONTENT}.$ATT_EXTENSION",
+            ATT_MIME_TYPE to "${RecordConstants.ATT_CONTENT}.$ATT_MIME_TYPE",
+            ATT_SIZE to "${RecordConstants.ATT_CONTENT}.$ATT_SIZE?num",
+            THUMBNAIL_ATT_STATUS to THUMBNAIL_ATT_STATUS
+        )
+
+        // todo: replace runAsSystem to assoc with thumbnails
+        return AuthContext.runAsSystem {
+            ctx.recordsService.queryOne(
+                RecordsQuery.create {
+                    withEcosType(THUMBNAIL_TYPE_ID)
+                    withQuery(
+                        Predicates.and(
+                            Predicates.eq(RecordConstants.ATT_PARENT, currentEntityRef),
+                            Predicates.eq(ATT_MIME_TYPE, MimeTypes.APP_PDF_TEXT),
+                            Predicates.eq(THUMBNAIL_ATT_SRC_ATTRIBUTE, urlAttribute)
+                        )
+                    )
+                },
+                attsToLoad
+            )
         }
     }
 
@@ -296,9 +385,28 @@ class DbContentValue(
         val fileType: String
     )
 
+    /**
+     * The renderable part of the preview info: what is at [url], not what the original is.
+     */
     private data class PreviewData(
         val url: String,
         val ext: String,
-        val mimeType: MimeType
-    )
+        val mimeType: String,
+        val size: Long,
+        val kind: ContentPreviewKind,
+        val status: PreviewStatus
+    ) {
+        companion object {
+            fun nothing(status: PreviewStatus): PreviewData {
+                return PreviewData("", "", "", 0L, ContentPreviewKind.NONE, status)
+            }
+        }
+    }
+
+    private enum class PreviewStatus {
+        READY,
+        PROCESSING,
+        FAILED,
+        UNSUPPORTED
+    }
 }

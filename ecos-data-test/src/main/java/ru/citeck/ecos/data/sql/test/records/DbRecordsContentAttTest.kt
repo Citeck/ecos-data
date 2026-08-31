@@ -406,42 +406,296 @@ class DbRecordsContentAttTest : DbRecordsTestBase() {
             .isEqualTo(textContent.toByteArray(Charsets.UTF_8).size)
     }
 
+    private fun registerContentAtts(vararg names: String) {
+        registerAtts(
+            names.map { name ->
+                AttributeDef.create {
+                    withId(name)
+                    withType(AttributeType.CONTENT)
+                }
+            }
+        )
+    }
+
+    private fun assertOriginalIsDescribed(previewInfo: DataValue, mimeType: MimeType, ext: String, size: Int) {
+        assertThat(previewInfo["originalUrl"].asText()).isNotBlank
+        assertThat(previewInfo["originalName"].asText()).isEqualTo("sample.$ext")
+        assertThat(previewInfo["originalExt"].asText()).isEqualTo(ext)
+        assertThat(previewInfo["originalMimeType"].asText()).isEqualTo(mimeType.toString())
+        assertThat(previewInfo["originalSize"].asLong()).isEqualTo(size.toLong())
+    }
+
+    private fun assertNothingToRender(previewInfo: DataValue, status: String) {
+        assertThat(previewInfo["kind"].asText()).isEqualTo("none")
+        assertThat(previewInfo["status"].asText()).isEqualTo(status)
+        assertThat(previewInfo["url"].asText()).isEmpty()
+        assertThat(previewInfo["ext"].asText()).isEmpty()
+        assertThat(previewInfo["mimetype"].asText()).isEmpty()
+        assertThat(previewInfo["mimeType"].asText()).isEmpty()
+        assertThat(previewInfo["size"].asLong()).isEqualTo(0L)
+    }
+
+    /**
+     * The content is renderable as it is, so the preview is the original itself.
+     */
     @Test
-    fun previewInfoForTextualContentTest() {
+    fun previewInfoForNativelyRenderableContentTest() {
+
+        val contentAttName = "content"
+        registerContentAtts(contentAttName)
+
+        val checkNativePreview: (MimeType, String, String) -> Unit = { mimeType, ext, kind ->
+
+            val content = "content".toByteArray()
+            val rec = createRecord(
+                contentAttName to createTempRecord("sample.$ext", mimeType, content)
+            )
+
+            val previewInfo = records.getAtt(rec, "$contentAttName.previewInfo?json")
+
+            assertThat(previewInfo.isObject()).isTrue()
+            assertThat(previewInfo["kind"].asText()).isEqualTo(kind)
+            assertThat(previewInfo["status"].asText()).isEqualTo("ready")
+            assertThat(previewInfo["url"].asText()).isEqualTo(previewInfo["originalUrl"].asText())
+            assertThat(previewInfo["ext"].asText()).isEqualTo(ext)
+            assertThat(previewInfo["mimetype"].asText())
+                .isEqualTo(previewInfo["mimeType"].asText())
+                .isEqualTo(mimeType.toString())
+            assertThat(previewInfo["size"].asLong()).isEqualTo(previewInfo["originalSize"].asLong())
+
+            assertOriginalIsDescribed(previewInfo, mimeType, ext, content.size)
+        }
+
+        checkNativePreview(MimeTypes.TXT_PLAIN, "txt", "text")
+        checkNativePreview(MimeTypes.TXT_CSV, "csv", "text")
+        checkNativePreview(MimeTypes.TXT_HTML, "html", "text")
+        checkNativePreview(MimeTypes.APP_JSON, "json", "text")
+        checkNativePreview(MimeTypes.APP_XML, "xml", "text")
+        checkNativePreview(MimeTypes.APP_YAML, "yaml", "text")
+        checkNativePreview(MimeTypes.TXT_MARKDOWN, "md", "markdown")
+        checkNativePreview(MimeTypes.IMG_PNG, "png", "image")
+        checkNativePreview(MimeTypes.APP_PDF, "pdf", "pdf")
+        checkNativePreview(MimeTypes.VIDEO_MP4, "mp4", "video")
+        checkNativePreview(MimeTypes.AUDIO_MPEG, "mp3", "audio")
+    }
+
+    /**
+     * The content needs a converter, so the preview is the generated thumbnail and the thumbnail's
+     * own status becomes the status of the preview.
+     */
+    @Test
+    fun previewInfoFromThumbnailTest() {
+
+        val contentAttName = "content"
+        registerContentAtts(contentAttName)
+
+        val docxContent = "docx-content".toByteArray()
+        val previewContent = "pdf-preview-content".toByteArray()
+
+        val createDocxRecord = {
+            createRecord(
+                contentAttName to createTempRecord("sample.docx", MimeTypes.APP_DOCX, docxContent)
+            )
+        }
+        val createThumbnail: (EntityRef, String, EntityRef) -> Unit = { rec, status, content ->
+            thumbnailCtx.createRecord(
+                RecordConstants.ATT_PARENT to rec,
+                RecordConstants.ATT_PARENT_ATT to "thumbnail:thumbnails",
+                "mimeType" to MimeTypes.APP_PDF_TEXT,
+                "srcAttribute" to RecordConstants.ATT_CONTENT,
+                "status" to status,
+                "content" to content
+            )
+        }
+        val previewContentRecord = {
+            createTempRecord("preview.pdf", MimeTypes.APP_PDF, previewContent)
+        }
+
+        val readyRec = createDocxRecord()
+        createThumbnail(readyRec, "PROCESSED", previewContentRecord())
+
+        val readyInfo = records.getAtt(readyRec, "$contentAttName.previewInfo?json")
+
+        assertThat(readyInfo["kind"].asText()).isEqualTo("pdf")
+        assertThat(readyInfo["status"].asText()).isEqualTo("ready")
+        assertThat(readyInfo["url"].asText()).isNotBlank
+        assertThat(readyInfo["url"].asText()).isNotEqualTo(readyInfo["originalUrl"].asText())
+        assertThat(readyInfo["ext"].asText()).isEqualTo("pdf")
+        assertThat(readyInfo["mimetype"].asText())
+            .isEqualTo(readyInfo["mimeType"].asText())
+            .isEqualTo(MimeTypes.APP_PDF_TEXT)
+        assertThat(readyInfo["size"].asLong()).isEqualTo(previewContent.size.toLong())
+        assertOriginalIsDescribed(readyInfo, MimeTypes.APP_DOCX, "docx", docxContent.size)
+
+        listOf(
+            "DRAFT" to "processing",
+            "PROCESSING" to "processing",
+            "SOMETHING_NEW" to "processing",
+            "FAILED" to "failed"
+        ).forEach { (thumbnailStatus, expectedStatus) ->
+
+            val rec = createDocxRecord()
+            createThumbnail(rec, thumbnailStatus, previewContentRecord())
+
+            val previewInfo = records.getAtt(rec, "$contentAttName.previewInfo?json")
+
+            assertNothingToRender(previewInfo, expectedStatus)
+            assertOriginalIsDescribed(previewInfo, MimeTypes.APP_DOCX, "docx", docxContent.size)
+        }
+
+        val emptyThumbnailRec = createDocxRecord()
+        createThumbnail(emptyThumbnailRec, "PROCESSED", EntityRef.EMPTY)
+
+        val emptyThumbnailInfo = records.getAtt(emptyThumbnailRec, "$contentAttName.previewInfo?json")
+
+        assertNothingToRender(emptyThumbnailInfo, "failed")
+        assertOriginalIsDescribed(emptyThumbnailInfo, MimeTypes.APP_DOCX, "docx", docxContent.size)
+    }
+
+    /**
+     * A converter may store bytes whose mime type differs from the one the thumbnail record declares.
+     * The lookup matches on the declared mime type, so such a thumbnail is found, and what decides the
+     * outcome is the mime type of the stored bytes: nothing renderable means nothing to render.
+     */
+    @Test
+    fun previewInfoFromThumbnailWithUnrenderableContentMimeTest() {
+
+        val contentAttName = "content"
+        registerContentAtts(contentAttName)
+
+        val docxContent = "docx-content".toByteArray()
+        val rec = createRecord(
+            contentAttName to createTempRecord("sample.docx", MimeTypes.APP_DOCX, docxContent)
+        )
+
+        thumbnailCtx.createRecord(
+            RecordConstants.ATT_PARENT to rec,
+            RecordConstants.ATT_PARENT_ATT to "thumbnail:thumbnails",
+            "mimeType" to MimeTypes.APP_PDF_TEXT,
+            "srcAttribute" to RecordConstants.ATT_CONTENT,
+            "status" to "PROCESSED",
+            "content" to createTempRecord("preview.pdf", MimeTypes.APP_BIN, "not-a-pdf".toByteArray())
+        )
+
+        val previewInfo = records.getAtt(rec, "$contentAttName.previewInfo?json")
+
+        assertNothingToRender(previewInfo, "failed")
+        assertOriginalIsDescribed(previewInfo, MimeTypes.APP_DOCX, "docx", docxContent.size)
+    }
+
+    /**
+     * The thumbnail lookup is keyed by the source attribute the thumbnail was generated from: a
+     * thumbnail naming one content attribute is not offered as the preview of another one.
+     *
+     * It also only runs for the default content attribute. The lookup is one query per content
+     * value and previewInfo is requested over whole lists of records, so running it for every
+     * content attribute would multiply that N+1 by the number of attributes; a named attribute
+     * therefore reports `unsupported` even when a thumbnail naming it exists.
+     */
+    @Test
+    fun previewInfoThumbnailLookupIsKeyedBySrcAttributeTest() {
+
+        val defaultContentAtt = "content"
+        val namedContentAtt = "secondContent"
+        registerContentAtts(defaultContentAtt, namedContentAtt)
+
+        val docxContent = "docx-content".toByteArray()
+
+        val rec = createRecord(
+            defaultContentAtt to createTempRecord("sample.docx", MimeTypes.APP_DOCX, docxContent),
+            namedContentAtt to createTempRecord("sample.docx", MimeTypes.APP_DOCX, docxContent)
+        )
+
+        fun createThumbnail(srcAttribute: String) {
+            thumbnailCtx.createRecord(
+                RecordConstants.ATT_PARENT to rec,
+                RecordConstants.ATT_PARENT_ATT to "thumbnail:thumbnails",
+                "mimeType" to MimeTypes.APP_PDF_TEXT,
+                "srcAttribute" to srcAttribute,
+                "status" to "PROCESSED",
+                "content" to createTempRecord("preview.pdf", MimeTypes.APP_PDF, "pdf".toByteArray())
+            )
+        }
+
+        createThumbnail(namedContentAtt)
+
+        // the thumbnail of a named attribute is not offered as the preview of the default one
+        val defaultInfoBefore = records.getAtt(rec, "$defaultContentAtt.previewInfo?json")
+        assertNothingToRender(defaultInfoBefore, "unsupported")
+        assertOriginalIsDescribed(defaultInfoBefore, MimeTypes.APP_DOCX, "docx", docxContent.size)
+
+        // nor is it offered as the preview of the attribute it does name: only the default content
+        // attribute is looked up at all
+        val namedInfo = records.getAtt(rec, "$namedContentAtt.previewInfo?json")
+        assertNothingToRender(namedInfo, "unsupported")
+        assertOriginalIsDescribed(namedInfo, MimeTypes.APP_DOCX, "docx", docxContent.size)
+
+        // the thumbnail naming the default attribute is - automatic thumbnail creation records it
+        // as RecordConstants.ATT_CONTENT, which is the url attribute of the default content value
+        createThumbnail(RecordConstants.ATT_CONTENT)
+
+        val defaultInfo = records.getAtt(rec, "$defaultContentAtt.previewInfo?json")
+        assertThat(defaultInfo["kind"].asText()).isEqualTo("pdf")
+        assertThat(defaultInfo["status"].asText()).isEqualTo("ready")
+        assertThat(defaultInfo["url"].asText()).isNotBlank
+    }
+
+    /**
+     * No converter is declared for the mime type, so no thumbnail record was ever created and there
+     * is nothing to wait for.
+     */
+    @Test
+    fun previewInfoWithoutThumbnailRecordTest() {
+
+        val contentAttName = "content"
+        registerContentAtts(contentAttName)
+
+        val content = "zip-content".toByteArray()
+        val rec = createRecord(
+            contentAttName to createTempRecord("sample.zip", MimeTypes.APP_ZIP, content)
+        )
+
+        val previewInfo = records.getAtt(rec, "$contentAttName.previewInfo?json")
+
+        assertThat(previewInfo.isObject()).isTrue()
+        assertNothingToRender(previewInfo, "unsupported")
+        assertOriginalIsDescribed(previewInfo, MimeTypes.APP_ZIP, "zip", content.size)
+    }
+
+    /**
+     * The default content attribute is served by a wrapper which replaces `originalName` with the
+     * entity display name, and the preview info object it returns carries that name too.
+     */
+    @Test
+    fun previewInfoOfDefaultContentAttributeTest() {
+
         val contentAttName = "content"
         registerAtts(
             listOf(
                 AttributeDef.create {
                     withId(contentAttName)
                     withType(AttributeType.CONTENT)
+                },
+                AttributeDef.create {
+                    withId("name")
+                    withType(AttributeType.MLTEXT)
                 }
             )
         )
 
-        val checkTextualPreview: (MimeType, String) -> Unit = { mimeType, ext ->
-            val rec = createRecord(
-                contentAttName to createTempRecord(
-                    "sample.$ext",
-                    mimeType,
-                    "content".toByteArray()
-                )
-            )
+        val content = "zip-content".toByteArray()
+        val rec = createRecord(
+            "name" to "display-name",
+            contentAttName to createTempRecord("sample.zip", MimeTypes.APP_ZIP, content)
+        )
 
-            val previewInfo = records.getAtt(rec, "$contentAttName.previewInfo?json")
+        val previewInfo = records.getAtt(rec, "${RecordConstants.ATT_CONTENT}.previewInfo?json")
 
-            assertThat(previewInfo.isObject()).isTrue()
-            val originalUrl = previewInfo["originalUrl"].asText()
-            assertThat(originalUrl).isNotBlank
-            assertThat(previewInfo["url"].asText()).isEqualTo(originalUrl)
-            assertThat(previewInfo["mimetype"].asText()).isEqualTo(mimeType.toString())
-            assertThat(previewInfo["ext"].asText()).isEqualTo(ext)
-        }
-
-        checkTextualPreview(MimeTypes.TXT_PLAIN, "txt")
-        checkTextualPreview(MimeTypes.TXT_CSV, "csv")
-        checkTextualPreview(MimeTypes.TXT_HTML, "html")
-        checkTextualPreview(MimeTypes.APP_JSON, "json")
-        checkTextualPreview(MimeTypes.APP_XML, "xml")
-        checkTextualPreview(MimeTypes.APP_YAML, "yaml")
+        assertNothingToRender(previewInfo, "unsupported")
+        assertThat(previewInfo["originalName"].asText()).isEqualTo("display-name.zip")
+        assertThat(previewInfo["originalExt"].asText()).isEqualTo("zip")
+        assertThat(previewInfo["originalMimeType"].asText()).isEqualTo(MimeTypes.APP_ZIP.toString())
+        assertThat(previewInfo["originalSize"].asLong()).isEqualTo(content.size.toLong())
+        assertThat(previewInfo["originalUrl"].asText()).isNotBlank
     }
 }

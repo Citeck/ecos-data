@@ -5,7 +5,6 @@ import ru.citeck.ecos.commons.mime.MimeTypes
 import ru.citeck.ecos.data.sql.content.entity.DbContentEntity
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
-import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageService
 import ru.citeck.ecos.data.sql.content.writer.EcosContentWriterImpl
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -15,6 +14,7 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.data.sql.service.DbMigrationsExecutor
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.webapp.api.content.ContentRange
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.content.EcosContentWriterMeta
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -24,7 +24,6 @@ import java.time.Instant
 import java.util.UUID
 
 class DbContentServiceImpl(
-    private val contentStorageService: EcosContentStorageService,
     private val schemaCtx: DbSchemaContext
 ) : DbContentService, DbMigrationsExecutor {
 
@@ -59,7 +58,7 @@ class DbContentServiceImpl(
         }
         val storageConfig = storage?.config ?: ObjectData.create()
 
-        val dataKey = contentStorageService.uploadContent(storageRef, storageConfig) { output ->
+        val dataKey = schemaCtx.contentStorageService.uploadContent(storageRef, storageConfig) { output ->
             val writer = EcosContentWriterImpl(
                 EcosContentWriterMeta.create()
                     .withName(nnName)
@@ -94,12 +93,68 @@ class DbContentServiceImpl(
         return EcosContentDataImpl(dataService.save(entity))
     }
 
+    override fun registerContent(
+        name: String?,
+        mimeType: String?,
+        encoding: String?,
+        storageRef: EntityRef,
+        dataKey: String,
+        sha256: String,
+        size: Long,
+        creatorRefId: Long
+    ): DbEcosContentData {
+
+        if (sha256.isBlank() || size <= 0L) {
+            error("Invalid content metadata. Sha256: $sha256 Size: $size")
+        }
+
+        val nnName = (name ?: "").ifBlank { UUID.randomUUID().toString() }
+        val nnMimeType = MimeTypes.parseOrBin(mimeType).toString()
+        val nnEncoding = encoding ?: ""
+
+        val entity = DbContentEntity()
+
+        entity.name = nnName
+        entity.mimeType = nnMimeType
+        entity.encoding = nnEncoding
+        entity.created = Instant.now()
+        entity.creator = creatorRefId
+        entity.sha256 = sha256
+        entity.size = size
+        entity.dataKey = dataKey
+        entity.storageRef = schemaCtx.recordRefService.getOrCreateIdByEntityRef(storageRef)
+
+        return EcosContentDataImpl(dataService.save(entity))
+    }
+
     override fun getContent(id: Long): DbEcosContentData? {
         if (id < 0) {
             return null
         }
         val entity = dataService.findById(id) ?: return null
         return EcosContentDataImpl(entity)
+    }
+
+    override fun findContentByStorageAndDataKey(storageRef: EntityRef, dataKey: String): DbEcosContentData? {
+        // A lookup must not write: getOrCreateIdByEntityRef would insert an ed_record_ref row for a
+        // storage no content was ever registered under, and a storage with no id has no content
+        // either, so -1 is simply "not found".
+        val storageRefId = schemaCtx.recordRefService.getIdByEntityRef(storageRef)
+        if (storageRefId < 0) {
+            return null
+        }
+        val found = dataService.find(
+            DbFindQuery.create {
+                withPredicate(
+                    Predicates.and(
+                        Predicates.eq(DbContentEntity.STORAGE_REF, storageRefId),
+                        Predicates.eq(DbContentEntity.DATA_KEY, dataKey)
+                    )
+                )
+            },
+            DbFindPage.FIRST
+        ).entities.firstOrNull() ?: return null
+        return EcosContentDataImpl(found)
     }
 
     override fun removeContent(id: Long) {
@@ -117,7 +172,10 @@ class DbContentServiceImpl(
             DbFindPage.FIRST
         )
         if (entitiesWithSameStorageAndKey.entities.isEmpty()) {
-            contentStorageService.deleteContent(getStorageRefById(entity.storageRef), entity.dataKey)
+            schemaCtx.contentStorageService.deleteContent(
+                getStorageRefById(entity.storageRef),
+                entity.dataKey
+            )
         }
     }
 
@@ -131,9 +189,10 @@ class DbContentServiceImpl(
 
     override fun runMigrations(mock: Boolean, diff: Boolean): List<String> {
         var result = dataService.runMigrations(emptyList(), mock, diff)
-        if (contentStorageService is DbMigrationsExecutor) {
+        val service = schemaCtx.contentStorageService
+        if (service is DbMigrationsExecutor) {
             val newRes = ArrayList(result)
-            newRes.addAll(contentStorageService.runMigrations(mock, diff))
+            newRes.addAll(service.runMigrations(mock, diff))
             result = newRes
         }
         return result
@@ -204,7 +263,16 @@ class DbContentServiceImpl(
         }
 
         override fun <T> readContent(action: (InputStream) -> T): T {
-            return contentStorageService.readContent(getStorageRef(), entity.dataKey, action)
+            return readContent(ContentRange.UNBOUNDED, action)
+        }
+
+        override fun <T> readContent(range: ContentRange, action: (InputStream) -> T): T {
+            return schemaCtx.contentStorageService.readContent(
+                storageRef = getStorageRef(),
+                path = entity.dataKey,
+                range = range,
+                action = action
+            )
         }
     }
 }

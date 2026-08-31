@@ -1,9 +1,11 @@
 package ru.citeck.ecos.data.sql.domain
 
 import ru.citeck.ecos.context.lib.ctx.EcosContext
+import ru.citeck.ecos.data.sql.content.ContentMimeTypeDetector
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConstants
+import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageServiceFactory
 import ru.citeck.ecos.data.sql.context.DbDataSourceContext
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.datasource.DbDataSource
@@ -35,7 +37,12 @@ class DbDomainFactory(
     val webAppApi: EcosWebAppApi,
     val ecosContext: EcosContext,
     val remoteActionsClient: DbRecordsRemoteActionsClient?,
-    val props: DbEcosDataProps = DbEcosDataProps.DEFAULT
+    val props: DbEcosDataProps = DbEcosDataProps.DEFAULT,
+    val mimeTypeDetector: ContentMimeTypeDetector? = null,
+    /**
+     * Handed over to the data source context - see [EcosContentStorageServiceFactory].
+     */
+    val contentStorageServiceFactory: EcosContentStorageServiceFactory? = null
 ) {
 
     private val recordsDaoWithoutDefaultContentStorage = Collections.synchronizedList(ArrayList<DbRecordsDao>())
@@ -49,7 +56,9 @@ class DbDomainFactory(
         webAppApi,
         ecosContext,
         remoteActionsClient,
-        props
+        props,
+        mimeTypeDetector,
+        contentStorageServiceFactory
     )
 
     private var defaultContentStorage: EcosContentStorageConfig? = null
@@ -65,7 +74,9 @@ class DbDomainFactory(
             webAppApi,
             ecosContext,
             remoteActionsClient,
-            props
+            props,
+            mimeTypeDetector,
+            contentStorageServiceFactory
         )
     }
 

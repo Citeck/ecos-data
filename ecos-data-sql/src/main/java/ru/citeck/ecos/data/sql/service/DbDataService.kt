@@ -79,6 +79,30 @@ interface DbDataService<T : Any> {
 
     fun saveAtomicallyOrGetExistingByExtId(entity: T): Long
 
+    /**
+     * Atomic compare-and-set on a single row, for state transitions that [save] can't express
+     * because it is read-modify-write: assign [newValues] to the row with [extId], but only while
+     * every column listed in [expected] still holds the given value.
+     *
+     * Returns true when the row was updated, false when the row doesn't exist or an expected column
+     * no longer matches. A non-match is a normal outcome, not an error.
+     *
+     * Both maps are keyed by database column name, not by entity field name, and their values are
+     * converted to the column type, so a [java.time.Instant] may be passed for a datetime column.
+     * Only the listed columns and the update version change; the audit columns are not maintained
+     * here. See [ru.citeck.ecos.data.sql.repo.DbEntityRepo.updateByExtIdIfMatches] for the full
+     * contract.
+     *
+     * Unlike [saveAtomicallyOrGetExistingByExtId], this **joins the caller's transaction** instead
+     * of running in one of its own. The compare and the write are still indivisible with respect to
+     * other transactions, but a true is durable only when the enclosing transaction commits: until
+     * then the row stays locked, and an outer rollback undoes the transition. That is deliberate -
+     * it lets a caller commit a state transition together with the work that transition authorises,
+     * so a crash in between can't leave the two disagreeing. A caller that must see the transition
+     * survive on its own has to open its own transaction around this call.
+     */
+    fun updateByExtIdIfMatches(extId: String, expected: Map<String, Any?>, newValues: Map<String, Any?>): Boolean
+
     fun save(entities: Collection<T>): List<T>
 
     fun save(entities: Collection<T>, columns: List<DbColumnDef>): List<T>

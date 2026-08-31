@@ -49,12 +49,10 @@ class InMemStore private constructor(
         return tables[tableRef.fullName]
     }
 
-    /** All tables across every schema (used by tests to drop the whole store). */
     fun getTables(): List<InMemTable> {
         return tables.values.toList()
     }
 
-    /** Remove every table (mirrors the PG test base's DROP TABLE ... CASCADE). */
     fun dropAllTables() {
         if (tables.isEmpty()) {
             return
@@ -71,13 +69,10 @@ class InMemStore private constructor(
         return tables.values.any { it.tableRef.schema == schema }
     }
 
-    /** A point in the undo-log; a write transaction begins by taking one. */
     fun mark(): Int = undoLog.mark()
 
-    /** Replay the inverse of every change recorded since [mark], restoring the pre-mark state. */
     fun rollbackTo(mark: Int) = undoLog.rollbackTo(mark)
 
-    /** Forget the inverses recorded since [mark] — the changes become permanent (un-rollbackable). */
     fun commitTo(mark: Int) = undoLog.commitTo(mark)
 }
 
@@ -203,6 +198,14 @@ class InMemTable internal constructor(
         return rows[id]
     }
 
+    /**
+     * The row key behind an ext-id. Needed to rewrite a row found by ext-id: the key is the internal
+     * row id, which is not part of the row itself in tables without an id column.
+     */
+    fun getIdByExtId(extId: String): Long? {
+        return extIdToId[extId]
+    }
+
     fun putRow(id: Long, extId: String, row: MutableMap<String, Any?>) {
         // Mirror the forward op exactly so the inverse is its precise undo:
         //   rows[id] = row;  if (extId != "") extIdToId[extId] = id
@@ -246,7 +249,9 @@ class InMemTable internal constructor(
         }
     }
 
-    /** Remove all rows but keep the column structure (mirrors SQL TRUNCATE). */
+    /**
+     * Removes all rows but keeps the column structure, mirroring SQL TRUNCATE.
+     */
     fun truncate() {
         if (rows.isEmpty() && extIdToId.isEmpty()) {
             return
