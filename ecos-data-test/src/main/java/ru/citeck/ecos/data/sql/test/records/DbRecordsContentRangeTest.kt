@@ -102,11 +102,12 @@ class DbRecordsContentRangeTest : DbRecordsTestBase() {
 
     /**
      * Keeps every uploaded blob in memory and records the range of every read. The plain read
-     * overload is expressed through the range one so that a null range is recorded too.
+     * overload is expressed through the range one, so a read of the whole content is recorded as
+     * the unbounded range it is.
      */
     private class RecordingRangeStorageService : EcosContentStorageService {
 
-        val readRanges: MutableList<ContentRange?> = ArrayList()
+        val readRanges: MutableList<ContentRange> = ArrayList()
 
         private val blobs = ConcurrentHashMap<String, ByteArray>()
         private val keyCounter = AtomicLong()

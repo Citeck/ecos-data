@@ -64,7 +64,7 @@ class EcosContentLocalStorage(
         val entity = dataService.findById(id) ?: error("Content doesn't exists for id: $id")
         val data = entity.data
 
-        if (range == ContentRange.UNBOUNDED) {
+        if (range.isUnbounded()) {
             return action(ByteArrayInputStream(data))
         }
 
