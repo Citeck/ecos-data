@@ -36,6 +36,10 @@
     "ecos-data.has-non-unique-attributes": [
       "{{recordRef}} has non-unique attributes {{attributes}}",
       "{{recordRef}} имеет не уникальные значения атрибутов {{attributes}}"
+    ],
+    "ecos-data.column-name-too-long": [
+      "Column name '{{column}}' is too long: {{length}} bytes, but the database allows at most {{limit}} bytes (table {{table}}). Shorten the attribute id; for an aspect attribute a shorter aspect prefix also helps.",
+      "Слишком длинное имя колонки '{{column}}': {{length}} байт, а база данных допускает не более {{limit}} байт (таблица {{table}}). Сократите идентификатор атрибута; для атрибута аспекта также поможет более короткий префикс аспекта."
     ]
   }
 }

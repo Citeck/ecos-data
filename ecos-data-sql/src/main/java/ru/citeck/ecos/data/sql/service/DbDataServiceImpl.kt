@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.service
 import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.commons.exception.I18nRuntimeException
 import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
@@ -635,6 +636,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         val expectedWithEntityColumns = ArrayList(entityMapper.getEntityColumns().map { it.columnDef })
         expectedWithEntityColumns.addAll(expectedColumns)
 
+        validateColumnNames(expectedWithEntityColumns)
+
         val startTime = Instant.now()
         val changedColumns = mutableListOf<DbColumnDef>()
         val migration = {
@@ -702,6 +705,43 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         }
 
         return commands
+    }
+
+    /**
+     * Fails fast on a column name the backend would silently truncate. Runs before any DDL, so the
+     * table is not created (or altered) with a mangled name that the read path could never find.
+     * The check is deliberately not inside [ensureColumnsExistImpl]: the migration is retried once
+     * on failure, which would swallow the first exception.
+     */
+    private fun validateColumnNames(columns: List<DbColumnDef>) {
+        val limit = schemaDao.getMaxColumnNameBytes()
+        for (column in columns) {
+            val name = column.name
+            val lengthInBytes = name.toByteArray(Charsets.UTF_8).size
+            if (lengthInBytes <= limit) {
+                continue
+            }
+            // attribute-derived names are ASCII (see DbEcosModelService.VALID_COLUMN_NAME),
+            // so the name the database would silently use is a plain prefix of the requested one
+            val truncatedName = if (name.length == lengthInBytes) name.substring(0, limit) else null
+            val truncatedExists = truncatedName != null && this.columns?.any { it.name == truncatedName } == true
+            log.error {
+                "Column name is too long and would be silently truncated by the database. " +
+                    "Table: ${tableRef.fullName} column: '$name' " +
+                    "length: $lengthInBytes bytes, limit: $limit bytes. " +
+                    "Truncated column '${truncatedName ?: "?"}' " +
+                    (if (truncatedExists) "already exists" else "doesn't exist") + " in the table."
+            }
+            throw I18nRuntimeException(
+                messageKey = "ecos-data.column-name-too-long",
+                messageArgs = mapOf(
+                    "column" to name,
+                    "length" to lengthInBytes,
+                    "limit" to limit,
+                    "table" to tableRef.fullName
+                )
+            )
+        }
     }
 
     private fun ensureColumnsExistImpl(

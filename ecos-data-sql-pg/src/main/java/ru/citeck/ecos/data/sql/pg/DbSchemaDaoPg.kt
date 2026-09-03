@@ -18,6 +18,9 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
         const val COLUMN_TYPE_NAME = "TYPE_NAME"
         const val COLUMN_COLUMN_NAME = "COLUMN_NAME"
 
+        // NAMEDATALEN - 1: PostgreSQL silently truncates longer identifiers, quoting doesn't help
+        const val MAX_COLUMN_NAME_BYTES = 63
+
         private val INDEXED_COLUMN_TYPES = setOf(
             DbColumnType.DATETIME,
             DbColumnType.DATE,
@@ -327,6 +330,10 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
 
     override fun resetCache(dataSource: DbDataSource, tableRef: DbTableRef) {
         dataSource.updateSchema("DEALLOCATE ALL")
+    }
+
+    override fun getMaxColumnNameBytes(): Int {
+        return MAX_COLUMN_NAME_BYTES
     }
 
     private fun getColumnType(fullTypeName: String): Pair<DbColumnType, Boolean> {

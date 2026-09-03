@@ -27,4 +27,11 @@ interface DbSchemaDao {
     fun setColumnConstraints(dataSource: DbDataSource, tableRef: DbTableRef, columnName: String, constraints: List<DbColumnConstraint>)
 
     fun resetCache(dataSource: DbDataSource, tableRef: DbTableRef)
+
+    /**
+     * Maximum length of a column name, in UTF-8 bytes, that the backend stores without truncation.
+     * Longer names are rejected by [ru.citeck.ecos.data.sql.service.DbDataServiceImpl] before any
+     * DDL is issued, because a silently truncated name breaks every later read and write of the column.
+     */
+    fun getMaxColumnNameBytes(): Int
 }

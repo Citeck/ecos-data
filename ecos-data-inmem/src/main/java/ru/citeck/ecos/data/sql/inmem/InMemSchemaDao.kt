@@ -142,6 +142,15 @@ class InMemSchemaDao : DbSchemaDao {
         // no prepared-statement cache to reset for the in-memory backend
     }
 
+    /**
+     * The in-memory store has no limit of its own, so it deliberately returns the portable platform
+     * limit - the minimum over the supported backends, today PostgreSQL's NAMEDATALEN - 1. Application
+     * tests running on this backend must reject the same models that production rejects.
+     */
+    override fun getMaxColumnNameBytes(): Int {
+        return 63
+    }
+
     private fun ds(dataSource: DbDataSource): InMemDataSource {
         return dataSource as? InMemDataSource
             ?: error("InMemSchemaDao requires an InMemDataSource, but got: ${dataSource::class}")

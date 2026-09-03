@@ -94,6 +94,47 @@ class SchemaDaoTest {
         PgUtils.withDbDataSource { typeUpdateTestImpl(it) }
     }
 
+    /**
+     * Pins the constant to the database: PostgreSQL keeps NAMEDATALEN - 1 bytes of an identifier
+     * and silently truncates the rest, so a longer column comes back from the metadata under the
+     * truncated name. If NAMEDATALEN ever changes, this test tells us to revisit the limit.
+     */
+    @Test
+    fun columnNameLimitMatchesPostgresTest() {
+        PgUtils.withDbDataSource { columnNameLimitMatchesPostgresTestImpl(it) }
+    }
+
+    private fun columnNameLimitMatchesPostgresTestImpl(dataSource: DbDataSource) {
+
+        val dsCtx = DbDataSourceContext(
+            dataSource,
+            PgDataServiceFactory(),
+            DbMigrationService(),
+            EcosWebAppApiMock("test"),
+            GlobalEcosContext.getContext()
+        )
+        val tableRef = DbTableRef("some-schema", "long-column-table")
+
+        val dbSchemaDao = dsCtx.schemaDao
+        val limit = dbSchemaDao.getMaxColumnNameBytes()
+        assertThat(limit).isEqualTo(DbSchemaDaoPg.MAX_COLUMN_NAME_BYTES)
+
+        val tooLongName = "c".repeat(limit + 1)
+        dbSchemaDao.createTable(
+            dataSource,
+            tableRef,
+            listOf(
+                DbColumnDef.create {
+                    withName(tooLongName)
+                    withType(DbColumnType.TEXT)
+                }
+            )
+        )
+
+        val columnNames = dbSchemaDao.getColumns(dataSource, tableRef).map { it.name }
+        assertThat(columnNames).containsExactly(tooLongName.substring(0, limit))
+    }
+
     private fun typeUpdateTestImpl(dataSource: DbDataSource) {
 
         val dsCtx = DbDataSourceContext(

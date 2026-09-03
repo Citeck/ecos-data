@@ -446,4 +446,43 @@ abstract class DbDataServiceContractTest {
         val stored = service.findByExtId(extId) ?: error("not found by ext id")
         assertThat(stored.attributes[NUM_COLUMN] as Int).isBetween(1, threads)
     }
+
+    @Test
+    fun testTooLongColumnNameFailsBeforeTableIsCreated() {
+
+        val service = createService("contract-long-column")
+        val limit = service.getTableContext().getSchemaCtx().dataSourceCtx.schemaDao.getMaxColumnNameBytes()
+
+        val tooLongName = "c".repeat(limit + 1)
+        val ex = assertThrows<Exception> {
+            service.save(
+                newEntity(),
+                listOf(
+                    DbColumnDef.create {
+                        withName(tooLongName)
+                        withType(DbColumnType.TEXT)
+                    }
+                )
+            )
+        }
+        assertThat(ex.message).contains(tooLongName)
+        // the guard runs before any DDL: nothing is left behind, the table can still be created normally
+        assertThat(service.isTableExists()).isFalse
+
+        val maxLengthName = "c".repeat(limit)
+        var entity = newEntity()
+        entity.attributes[maxLengthName] = V0
+        entity = service.save(
+            entity,
+            textColumns() + listOf(
+                DbColumnDef.create {
+                    withName(maxLengthName)
+                    withType(DbColumnType.TEXT)
+                }
+            )
+        )
+        assertThat(service.isTableExists()).isTrue
+        val stored = service.findById(entity.id) ?: error("not found by id")
+        assertThat(stored.attributes[maxLengthName]).isEqualTo(V0)
+    }
 }
