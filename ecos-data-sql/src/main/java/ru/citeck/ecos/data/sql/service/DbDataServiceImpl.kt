@@ -715,12 +715,13 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
      */
     private fun validateColumnNames(columns: List<DbColumnDef>) {
         val limit = schemaDao.getMaxColumnNameBytes()
-        for (column in columns) {
-            val name = column.name
-            val lengthInBytes = name.toByteArray(Charsets.UTF_8).size
-            if (lengthInBytes <= limit) {
-                continue
-            }
+        val tooLong = columns.map { it.name to it.name.toByteArray(Charsets.UTF_8).size }
+            .filter { (_, lengthInBytes) -> lengthInBytes > limit }
+        if (tooLong.isEmpty()) {
+            return
+        }
+        // every offender goes to the log, so one fix round covers them all; the exception names the first
+        for ((name, lengthInBytes) in tooLong) {
             // attribute-derived names are ASCII (see DbEcosModelService.VALID_COLUMN_NAME),
             // so the name the database would silently use is a plain prefix of the requested one
             val truncatedName = if (name.length == lengthInBytes) name.substring(0, limit) else null
@@ -732,16 +733,17 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                     "Truncated column '${truncatedName ?: "?"}' " +
                     (if (truncatedExists) "already exists" else "doesn't exist") + " in the table."
             }
-            throw I18nRuntimeException(
-                messageKey = "ecos-data.column-name-too-long",
-                messageArgs = mapOf(
-                    "column" to name,
-                    "length" to lengthInBytes,
-                    "limit" to limit,
-                    "table" to tableRef.fullName
-                )
-            )
         }
+        val (name, lengthInBytes) = tooLong.first()
+        throw I18nRuntimeException(
+            messageKey = "ecos-data.column-name-too-long",
+            messageArgs = mapOf(
+                "column" to name,
+                "length" to lengthInBytes,
+                "limit" to limit,
+                "table" to tableRef.fullName
+            )
+        )
     }
 
     private fun ensureColumnsExistImpl(
