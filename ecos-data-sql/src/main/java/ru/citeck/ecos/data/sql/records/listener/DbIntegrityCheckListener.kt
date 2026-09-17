@@ -21,7 +21,9 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.util.concurrent.atomic.AtomicBoolean
 
 // todo: add checking of parent ref recursion based on ed_associations
-class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAware {
+class DbIntegrityCheckListener :
+    DbRecordsListenerAdapter(),
+    DbRecordsDaoCtxAware {
 
     companion object {
         private const val CONFIG_PARAM_UNIQUE = "unique"
@@ -114,7 +116,8 @@ class DbIntegrityCheckListener : DbRecordsListenerAdapter(), DbRecordsDaoCtxAwar
             if (attributeDef.mandatory) {
                 attsForMandatoryCheck.add(attributeDef.id)
             }
-            if (attributeDef.type == AttributeType.TEXT && !attributeDef.multiple &&
+            if (attributeDef.type == AttributeType.TEXT &&
+                !attributeDef.multiple &&
                 attributeDef.config[CONFIG_PARAM_UNIQUE].asBoolean()
             ) {
                 attsForUniqueCheck.add(attributeDef)

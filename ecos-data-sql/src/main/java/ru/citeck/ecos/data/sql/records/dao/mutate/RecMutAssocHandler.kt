@@ -18,6 +18,7 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 import ru.citeck.ecos.model.lib.type.dto.WorkspaceScope
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
+import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.webapp.api.constants.AppName
@@ -30,6 +31,57 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
 
         const val MUTATION_FROM_PARENT_FLAG = "__mutationFromParent"
         const val MUTATION_FROM_CHILD_FLAG = "__mutationFromChild"
+
+        /**
+         * [RecMutAssocHandler.updateParentRefOfChildren] over a bare [RecordsService], for a caller
+         * that has one and no [DbRecordsDaoCtx].
+         *
+         * **The whole of this function's dependency on the dao context is the records service**, and
+         * saying so in the signature is what lets the background column migration share this code
+         * without reaching for a whole `DbRecordsDaoCtx` of a table it does not own - see
+         * [ru.citeck.ecos.data.sql.context.DbSchemaContext.getRecordsService]. A records service is
+         * one per application, so "whichever dao registered last" is not a choice at all; every
+         * other member of a dao context - `sourceId`, `tableCtx`, `ecosTypeService` - is per-dao,
+         * and a caller that took one of those out of a table-keyed map would be making one.
+         *
+         * @param disableEvents suppress the child's change event: a background transfer
+         *        is not a user edit, and a table with a million children would otherwise emit a
+         *        million change events nobody asked for.
+         * @param disableAudit leave the child's `_modified`/`_modifier` alone, for the same reason.
+         *        **System context only** - `DbRecordsMutateDao` refuses it anywhere else - which is
+         *        exactly where the batch engine runs (`DbBatchTaskEngine.runTaskAttempt`).
+         */
+        @JvmStatic
+        fun updateParentRefOfChildren(
+            recordsService: RecordsService,
+            parentRef: EntityRef,
+            attId: String,
+            childRefs: Collection<EntityRef>,
+            add: Boolean,
+            disableEvents: Boolean = false,
+            disableAudit: Boolean = false
+        ) {
+            for (childRef in childRefs) {
+                if (EntityRef.isNotEmpty(childRef)) {
+                    val childAtts = RecordAtts(childRef)
+                    if (add) {
+                        childAtts.setAtt(RecordConstants.ATT_PARENT, parentRef)
+                        childAtts.setAtt(RecordConstants.ATT_PARENT_ATT, attId)
+                    } else {
+                        childAtts.setAtt(RecordConstants.ATT_PARENT, null)
+                        childAtts.setAtt(RecordConstants.ATT_PARENT_ATT, null)
+                    }
+                    childAtts.setAtt(MUTATION_FROM_PARENT_FLAG, true)
+                    if (disableEvents) {
+                        childAtts.setAtt(DbRecordsControlAtts.DISABLE_EVENTS, true)
+                    }
+                    if (disableAudit) {
+                        childAtts.setAtt(DbRecordsControlAtts.DISABLE_AUDIT, true)
+                    }
+                    recordsService.mutate(childAtts)
+                }
+            }
+        }
     }
 
     fun preProcessContentAtts(
@@ -445,32 +497,56 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
 
         val childRefsById = ctx.recordRefService.getEntityRefsByIdsMap(changedChildren)
         val addOrRemoveParentRef = { attId: String, children: Set<Long>, add: Boolean ->
-            for (childId in children) {
-                val childRef = childRefsById[childId]
-                    ?: error("Child ref doesn't found by id. Refs: $childRefsById id: $childId")
-
-                if (EntityRef.isNotEmpty(childRef)) {
-                    val childAtts = RecordAtts(childRef)
-                    if (add) {
-                        childAtts.setAtt(RecordConstants.ATT_PARENT, parentRef)
-                        childAtts.setAtt(RecordConstants.ATT_PARENT_ATT, attId)
-                    } else {
-                        childAtts.setAtt(RecordConstants.ATT_PARENT, null)
-                        childAtts.setAtt(RecordConstants.ATT_PARENT_ATT, null)
-                    }
-                    childAtts.setAtt(MUTATION_FROM_PARENT_FLAG, true)
-                    if (disableEvents) {
-                        childAtts.setAtt(DbRecordsControlAtts.DISABLE_EVENTS, true)
-                    }
-                    ctx.recordsService.mutate(childAtts)
-                }
-            }
+            updateParentRefOfChildren(
+                parentRef,
+                attId,
+                children.map {
+                    childRefsById[it] ?: error("Child ref doesn't found by id. Refs: $childRefsById id: $it")
+                },
+                add,
+                disableEvents
+            )
         }
 
         childrenChanges.forEach {
             addOrRemoveParentRef.invoke(it.key, it.value.removed, false)
             addOrRemoveParentRef.invoke(it.key, it.value.added, true)
         }
+    }
+
+    /**
+     * The back-reference of a child association: `_parent` and `_parentAtt` on each child, written
+     * through an ordinary mutation carrying [MUTATION_FROM_PARENT_FLAG] so that the child does not
+     * turn round and mutate the parent back.
+     *
+     * A named function rather than the local lambda it used to be, because the background column
+     * migration creates child links too and has to make them the same way this dao does. Three
+     * user-visible answers depend on the back-reference: `DbRecordsDeleteDao` removes the parent's
+     * link to a deleted child only through `_parent`/`_parentAtt`, a `_parent` predicate reads the
+     * `__parent` column rather than `ed_associations`, and
+     * [DefaultDbPermsComponent][ru.citeck.ecos.data.sql.records.perms.DefaultDbPermsComponent]
+     * treats a record with no `_parent` as world-readable. Sharing the code keeps the two paths from
+     * drifting.
+     *
+     * **[add] `= false` deletes the child**, because `DbRecordsDao.mutate` reads `_parent = null`
+     * under [MUTATION_FROM_PARENT_FLAG] as "the parent has let this child go". Only a caller that
+     * really is dropping the child may pass `false`.
+     *
+     * **Which is why a departure does not come through here.** An attribute that stops being a child
+     * association has to release its children, not delete them, and no route through record mutation
+     * does that: `add = false` deletes, and clearing `_parent` without the flag throws
+     * `'<att>' is not a child association` precisely because the attribute has stopped being one.
+     * [ru.citeck.ecos.data.sql.migration.column.DbAssocGroupDeparture] writes the two columns
+     * directly instead.
+     */
+    fun updateParentRefOfChildren(
+        parentRef: EntityRef,
+        attId: String,
+        childRefs: Collection<EntityRef>,
+        add: Boolean,
+        disableEvents: Boolean = false
+    ) {
+        updateParentRefOfChildren(ctx.recordsService, parentRef, attId, childRefs, add, disableEvents)
     }
 
     private data class AddedRemovedAssocs(

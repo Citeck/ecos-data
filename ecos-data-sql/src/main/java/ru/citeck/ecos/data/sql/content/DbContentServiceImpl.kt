@@ -25,7 +25,8 @@ import java.util.UUID
 
 class DbContentServiceImpl(
     private val schemaCtx: DbSchemaContext
-) : DbContentService, DbMigrationsExecutor {
+) : DbContentService,
+    DbMigrationsExecutor {
 
     private val dataService: DbDataService<DbContentEntity> = DbDataServiceImpl(
         DbContentEntity::class.java,

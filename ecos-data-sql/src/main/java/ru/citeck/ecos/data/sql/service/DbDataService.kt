@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.service
 
+import ru.citeck.ecos.data.sql.columnmeta.DbExpectedAttTypes
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
@@ -103,11 +104,29 @@ interface DbDataService<T : Any> {
      */
     fun updateByExtIdIfMatches(extId: String, expected: Map<String, Any?>, newValues: Map<String, Any?>): Boolean
 
+    /**
+     * The id-keyed sibling of [updateByExtIdIfMatches], for tables with no ext id column at all -
+     * [ru.citeck.ecos.data.sql.batch.DbBatchTaskEntity] is the first of these. Same contract
+     * otherwise, including "joins the caller's transaction". See
+     * [ru.citeck.ecos.data.sql.repo.DbEntityRepo.updateByIdIfMatches].
+     */
+    fun updateByIdIfMatches(id: Long, expected: Map<String, Any?>, newValues: Map<String, Any?>): Boolean
+
     fun save(entities: Collection<T>): List<T>
 
     fun save(entities: Collection<T>, columns: List<DbColumnDef>): List<T>
 
     fun save(entity: T, columns: List<DbColumnDef>): T
+
+    /**
+     * @param attTypes what the type model says about the columns of [columns]. The physical
+     *   [DbColumnDef] cannot carry it: several attribute types share one physical type, so a change
+     *   between them is invisible in [columns]. [DbExpectedAttTypes.EMPTY] for tables
+     *   that have no type model behind them, which is every system table.
+     */
+    fun save(entities: Collection<T>, columns: List<DbColumnDef>, attTypes: DbExpectedAttTypes): List<T>
+
+    fun save(entity: T, columns: List<DbColumnDef>, attTypes: DbExpectedAttTypes): T
 
     fun delete(entity: T)
 
@@ -132,6 +151,13 @@ interface DbDataService<T : Any> {
 
     fun runMigrations(
         expectedColumns: List<DbColumnDef>,
+        mock: Boolean,
+        diff: Boolean
+    ): List<String>
+
+    fun runMigrations(
+        expectedColumns: List<DbColumnDef>,
+        attTypes: DbExpectedAttTypes,
         mock: Boolean,
         diff: Boolean
     ): List<String>

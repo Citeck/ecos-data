@@ -10,6 +10,7 @@ import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
 import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
+import ru.citeck.ecos.data.sql.records.utils.DbReadToleranceLog
 import ru.citeck.ecos.data.sql.repo.DbConditionalUpdate
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -25,6 +26,7 @@ import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
 import ru.citeck.ecos.model.lib.type.dto.QueryPermsPolicy
 import ru.citeck.ecos.records2.RecordConstants
+import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.*
 import java.sql.ResultSet
 import java.sql.Timestamp
@@ -56,6 +58,20 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         private const val SEARCH_DISABLED_COLUMN = "__search__disabled__"
 
         private const val VIRTUAL_COLUMN_PREFIX = "v__"
+
+        // PostgreSQL type names as ResultSetMetaData.getColumnTypeName reports them ('_' prefixes
+        // the array form) - see getProlepticDateColumns for why these four, and only these four
+        private const val PG_TYPE_DATE = "date"
+        private const val PG_TYPE_TIMESTAMPTZ = "timestamptz"
+        private const val PG_TYPE_DATE_ARRAY = "_date"
+        private const val PG_TYPE_TIMESTAMPTZ_ARRAY = "_timestamptz"
+
+        private val PROLEPTIC_DATE_PG_TYPES = setOf(
+            PG_TYPE_DATE,
+            PG_TYPE_TIMESTAMPTZ,
+            PG_TYPE_DATE_ARRAY,
+            PG_TYPE_TIMESTAMPTZ_ARRAY
+        )
 
         // 'IS DISTINCT FROM' works as '<>' (not-eq) except it include records with null values
         private val COLUMN_TYPES_FOR_IS_DISTINCT_FROM_OPERATOR = setOf(
@@ -97,10 +113,98 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         ).entities
     }
 
+    /**
+     * The columns of [resultSet] whose value PostgreSQL keeps in the proleptic Gregorian calendar
+     * and JDBC's legacy types cannot carry across, keyed by column label.
+     *
+     * [java.sql.Date] and [java.sql.Timestamp] hold their value as epoch millis and read their
+     * fields back through [java.util.Date]'s hybrid calendar - Julian before the 1582-10-15 cutover,
+     * Gregorian after it - while PostgreSQL and [java.time] are proleptic Gregorian throughout.
+     * Every value older than the cutover is therefore shifted by the Julian/Gregorian difference of
+     * its own epoch on one of the two crossings: two days at year 1, ten days in the 1500s,
+     * thirty-eight days at 4713 BC. Which crossing is the broken one depends on the driver, so
+     * neither legacy type can be trusted and every date column - scalar or array - has to be read as
+     * a [java.time] value.
+     *
+     * Only what the result set really is counts here, not what the column metadata says it should
+     * be: a `timestamp` without a time zone is deliberately left off this list, because a bare
+     * `timestamp` is written and read in the JVM's own zone and reading it as an [OffsetDateTime]
+     * would move it by that zone's offset. The first column of a label wins, matching which one
+     * `getObject(label)` would have returned.
+     */
+    private fun getProlepticDateColumns(resultSet: ResultSet): Map<String, String> {
+        val metaData = resultSet.metaData
+        val result = LinkedHashMap<String, String>()
+        for (idx in 1..metaData.columnCount) {
+            val typeName = metaData.getColumnTypeName(idx)
+            if (PROLEPTIC_DATE_PG_TYPES.contains(typeName)) {
+                result.putIfAbsent(metaData.getColumnLabel(idx), typeName)
+            }
+        }
+        return result
+    }
+
+    /**
+     * Reads one column, taking a date out of the result set as a [java.time] value whenever
+     * [prolepticDateColumns] says the legacy JDBC type would shift it - see
+     * [getProlepticDateColumns].
+     *
+     * The value handed back keeps the type the rest of the read path already expects for that
+     * column, so only the crossing changes and nothing downstream has to know: a `timestamptz`
+     * still arrives as a [Timestamp], built from an instant rather than from calendar fields.
+     */
+    private fun readColumnValue(row: ResultSet, name: String, prolepticDateColumns: Map<String, String>): Any? {
+        return when (prolepticDateColumns[name]) {
+            PG_TYPE_DATE -> row.getObject(name, LocalDate::class.java)
+            PG_TYPE_TIMESTAMPTZ -> row.getObject(name, OffsetDateTime::class.java)?.let {
+                Timestamp.from(it.toInstant())
+            }
+            PG_TYPE_DATE_ARRAY -> readArray(row, name, LocalDate::class.java, LocalDate::class.java) { it }
+            PG_TYPE_TIMESTAMPTZ_ARRAY -> readArray(
+                row,
+                name,
+                OffsetDateTime::class.java,
+                Timestamp::class.java
+            ) { Timestamp.from(it.toInstant()) }
+            else -> row.getObject(name)
+        }
+    }
+
+    /**
+     * Reads an array column element by element through the array's own result set, which is the only
+     * way to ask the driver for a [java.time] value: `java.sql.Array.getArray()` always answers with
+     * the legacy [java.sql.Date] / [Timestamp] elements that carry the shift.
+     *
+     * A null array stays null and a null element stays a null element, exactly as the untyped read
+     * left them. [elementType] is the type the elements are converted to afterwards, so the array
+     * handed back is the one the rest of the read path already expects for that column.
+     */
+    private fun <T : Any, R : Any> readArray(
+        row: ResultSet,
+        name: String,
+        readAs: Class<T>,
+        elementType: Class<R>,
+        convert: (T) -> R
+    ): Any? {
+        val array = row.getArray(name) ?: return null
+        val values = ArrayList<R?>()
+        array.resultSet.use { elements ->
+            while (elements.next()) {
+                values.add(elements.getObject(2, readAs)?.let(convert))
+            }
+        }
+        val result = java.lang.reflect.Array.newInstance(elementType, values.size)
+        for (idx in values.indices) {
+            java.lang.reflect.Array.set(result, idx, values[idx])
+        }
+        return result
+    }
+
     private fun convertRowToMap(
         typesConverter: DbTypesConverter,
         row: ResultSet,
         columns: List<DbColumnDef>,
+        prolepticDateColumns: Map<String, String>,
         groupBy: List<String> = emptyList(),
         selectExpressions: Set<String>,
         asjAliases: Map<String, String>
@@ -108,7 +212,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val result = LinkedHashMap<String, Any?>()
         if (groupBy.isEmpty()) {
             columns.forEach { column ->
-                val value = row.getObject(column.name)
+                val value = readColumnValue(row, column.name, prolepticDateColumns)
                 result[column.name] = if (value != null) {
                     var expectedType = column.type.type
                     if (column.multiple && column.type != DbColumnType.JSON) {
@@ -130,7 +234,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                     if (alias != null) {
                         result[it] = row.getObject(alias)
                     } else {
-                        val value = row.getObject(it)
+                        val value = readColumnValue(row, it, prolepticDateColumns)
                         result[it] = if (value != null) {
                             val column = columnByName[it]!!
                             typesConverter.convert(value, column.type.type)
@@ -152,6 +256,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
     }
 
     override fun delete(context: DbTableContext, predicate: Predicate) {
+
+        // Normalised first: PredicateUtils.isAlwaysTrue only recognises a bare VoidPredicate, so
+        // and(alwaysTrue()), not(alwaysFalse()) and an empty AndPredicate - all of which delete
+        // every row of the table just as surely - would otherwise walk straight past the guard.
+        // optimize() folds exactly those shapes down to the VoidPredicate the check does recognise.
+        require(!PredicateUtils.isAlwaysTrue(PredicateUtils.optimize(predicate))) {
+            "Deleting all rows of table '${context.getTableRef()}' by an always-true predicate is not supported. " +
+                "If you really mean to remove specific rows, use delete(entityId) / delete(entities: List<Long>) instead."
+        }
 
         val query = StringBuilder("DELETE FROM ")
             .append(context.getTableRef().fullName)
@@ -234,13 +347,37 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         expected: Map<String, Any?>,
         newValues: Map<String, Any?>
     ): Boolean {
+        return conditionalUpdate(context, DbEntity.EXT_ID, extId, expected, newValues)
+    }
+
+    override fun updateByIdIfMatches(
+        context: DbTableContext,
+        id: Long,
+        expected: Map<String, Any?>,
+        newValues: Map<String, Any?>
+    ): Boolean {
+        return conditionalUpdate(context, DbEntity.ID, id, expected, newValues)
+    }
+
+    /**
+     * Shared implementation of [updateByExtIdIfMatches] and [updateByIdIfMatches]: the two differ
+     * only in which column identifies the row, so [idColumn]/[idValue] are the only thing that
+     * changes between them.
+     */
+    private fun conditionalUpdate(
+        context: DbTableContext,
+        idColumn: String,
+        idValue: Any,
+        expected: Map<String, Any?>,
+        newValues: Map<String, Any?>
+    ): Boolean {
 
         checkAuth(context)
 
         if (newValues.isEmpty()) {
             error("New values are empty. Table: ${context.getTableRef().fullName}")
         }
-        // an empty condition would turn a compare-and-set into an unconditional overwrite by ext id
+        // an empty condition would turn a compare-and-set into an unconditional overwrite by row id
         if (expected.isEmpty()) {
             error("Expected values are empty. Table: ${context.getTableRef().fullName}")
         }
@@ -270,8 +407,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 .append(" THEN 0 ELSE ").append(version).append(" END")
         }
 
-        query.append(" WHERE \"").append(DbEntity.EXT_ID).append("\"=?")
-        params.add(extId)
+        query.append(" WHERE \"").append(idColumn).append("\"=?")
+        params.add(idValue)
         for (value in expectedValues) {
             query.append(" AND \"").append(value.name).append("\"")
             val expectedValue = value.values[0]
@@ -287,7 +424,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         if (updatedRows > 1) {
             error(
                 "Conditional update matched $updatedRows rows instead of one. " +
-                    "Table: ${context.getTableRef().fullName} extId: $extId"
+                    "Table: ${context.getTableRef().fullName} $idColumn: $idValue"
             )
         }
         return updatedRows == 1L
@@ -490,9 +627,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             return 0
         }
         val permsColumn = getPermsColumn(context)
-        if (permsColumn.isNotEmpty() && (
+        if (permsColumn.isNotEmpty() &&
+            (
                 !context.getPermsService()
-                    .isTableExists() || !context.hasColumn(permsColumn)
+                    .isTableExists() ||
+                    !context.hasColumn(permsColumn)
                 )
         ) {
             return 0
@@ -658,9 +797,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val permsColumn = getPermsColumn(context)
 
-        if (permsColumn.isNotEmpty() && (
+        if (permsColumn.isNotEmpty() &&
+            (
                 !context.getPermsService()
-                    .isTableExists() || !context.hasColumn(permsColumn)
+                    .isTableExists() ||
+                    !context.hasColumn(permsColumn)
                 )
         ) {
             return DbFindRes(emptyList(), 0)
@@ -767,12 +908,16 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val resultEntities = context.getDataSource().query(selectQuery, params) { resultSet ->
             val resultList = mutableListOf<Map<String, Any?>>()
+            // resolved once for the whole result set: the answer is the same for every row, and
+            // reading it per row would put a metadata lookup on every column of every record
+            val prolepticDateColumns = getProlepticDateColumns(resultSet)
             while (resultSet.next()) {
                 resultList.add(
                     convertRowToMap(
                         typesConverter,
                         resultSet,
                         columns,
+                        prolepticDateColumns,
                         queryGroupBy,
                         selectExpressions,
                         asjAliases
@@ -922,7 +1067,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             expression.branches.all {
                 isValidExpressionForQuerySelectAttWithGrouping(groupBy, it.condition) &&
                     isValidExpressionForQuerySelectAttWithGrouping(groupBy, it.thenResult)
-            } && isValidExpressionForQuerySelectAttWithGrouping(groupBy, expression.orElse)
+            } &&
+                isValidExpressionForQuerySelectAttWithGrouping(groupBy, expression.orElse)
         } else {
             true
         }
@@ -1391,35 +1537,64 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         }
                     }
                 }
-                columnDef ?: error("column is not found: $attribute")
 
                 val type = predicate.getType()
                 val value = predicate.getValue()
 
-                if (columnDef.type == DbColumnType.LONG) {
-                    val assocJoin = assocTableJoins[attribute]
-                    if (assocJoin != null) {
-                        if (type != ValuePredicate.Type.EQ &&
-                            type != ValuePredicate.Type.CONTAINS &&
-                            type != ValuePredicate.Type.IN
-                        ) {
-                            return false
-                        }
-                        val longs = DbAttValueUtils.anyToSetOfLongs(value)
-                        addAssocCondition(context, query, table, assocJoin, longs)
-                        return true
+                // Gated by the presence of the join, not by the physical column type. The model
+                // and the schema can legitimately disagree - a failed column conversion, or a
+                // migration still running in background. When a join was requested for this
+                // attribute, the condition must be built through it whatever the column type is:
+                // otherwise the synthetic join alias leaks into the SQL as a column name and the
+                // whole query fails with "column <att>-1 does not exist".
+                //
+                // Both assoc branches are evaluated before the "column is not found" check below:
+                // they go through ed_associations and don't need the source column at all, so a
+                // missing column is no reason to refuse an association condition.
+                val assocJoin = assocTableJoins[attribute]
+                if (assocJoin != null) {
+                    if (type != ValuePredicate.Type.EQ &&
+                        type != ValuePredicate.Type.CONTAINS &&
+                        type != ValuePredicate.Type.IN
+                    ) {
+                        return false
                     }
-                    val assocTargetTableJoin = assocTargetJoinsWithPredicate[attribute]
-                    if (assocTargetTableJoin != null) {
-                        if (type != ValuePredicate.Type.EQ &&
-                            type != ValuePredicate.Type.CONTAINS &&
-                            type != ValuePredicate.Type.IN
-                        ) {
-                            return false
-                        }
-                        addAssocTableCondition(query, table, assocTargetTableJoin, queryParams)
-                        return true
+                    val longs = DbAttValueUtils.anyToSetOfLongs(value)
+                    addAssocCondition(context, query, table, assocJoin, longs)
+                    return true
+                }
+                val assocTargetTableJoin = assocTargetJoinsWithPredicate[attribute]
+                if (assocTargetTableJoin != null) {
+                    if (type != ValuePredicate.Type.EQ &&
+                        type != ValuePredicate.Type.CONTAINS &&
+                        type != ValuePredicate.Type.IN
+                    ) {
+                        return false
                     }
+                    addAssocTableCondition(query, table, assocTargetTableJoin, queryParams)
+                    return true
+                }
+
+                if (columnDef == null) {
+                    // The schema is generated from the type model by the write path
+                    // (ensureColumnsExist), so an attribute added to the model but never yet
+                    // saved simply has no column. Reading must not fail because of that: the
+                    // condition can't match anything, so it degrades to a false condition.
+                    //
+                    // "false" is returned as ALWAYS_FALSE_CONDITION rather than by returning
+                    // false from this method: returning false drops the condition from the
+                    // enclosing AND, which would widen the result set instead of narrowing it.
+                    DbReadToleranceLog.warnOnce(
+                        log,
+                        "predicate-column-not-found-${context.getTableRef()}-$attribute"
+                    ) {
+                        "Column is not found for attribute '$attribute' in table " +
+                            "${context.getTableRef()}. The attribute exists in the type model, " +
+                            "but was never materialized in the database schema. The condition " +
+                            "will not match any record"
+                    }
+                    query.append(ALWAYS_FALSE_CONDITION)
+                    return true
                 }
 
                 val expression = expressions[attribute]
@@ -1457,7 +1632,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                     val sqlExpression = sqlExpressionsByAlias[attribute]
                         ?: error("SQL expression is not found for $expression")
 
-                    if (convertedParam is String && (
+                    if (convertedParam is String &&
+                        (
                             type == ValuePredicate.Type.LIKE ||
                                 type == ValuePredicate.Type.CONTAINS
                             )

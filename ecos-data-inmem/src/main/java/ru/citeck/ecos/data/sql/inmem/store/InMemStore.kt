@@ -165,6 +165,44 @@ class InMemTable internal constructor(
         }
     }
 
+    /**
+     * Renames a column and every row's entry for it.
+     *
+     * Rows are mutated in place here rather than replaced through [putRow], because the key is what
+     * changes and [putRow] needs an ext id the schema layer does not have. Every mutation records
+     * its inverse in the undo log, so rollback isolation is preserved - the rule the other writers
+     * follow by replacing rows is honoured here by recording, not by copying.
+     *
+     * Rejects a collision with an existing column rather than silently overwriting it. PostgreSQL's
+     * `RENAME COLUMN` raises in the same situation; agreeing here matters because a caller (the
+     * column migration) generates backup names and must be able to trust that a collision surfaces
+     * as an error on both backends rather than quietly clobbering data on one of them.
+     */
+    fun renameColumn(oldName: String, newName: String) {
+        val column = columns[oldName] ?: return
+        require(!columns.containsKey(newName)) {
+            "Column '$newName' already exists in table '${tableRef.fullName}', cannot rename '$oldName' to it"
+        }
+        val previousColumns = LinkedHashMap(columns)
+        columns.remove(oldName)
+        columns[newName] = DbColumnDef.Builder(column).withName(newName).build()
+        undoLog.record {
+            columns.clear()
+            columns.putAll(previousColumns)
+        }
+        for (row in rows.values) {
+            if (!row.containsKey(oldName)) {
+                continue
+            }
+            val value = row.remove(oldName)
+            row[newName] = value
+            undoLog.record {
+                row.remove(newName)
+                row[oldName] = value
+            }
+        }
+    }
+
     fun nextId(): Long {
         return idCounter.incrementAndGet()
     }

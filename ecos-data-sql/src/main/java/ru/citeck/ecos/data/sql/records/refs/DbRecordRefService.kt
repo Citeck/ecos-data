@@ -212,6 +212,20 @@ class DbRecordRefService(
         }
     }
 
+    /**
+     * The text this service stores in `ed_record_ref.__ext_id` for [ref] - the reference's own text
+     * form, with the default app name prepended when it carries none.
+     *
+     * Exposed for a caller that has to know how long that text will be *before* registering the
+     * reference: the column carries a unique btree index with a size limit, and
+     * `DbColumnValueConverter` refuses an over-long value rather than letting the insert throw (see
+     * its `requireIndexableExtId`). Measuring the source text instead would be wrong by the length
+     * of the app name this adds. Read-only: nothing here writes.
+     */
+    fun getStoredExtId(ref: EntityRef): String {
+        return fixEntityRef(ref).toString()
+    }
+
     private fun fixEntityRef(entityRef: EntityRef): EntityRef {
         if (entityRef.getAppName().isNotBlank()) {
             return entityRef

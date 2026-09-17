@@ -18,7 +18,8 @@ import java.time.Instant
 
 class DbTrashcanServiceImpl(
     private val schemaCtx: DbSchemaContext
-) : DbTrashcanService, DbMigrationsExecutor {
+) : DbTrashcanService,
+    DbMigrationsExecutor {
 
     private val ecosContext = schemaCtx.ecosContext
 

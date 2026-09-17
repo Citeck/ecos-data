@@ -262,7 +262,8 @@ class DbRecContentHandler(private val ctx: DbRecordsDaoCtx) {
         newContentStorage: EcosContentStorageConfig?
     ): Boolean {
         if (contentAtts.dbSchema != ctx.tableRef.schema ||
-            contentAtts.contentId == null || contentAtts.contentId < 0
+            contentAtts.contentId == null ||
+            contentAtts.contentId < 0
         ) {
             return false
         }

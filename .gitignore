@@ -19,3 +19,6 @@ target
 nodejs/*
 node_modules/*
 .flattened-pom.xml
+
+# Temporary working docs (specs/plans) - not part of the repository
+docs/superpowers

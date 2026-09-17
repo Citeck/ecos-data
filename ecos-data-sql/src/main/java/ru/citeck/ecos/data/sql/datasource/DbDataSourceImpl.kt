@@ -9,6 +9,7 @@ import ru.citeck.ecos.txn.lib.transaction.Transaction
 import ru.citeck.ecos.webapp.api.datasource.JdbcDataSource
 import java.sql.*
 import java.time.Duration
+import java.time.LocalDate
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -148,12 +149,37 @@ class DbDataSourceImpl(
 
     private fun setParams(connection: Connection, statement: PreparedStatement, params: List<Any?>) {
         params.forEachIndexed { idx, value ->
-            if (value is Array<*> && value.isArrayOf<Timestamp>()) {
-                val array = connection.createArrayOf("timestamp", value)
+            val elementType = arrayElementSqlType(value)
+            if (elementType != null) {
+                val array = connection.createArrayOf(elementType, value as Array<*>)
                 statement.setObject(idx + 1, array)
             } else {
                 statement.setObject(idx + 1, value)
             }
+        }
+    }
+
+    /**
+     * The SQL element type a java.time array has to be built with, or null when `setObject` can bind
+     * the value as it is.
+     *
+     * The driver infers nothing from an `Object[]` of a java.time type - it answers
+     * `Cannot cast an instance of [Ljava.time.LocalDate; to type Types.ARRAY` - so every array of
+     * one needs its element type named here. The scalars are fine: JDBC 4.2 defines the mapping for
+     * a single [LocalDate] or [Timestamp], and only the array form has to be built by hand.
+     *
+     * [LocalDate] is what a DATE column's values are converted to on the way in
+     * ([ru.citeck.ecos.data.sql.type.DbTypesConverter]), so before it was listed here a
+     * multi-valued DATE attribute could not be written at all.
+     */
+    private fun arrayElementSqlType(value: Any?): String? {
+        if (value !is Array<*>) {
+            return null
+        }
+        return when {
+            value.isArrayOf<Timestamp>() -> "timestamp"
+            value.isArrayOf<LocalDate>() -> "date"
+            else -> null
         }
     }
 

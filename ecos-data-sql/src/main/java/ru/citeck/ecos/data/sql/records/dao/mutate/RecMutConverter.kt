@@ -66,7 +66,9 @@ class RecMutConverter {
 
     private fun isNull(value: Any?): Boolean {
         return value == null ||
-            value is DataValue && value.isNull() ||
-            value is EntityRef && value.isEmpty()
+            value is DataValue &&
+            value.isNull() ||
+            value is EntityRef &&
+            value.isEmpty()
     }
 }

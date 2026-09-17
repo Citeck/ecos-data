@@ -15,7 +15,8 @@ import java.io.OutputStream
 
 class EcosContentRemoteStorage(
     private val webClient: EcosWebClientApi
-) : EcosContentStorage, EcosContentChunkedStorage {
+) : EcosContentStorage,
+    EcosContentChunkedStorage {
 
     companion object {
         const val CONTENT_STORAGE_UPLOAD = "/content/storage/upload"

@@ -42,7 +42,8 @@ internal class FakeChunkedStorage(
      */
     @Volatile var chunkSize: Long,
     private val expectedStorageRef: EntityRef
-) : EcosContentStorage, EcosContentChunkedStorage {
+) : EcosContentStorage,
+    EcosContentChunkedStorage {
 
     private val active = ConcurrentHashMap<String, ConcurrentHashMap<Int, ByteArray>>()
     private val completed = ConcurrentHashMap<String, ByteArray>()

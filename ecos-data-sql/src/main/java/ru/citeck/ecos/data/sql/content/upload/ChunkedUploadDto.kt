@@ -6,34 +6,26 @@ import java.time.Duration
 
 /**
  * Server-side limits every chunked call is evaluated against. Kept apart from
- * [ChunkedUploadInitReq] on purpose: those are the caller's own data, while these come from the
+ * [ChunkedUploadInitReq] on purpose: those are the caller's own data, these come from the
  * application configuration and must never be taken from a client request.
  *
- * Nothing here is persisted on the session, so a change of the application setting applies at once
- * to sessions that are already in flight. Every value is validated on construction, i.e. at the
- * boundary that produces them, so every call site downstream may rely on them being sane: a
- * non-positive [sessionIdleTimeout] would put the expiry cut-off at or after `now` and make every
- * session - including one created a millisecond ago - read as expired, and a non-positive
- * [maxActiveSessionsPerUser] would reject every single init with `too-many-sessions`.
+ * Nothing here is persisted on the session, so a changed setting applies at once to sessions already
+ * in flight. Every value is validated on construction, so call sites may rely on them: a
+ * non-positive [sessionIdleTimeout] would make every session read as expired, and a non-positive
+ * [maxActiveSessionsPerUser] would reject every init.
  *
  * [completionLease] is how long a `COMPLETING` session is assumed to still have a live completer
- * behind it. A second `complete` arriving inside that window - the ordinary shape of a client or
- * gateway retry, since a completion holds the connection for the whole storage-side assembly - is
- * answered with `ContentUploadCompletionInProgressException` instead of being let into the
- * completion body beside the completer that is already running there. Once the window has passed
- * with no write on the row, the previous completer is taken to have died and the next `complete`
- * takes the session over.
+ * behind it. A second `complete` inside that window - the ordinary shape of a retry, since a
+ * completion holds the connection for the whole storage-side assembly - is refused rather than let
+ * in beside the completer already running. Once the window passes with no write on the row, the
+ * previous completer is taken to have died. The value trades two failures against each other:
+ * shorter than the slowest assembly and a live completion can be taken over, longer than necessary
+ * and recovery from a crashed one waits that much longer.
  *
- * So the value trades two failures against each other: shorter than the slowest storage-side
- * assembly and a live completion can be taken over; longer than necessary and recovery from a
- * crashed completion waits that much longer.
- *
- * It may be at most half of [sessionIdleTimeout]. A lease is handed back by moving `modified` a
- * whole lease into the past, and `modified` is also the session's idle clock, so a lease closer to
- * the idle timeout than that would leave a released session so near expiry that the retry the
- * release exists to enable answers Gone instead. That bound is also why [sessionIdleTimeout] has a
- * floor of its own ([MIN_SESSION_IDLE_TIMEOUT]): under it "positive" and "at most half the idle
- * timeout" cannot both hold, and the caller would be refused over a lease it never named.
+ * It may be at most half of [sessionIdleTimeout], because a lease is handed back by moving
+ * `modified` a whole lease into the past and `modified` is also the idle clock - a longer lease
+ * would leave a released session so near expiry that the retry it exists to enable answers Gone.
+ * That bound is also why [sessionIdleTimeout] has a floor ([MIN_SESSION_IDLE_TIMEOUT]).
  */
 data class ChunkedUploadPolicy(
     val maxActiveSessionsPerUser: Int,
@@ -194,8 +186,7 @@ class ContentUploadSessionGoneException(id: String) : RuntimeException("Upload s
 /**
  * [chunkedUploadComplete] was called before all bytes were confirmed.
  */
-class ContentUploadSizeMismatchException(val offset: Long, val size: Long) :
-    RuntimeException("Upload is incomplete: confirmed offset $offset does not match declared size $size")
+class ContentUploadSizeMismatchException(val offset: Long, val size: Long) : RuntimeException("Upload is incomplete: confirmed offset $offset does not match declared size $size")
 
 /**
  * Another request is already completing this session (it won the `ACTIVE -> COMPLETING` transition,
@@ -206,5 +197,4 @@ class ContentUploadSizeMismatchException(val offset: Long, val size: Long) :
  * dedicated type it would be indistinguishable from any other [IllegalStateException] and surface
  * as an HTTP 500.
  */
-class ContentUploadCompletionInProgressException(val uploadId: String) :
-    RuntimeException("Upload session '$uploadId' is already being completed by another request")
+class ContentUploadCompletionInProgressException(val uploadId: String) : RuntimeException("Upload session '$uploadId' is already being completed by another request")

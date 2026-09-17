@@ -35,6 +35,11 @@ class InMemSchemaDao : DbSchemaDao {
 
     private val listeners: MutableMap<String, MutableList<DbSchemaListener>> = ConcurrentHashMap()
 
+    /**
+     * Columns [createColumnIndexIfMissing] has already been asked about - see its doc.
+     */
+    private val indexedColumns: MutableMap<DbTableRef, MutableSet<String>> = ConcurrentHashMap()
+
     override fun addSchemaListener(schema: String, listener: DbSchemaListener) {
         listeners.computeIfAbsent(schema) { CopyOnWriteArrayList() }.add(listener)
     }
@@ -149,6 +154,79 @@ class InMemSchemaDao : DbSchemaDao {
      */
     override fun getMaxColumnNameBytes(): Int {
         return 63
+    }
+
+    /**
+     * The in-memory store answers structural questions from the same maps the caller's cache was
+     * built from, so it cannot produce a stale-cache error to recognise. Always false.
+     */
+    override fun isSchemaMismatchError(exception: Throwable): Boolean {
+        return false
+    }
+
+    /**
+     * The in-memory backend changes a column's definition without touching the stored values, so
+     * every pair is "supported" structurally. This is not a claim that values are converted - they
+     * are not, which is why the row-wise transfer is the portable path.
+     */
+    override fun isTypeChangeSupported(currentColumn: DbColumnDef, targetColumn: DbColumnDef): Boolean {
+        return true
+    }
+
+    override fun renameColumn(dataSource: DbDataSource, tableRef: DbTableRef, name: String, newName: String) {
+        val ds = ds(dataSource)
+        val table = ds.getStore().getTable(tableRef) ?: return
+        if (table.getColumn(name) == null) {
+            return
+        }
+        ds.registerSchemaCommand("rename column $name in ${tableRef.fullName} to $newName")
+        if (!ds.isSchemaMock()) {
+            table.renameColumn(name, newName)
+            indexedColumns[tableRef]?.remove(name)
+        }
+    }
+
+    /**
+     * Exact, and cheap: the store knows its own size. There are no planner statistics to fall back
+     * on and none are needed.
+     */
+    override fun isRowsCountGreaterThan(dataSource: DbDataSource, tableRef: DbTableRef, limit: Long): Boolean {
+        val table = ds(dataSource).getStore().getTable(tableRef) ?: return false
+        return table.getRows().size > limit
+    }
+
+    /**
+     * Exact, for the same reason [isRowsCountGreaterThan] is: the store knows its own size and
+     * counting it is O(1). -1 for a table that does not exist - there is nothing to estimate.
+     */
+    override fun estimateRowsCount(dataSource: DbDataSource, tableRef: DbTableRef): Long {
+        val table = ds(dataSource).getStore().getTable(tableRef) ?: return -1
+        return table.getRows().size.toLong()
+    }
+
+    /**
+     * The in-memory backend enforces no index, so this builds nothing - it registers the same
+     * change marker [createIndexes] does. The set of columns it has been asked about is kept only
+     * so that "if missing" is a real answer rather than a word in the method name: a caller that
+     * asks twice has to see one index created, on this backend as much as on PostgreSQL. A column
+     * renamed away (a backup, see [renameColumn]) loses its entry, matching the PG backend dropping
+     * the indexes that served the old name.
+     *
+     * Deliberately *only* what this method was asked for: an index that came with [addColumns] or
+     * [createTable] is not in the set, because the in-memory store keeps no index state of its own
+     * to read it back from. That is harmless for the one caller there is - the column migration
+     * builds an index precisely on a column that was added without one.
+     */
+    override fun createColumnIndexIfMissing(dataSource: DbDataSource, tableRef: DbTableRef, column: DbColumnDef) {
+        val ds = ds(dataSource)
+        val indexed = indexedColumns.computeIfAbsent(tableRef) { ConcurrentHashMap.newKeySet() }
+        if (indexed.contains(column.name)) {
+            return
+        }
+        ds.registerSchemaCommand("create index on ${tableRef.fullName} (${column.name})")
+        if (!ds.isSchemaMock()) {
+            indexed.add(column.name)
+        }
     }
 
     private fun ds(dataSource: DbDataSource): InMemDataSource {

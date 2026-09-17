@@ -73,7 +73,7 @@ class DbTypesConverter {
             }
         } else {
             val conv = converters[value::class to targetClass]
-                ?: error("Can't convert ${value::class} to $targetClass")
+                ?: throw DbTypeConversionException(value::class, targetClass)
             conv.invoke(value)
         }
 
@@ -114,3 +114,21 @@ class DbTypesConverter {
         register(Int::class, Long::class) { it.toLong() }
     }
 }
+
+/**
+ * "The database handed me a value of a type I have no way to turn into the one I expected here."
+ *
+ * A distinct type rather than a bare `error(...)` because one of its causes is not a programming
+ * mistake at all: a column whose physical type was changed - by a migration on another instance of
+ * the cluster, or by another records DAO over the same table in this one - while this instance was
+ * still holding the column list it read before. The read path uses this to recognise that its
+ * cached schema is stale, drop it and let the next attempt succeed
+ * ([ru.citeck.ecos.data.sql.service.DbDataServiceImpl]'s read-only query wrapper). A plain
+ * `IllegalStateException` carrying the same words cannot be told apart from any other failure, and
+ * before this the consequence was permanent: every later read of that column through that DAO
+ * failed the same way, for the lifetime of the instance.
+ */
+class DbTypeConversionException(
+    val sourceClass: KClass<*>,
+    val targetClass: KClass<*>
+) : RuntimeException("Can't convert $sourceClass to $targetClass")

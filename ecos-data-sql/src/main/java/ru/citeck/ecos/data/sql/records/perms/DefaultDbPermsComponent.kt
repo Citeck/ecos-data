@@ -27,10 +27,11 @@ class DefaultDbPermsComponent(
                 recordsService.getAtts(record, RecWoParentAtts::class.java)
             }
             val userAuthData = SimpleAuthData(user, authorities.toList())
-            val canWrite = !recAtts.hasSystemType || workspaceService.isSystemOrWsSystemOrAdminAuth(
-                userAuthData,
-                recAtts.workspace
-            )
+            val canWrite = !recAtts.hasSystemType ||
+                workspaceService.isSystemOrWsSystemOrAdminAuth(
+                    userAuthData,
+                    recAtts.workspace
+                )
 
             PermsAtts(
                 canRead = true,

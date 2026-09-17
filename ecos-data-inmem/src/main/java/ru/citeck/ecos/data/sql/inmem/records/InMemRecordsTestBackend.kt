@@ -30,6 +30,11 @@ class InMemRecordsTestBackend : DbRecordsTestBackend {
     // timezone / interval internals (to_char patterns, date_trunc, date_part('epoch'), interval).
     override val supportsSqlInternalExpressions: Boolean = false
 
+    // A type change here rewrites the column definition and leaves the stored values untouched -
+    // InMemSchemaDao.setColumnType says so in as many words - so there is no in-place value
+    // conversion on this backend for a test to compare the row-by-row converter against.
+    override val convertsColumnValuesInPlace: Boolean = false
+
     // The in-mem source enlists a TransactionResource with the active platform transaction (see
     // InMemDataSource), so writes made inside a doInTxn block are rolled back when the block throws.
     override val supportsTransactionRollback: Boolean = true
@@ -81,7 +86,9 @@ class InMemRecordsTestBackend : DbRecordsTestBackend {
     }
 }
 
-/** SPI factory for [InMemRecordsTestBackend], keyed `inmem`. */
+/**
+ * SPI factory for [InMemRecordsTestBackend], keyed `inmem`.
+ */
 class InMemRecordsTestBackendFactory : DbRecordsTestBackendFactory {
     override val id: String = "inmem"
     override fun create(webAppApi: EcosWebAppApiMock): DbRecordsTestBackend {

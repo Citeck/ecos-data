@@ -5,6 +5,7 @@ import ru.citeck.ecos.context.lib.time.TimeZoneContext
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.records.dao.query.DbQueryPreparingException
+import ru.citeck.ecos.data.sql.records.utils.DbReadToleranceLog
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.service.expression.ExpressionParser
 import ru.citeck.ecos.data.sql.service.expression.ExpressionTools
@@ -25,17 +26,34 @@ class DbExpressionAttsContext(
     private val expressionAliasesByAttribute = LinkedHashMap<String, String>()
     private val expressions: MutableMap<String, ExpressionToken> = LinkedHashMap()
 
+    /**
+     * Refuses to register the expression: throws for a strict caller, otherwise returns null so
+     * that the caller drops just this expression and keeps the rest of the query.
+     *
+     * Everything after [ExpressionParser.parse] used to `error(...)` instead, ignoring [strict]
+     * and bypassing DbRecordsQueryDao.queryRecords's DbQueryPreparingException handler - so a
+     * single journal column whose expression no longer resolves (e.g. `sum(assocAtt.num)` after
+     * assocAtt was changed from an association to a text attribute) failed the whole journal.
+     */
+    private fun refuseExpression(strict: Boolean, warnKey: String?, msg: () -> String): String? {
+        if (strict) {
+            throw DbQueryPreparingException(msg())
+        }
+        if (warnKey != null) {
+            // The model and the schema disagree - the operator has to see once why the column
+            // went empty, otherwise the journal silently loses it.
+            DbReadToleranceLog.warnOnce(log, warnKey, msg)
+        } else {
+            log.debug(msg)
+        }
+        return null
+    }
+
     fun register(attribute: String, strict: Boolean): String? {
         var expression = try {
             ExpressionParser.parse(attribute)
         } catch (e: Throwable) {
-            val msg = "Invalid expression: '$attribute'"
-            if (strict) {
-                throw DbQueryPreparingException(msg)
-            } else {
-                log.debug { msg }
-                return null
-            }
+            return refuseExpression(strict, null) { "Invalid expression: '$attribute'" }
         }
         if (!withGrouping) {
             var expressionProcessed = false
@@ -50,11 +68,23 @@ class DbExpressionAttsContext(
                     val assocAtt = column.name.substring(0, dotIdx)
                     val innerAtt = column.name.substring(dotIdx + 1)
                     if (!innerAtt.all { it == ':' || it in 'a'..'z' || it in 'A'..'Z' }) {
-                        error("invalid inner attribute: $innerAtt")
+                        return refuseExpression(strict, null) {
+                            "Invalid expression: '$attribute'. Invalid inner attribute: '$innerAtt'"
+                        }
                     }
 
                     val assocRecordsCtx = queryContext.getAssocRecordsCtxToJoin(assocAtt)
-                        ?: error("Invalid expression: '$attribute'")
+                        ?: return refuseExpression(
+                            strict,
+                            "expression-assoc-ctx-not-found-" +
+                                "${queryContext.getTableContext().getTableRef()}-$assocAtt"
+                        ) {
+                            "Invalid expression: '$attribute'. Attribute '$assocAtt' can't be " +
+                                "joined: it is not an association pointing at a known type in " +
+                                "table ${queryContext.getTableContext().getTableRef()}. The type " +
+                                "model and the database schema are out of sync. The expression " +
+                                "will be skipped"
+                        }
 
                     if (!innerAtt.contains(".") && assocRecordsCtx.getDbColumnByName(innerAtt) == null) {
 

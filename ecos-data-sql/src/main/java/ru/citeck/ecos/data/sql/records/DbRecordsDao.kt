@@ -4,6 +4,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.commons.exception.I18nRuntimeException
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.data.sql.columnmeta.DbColumnSemanticType
+import ru.citeck.ecos.data.sql.columnmeta.DbExpectedAttTypes
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
@@ -106,9 +108,17 @@ class DbRecordsDao(
     fun runMigrations(typeRef: EntityRef, mock: Boolean = true, diff: Boolean = true): List<String> {
         return TxnContext.doInTxn {
             val typeInfo = getRecordsTypeInfo(typeRef) ?: error("Type is null. Migration can't be executed")
-            val columns = ecosTypeService.getColumnsForTypes(listOf(typeInfo)).map { it.column }
+            val attColumns = ecosTypeService.getColumnsForTypes(listOf(typeInfo))
+            val attTypes = DbExpectedAttTypes(
+                attColumns.associate { it.column.name to DbColumnSemanticType.Model(it.attribute.type) },
+                attColumns.filter { DbRecordsUtils.isChildAssocAttribute(it.attribute) }
+                    .mapTo(LinkedHashSet()) { it.column.name }
+            ) {
+                val tableAttTypes = ecosTypeService.getTableAttTypes(typeInfo)
+                DbExpectedAttTypes.ConflictsInfo(tableAttTypes.conflicts, tableAttTypes.groupingMayBeOverBroad)
+            }
             dataService.resetColumnsCache()
-            val migrations = ArrayList(dataService.runMigrations(columns, mock, diff))
+            val migrations = ArrayList(dataService.runMigrations(attColumns.map { it.column }, attTypes, mock, diff))
             migrations
         }
     }
@@ -133,6 +143,14 @@ class DbRecordsDao(
 
     fun getTableRef(): DbTableRef {
         return daoCtx.tableRef
+    }
+
+    /**
+     * The type this DAO stores, as configured. Unlike [getRecordsTypeRef] this never falls back to
+     * a record's own type: the model-change index groups DAOs by what they were declared to hold.
+     */
+    fun getTypeRef(): EntityRef {
+        return config.typeRef
     }
 
     fun getTableMeta(): DbTableMetaDto {
@@ -285,5 +303,23 @@ class DbRecordsDao(
             }
         }
         onInitialized()
+        // Last, and after the listeners: publishing this table is what lets a concurrent drain
+        // mutate a record of it, and a dao whose DbRecordsDaoCtxAware listeners have not been wired
+        // yet would put that mutation through half a dao. See DbSchemaContext.registerRecordsService
+        // for what the background column migration needs it for - the `_parent`/`_parentAtt`
+        // back-reference of a child association arriving in or leaving
+        // this table.
+        dataService.getTableContext().getSchemaCtx().registerRecordsService(
+            dataService.getTableRef().table,
+            serviceFactory.recordsService
+        )
+        // Same reasoning, one level up: a model change resolved through the index must not reach a
+        // dao whose listeners are not wired yet, so this is the last thing that happens here.
+        dataSourceCtx.recordsDaoIndex.register(this, daoCtx.recordsService)
+        // And only then the subscription, for the third time the same reason: the first event may
+        // arrive on the publishing thread before this method returns, and what it reaches has to be
+        // an index that already holds this dao. Idempotent - one subscription per data source,
+        // whichever dao registers first.
+        dataSourceCtx.modelChangeQueue.subscribeToTypeChanges(modelServices.typesRepo)
     }
 }

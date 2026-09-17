@@ -50,6 +50,19 @@ interface DbEntityRepo {
         newValues: Map<String, Any?>
     ): Boolean
 
+    /**
+     * The id-keyed sibling of [updateByExtIdIfMatches], for tables that carry no ext id at all -
+     * [ru.citeck.ecos.data.sql.batch.DbBatchTaskEntity] is the first of these. Everything else about
+     * the contract is identical: same reserved columns, same empty-map rejections, same "one
+     * indivisible step inside the caller's transaction" durability, same meaning of a false return.
+     */
+    fun updateByIdIfMatches(
+        context: DbTableContext,
+        id: Long,
+        expected: Map<String, Any?>,
+        newValues: Map<String, Any?>
+    ): Boolean
+
     fun delete(context: DbTableContext, entity: Map<String, Any?>)
 
     fun delete(context: DbTableContext, predicate: Predicate)

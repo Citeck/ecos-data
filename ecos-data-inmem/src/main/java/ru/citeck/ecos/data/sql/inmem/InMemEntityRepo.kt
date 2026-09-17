@@ -19,7 +19,9 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
 import ru.citeck.ecos.data.sql.type.DbTypesConverter
+import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.Predicate
+import java.util.Objects
 import java.util.UUID
 
 /**
@@ -202,23 +204,47 @@ class InMemEntityRepo : DbEntityRepo {
         expected: Map<String, Any?>,
         newValues: Map<String, Any?>
     ): Boolean {
+        return conditionalUpdate(context, expected, newValues) { table -> table.getIdByExtId(extId) }
+    }
+
+    override fun updateByIdIfMatches(
+        context: DbTableContext,
+        id: Long,
+        expected: Map<String, Any?>,
+        newValues: Map<String, Any?>
+    ): Boolean {
+        return conditionalUpdate(context, expected, newValues) { id }
+    }
+
+    /**
+     * Shared by [updateByExtIdIfMatches] and [updateByIdIfMatches]: validates the column maps
+     * before ever touching a row - matching PostgreSQL, whose single `UPDATE` statement lets the
+     * database reject an invalid column list regardless of whether any row matches the `WHERE`
+     * clause - then resolves [resolveId] to a row id and runs the identical compare-and-write
+     * against it. InMemDataSource serializes write transactions, so read-compare-write here is as
+     * atomic as the single UPDATE statement the PG backend runs.
+     */
+    private fun conditionalUpdate(
+        context: DbTableContext,
+        expected: Map<String, Any?>,
+        newValues: Map<String, Any?>,
+        resolveId: (InMemTable) -> Long?
+    ): Boolean {
 
         checkAuth(context)
 
         if (newValues.isEmpty()) {
             error("New values are empty. Table: ${context.getTableRef().fullName}")
         }
-        // an empty condition would turn a compare-and-set into an unconditional overwrite by ext id
+        // an empty condition would turn a compare-and-set into an unconditional overwrite by row id
         if (expected.isEmpty()) {
             error("Expected values are empty. Table: ${context.getTableRef().fullName}")
         }
         val setColumns = DbConditionalUpdate.getColumns(context, newValues, "new values")
         val expectedColumns = DbConditionalUpdate.getColumns(context, expected, "expected values")
 
-        // InMemDataSource serializes write transactions, so read-compare-write here is as atomic
-        // as the single UPDATE statement the PG backend runs.
         val table = getTable(context) ?: return false
-        val id = table.getIdByExtId(extId) ?: return false
+        val id = resolveId(table) ?: return false
         val row = table.getRowById(id) ?: return false
 
         val typesConverter = context.getTypesConverter()
@@ -239,23 +265,39 @@ class InMemEntityRepo : DbEntityRepo {
             }
             newRow[DbEntity.UPD_VERSION] = newVersion
         }
+        // preserve whatever ext-id index entry the row already has - the identity used to find it
+        // may have been the row id, not the ext id, and a table with no ext id column simply has
+        // none to preserve
+        val extId = row[DbEntity.EXT_ID] as? String ?: ""
         table.putRow(id, extId, newRow)
         return true
     }
 
     /**
-     * Equality with the semantics of the SQL '=' operator the PG backend compares with: arrays and
-     * byte arrays are compared by content, not by identity.
+     * Equality with the semantics of the SQL '=' operator the PG backend compares with: an array of
+     * any kind is compared by content, not by identity.
+     *
+     * [java.util.Objects.deepEquals] rather than `contentDeepEquals`, and that is the whole point of
+     * this rewrite: Kotlin's `is Array<*>` is **false** for a primitive array, and this backend
+     * stores one for every array column whose element type is primitive - `DbTypeUtils.getArrayType`
+     * builds it from `Long::class.java`, which is `long`, so a `bigint[]` column holds a `long[]`, a
+     * `float8[]` a `double[]`, a `bool[]` a `boolean[]`. Those fell past both branches to
+     * `stored == expected`, which for an array is reference identity.
+     *
+     * That is not academic. `DbColumnMigrationHandler.rewriteAssocColumnCache` puts a restored
+     * record's association cache back with a compare-and-set whose expected value is the array it
+     * read a moment earlier, and for a multi-valued assoc that column is exactly a `bigint[]`: the
+     * write landed only while the read happened to hand back the same object, and any copy,
+     * re-read or conversion in between would have turned it into a silent no-op.
+     * `Objects.deepEquals` dispatches to the right `Arrays.equals` for every primitive form and to
+     * `Arrays.deepEquals` for an object array, so the branch for `ByteArray` is subsumed too.
      */
     private fun isSameValue(stored: Any?, expected: Any?): Boolean {
         if (stored == null || expected == null) {
             return stored == null && expected == null
         }
-        if (stored is ByteArray && expected is ByteArray) {
-            return stored.contentEquals(expected)
-        }
-        if (stored is Array<*> && expected is Array<*>) {
-            return stored.contentDeepEquals(expected)
+        if (stored.javaClass.isArray && expected.javaClass.isArray) {
+            return Objects.deepEquals(stored, expected)
         }
         return stored == expected
     }
@@ -265,6 +307,14 @@ class InMemEntityRepo : DbEntityRepo {
     }
 
     override fun delete(context: DbTableContext, predicate: Predicate) {
+        // Normalised first: PredicateUtils.isAlwaysTrue only recognises a bare VoidPredicate, so
+        // and(alwaysTrue()), not(alwaysFalse()) and an empty AndPredicate - all of which delete
+        // every row of the table just as surely - would otherwise walk straight past the guard.
+        // optimize() folds exactly those shapes down to the VoidPredicate the check does recognise.
+        require(!PredicateUtils.isAlwaysTrue(PredicateUtils.optimize(predicate))) {
+            "Deleting all rows of table '${context.getTableRef()}' by an always-true predicate is not supported. " +
+                "If you really mean to remove specific rows, use delete(entityId) / delete(entities: List<Long>) instead."
+        }
         val table = getTable(context) ?: return
         // Evaluate the predicate with the same PG-fidelity engine used by find, and remove matching
         // rows by their internal store key - this works for id-less tables (ed_associations,

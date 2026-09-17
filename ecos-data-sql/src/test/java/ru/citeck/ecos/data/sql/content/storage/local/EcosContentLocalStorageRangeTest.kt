@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.content.storage.local
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import ru.citeck.ecos.data.sql.columnmeta.DbExpectedAttTypes
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
@@ -135,13 +136,11 @@ class EcosContentLocalStorageRangeTest {
         override fun setSchemaVersion(version: Int) = error("not used")
         override fun findByIds(ids: Set<Long>): List<DbContentDataEntity> = error("not used")
         override fun findByExtId(id: String): DbContentDataEntity? = error("not used")
-        override fun findByExtId(id: String, expressions: Map<String, ExpressionToken>): DbContentDataEntity? =
-            error("not used")
+        override fun findByExtId(id: String, expressions: Map<String, ExpressionToken>): DbContentDataEntity? = error("not used")
         override fun isExistsByExtId(id: String): Boolean = error("not used")
         override fun findAll(): List<DbContentDataEntity> = error("not used")
         override fun findAll(predicate: Predicate): List<DbContentDataEntity> = error("not used")
-        override fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<DbContentDataEntity> =
-            error("not used")
+        override fun findAll(predicate: Predicate, sort: List<DbFindSort>): List<DbContentDataEntity> = error("not used")
         override fun find(
             predicate: Predicate,
             sort: List<DbFindSort>,
@@ -185,13 +184,27 @@ class EcosContentLocalStorageRangeTest {
             expected: Map<String, Any?>,
             newValues: Map<String, Any?>
         ): Boolean = error("not used")
+        override fun updateByIdIfMatches(
+            id: Long,
+            expected: Map<String, Any?>,
+            newValues: Map<String, Any?>
+        ): Boolean = error("not used")
         override fun save(entities: Collection<DbContentDataEntity>): List<DbContentDataEntity> = error("not used")
         override fun save(
             entities: Collection<DbContentDataEntity>,
             columns: List<DbColumnDef>
         ): List<DbContentDataEntity> = error("not used")
-        override fun save(entity: DbContentDataEntity, columns: List<DbColumnDef>): DbContentDataEntity =
-            error("not used")
+        override fun save(entity: DbContentDataEntity, columns: List<DbColumnDef>): DbContentDataEntity = error("not used")
+        override fun save(
+            entities: Collection<DbContentDataEntity>,
+            columns: List<DbColumnDef>,
+            attTypes: DbExpectedAttTypes
+        ): List<DbContentDataEntity> = error("not used")
+        override fun save(
+            entity: DbContentDataEntity,
+            columns: List<DbColumnDef>,
+            attTypes: DbExpectedAttTypes
+        ): DbContentDataEntity = error("not used")
         override fun delete(entity: DbContentDataEntity) = error("not used")
         override fun delete(predicate: Predicate) = error("not used")
         override fun delete(entityId: Long) = error("not used")
@@ -203,6 +216,12 @@ class EcosContentLocalStorageRangeTest {
         override fun runMigrations(mock: Boolean, diff: Boolean): List<String> = error("not used")
         override fun runMigrations(
             expectedColumns: List<DbColumnDef>,
+            mock: Boolean,
+            diff: Boolean
+        ): List<String> = error("not used")
+        override fun runMigrations(
+            expectedColumns: List<DbColumnDef>,
+            attTypes: DbExpectedAttTypes,
             mock: Boolean,
             diff: Boolean
         ): List<String> = error("not used")

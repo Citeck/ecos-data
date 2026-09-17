@@ -11,7 +11,8 @@ import java.time.Instant
 class DbDefaultLocalContentValue(
     private val name: String,
     private val value: DbContentValue
-) : AttValueDelegate(value), HasEcosContentDbData {
+) : AttValueDelegate(value),
+    HasEcosContentDbData {
 
     override fun getDisplayName(): Any {
         return getNameWithExt()

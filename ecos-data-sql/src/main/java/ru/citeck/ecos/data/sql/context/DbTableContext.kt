@@ -27,7 +27,30 @@ interface DbTableContext {
 
     fun getAuthoritiesApi(): EcosAuthoritiesApi
 
+    /**
+     * The columns **this** data service may read from or write to.
+     *
+     * Backup columns left behind by a type migration are excluded, because they hold the only copy
+     * of the user's pre-migration data and nothing outside the migration machinery may address one.
+     * The exception is a service built with `includeBackupColumns`, which the migration builds for
+     * itself and nobody else does - for such a service this returns the backups too, which is why
+     * it is not simply "the columns that are not backups".
+     *
+     * Backups are recognised **by name**
+     * ([ru.citeck.ecos.data.sql.columnmeta.DbBackupColumnNames.isBackupName]) and by nothing else -
+     * no registry row is read to build this list. The registry uses the `__is_backup` flag with the
+     * prefix as its backstop; the two describe the same set, because an attribute id cannot begin
+     * with `_`. Going by the name costs no query and keeps a `__backup_...` column invisible here
+     * whatever `ed_column_meta` says, which is what makes an installation upgraded from before the
+     * registry existed safe.
+     */
     fun getColumns(): List<DbColumnDef>
+
+    /**
+     * Every physical column of the table, backups included, whatever this service is configured to
+     * address. Only the migration machinery has any business with it - see [getColumns].
+     */
+    fun getAllPhysicalColumns(): List<DbColumnDef>
 
     fun getTableRef(): DbTableRef
 

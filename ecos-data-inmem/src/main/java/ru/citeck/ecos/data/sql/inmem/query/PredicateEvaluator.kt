@@ -70,7 +70,9 @@ object PredicateEvaluator {
         }
     }
 
-    /** Whether the predicate would produce any SQL (mirrors toSqlCondition returning true/false). */
+    /**
+     * Whether the predicate would produce any SQL (mirrors toSqlCondition returning true/false).
+     */
     private fun contributes(predicate: Predicate, ctx: RowEvalContext): Boolean {
         return when (predicate) {
             is VoidPredicate -> false
@@ -106,7 +108,9 @@ object PredicateEvaluator {
         return !eval(inner, ctx)
     }
 
-    /** not(eq(col, nonNull)) on a column whose type uses IS DISTINCT FROM in PG. */
+    /**
+     * not(eq(col, nonNull)) on a column whose type uses IS DISTINCT FROM in PG.
+     */
     private fun isDistinctFromCase(inner: Predicate, ctx: RowEvalContext): Boolean {
         if (inner !is ValuePredicate || inner.getType() != ValuePredicate.Type.EQ) {
             return false
@@ -125,7 +129,9 @@ object PredicateEvaluator {
         return !column.multiple && DISTINCT_FROM_TYPES.contains(column.type)
     }
 
-    /** A comparison evaluates to SQL "unknown" (NULL) when the compared row value is NULL. */
+    /**
+     * A comparison evaluates to SQL "unknown" (NULL) when the compared row value is NULL.
+     */
     private fun isUnknownComparison(inner: Predicate, ctx: RowEvalContext): Boolean {
         if (inner !is ValuePredicate) {
             return false
@@ -188,7 +194,10 @@ object PredicateEvaluator {
         val type = predicate.getType()
         val value = predicate.getValue()
 
-        // Association predicates (LONG-typed src column, resolved via the join maps).
+        // Association predicates. Gated by the presence of a registered join, not by the
+        // physical type of the source column: when the query context asked for a join on
+        // this attribute, the condition must be answered through the join maps whatever the
+        // column type turned out to be.
         val assocJoin = ctx.queryCtx.assocTableJoins[attribute]
         if (assocJoin != null) {
             if (type != ValuePredicate.Type.EQ &&
@@ -236,7 +245,9 @@ object PredicateEvaluator {
         return ctx.resolveColumnDef(attribute)
     }
 
-    /** Single-valued column comparison, matching PG operator semantics. */
+    /**
+     * Single-valued column comparison, matching PG operator semantics.
+     */
     private fun compareSingle(
         type: ValuePredicate.Type,
         column: DbColumnDef,
@@ -350,7 +361,9 @@ object PredicateEvaluator {
         return targets.any { rowItems.contains(it) }
     }
 
-    /** Comparison for a computed expression alias result. */
+    /**
+     * Comparison for a computed expression alias result.
+     */
     private fun compareScalar(type: ValuePredicate.Type, exprValue: Any?, value: DataValue): Boolean {
         if (type == ValuePredicate.Type.EQ && value.isNull()) {
             return exprValue == null

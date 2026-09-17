@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao.atts
 
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.commons.data.MLText
 import ru.citeck.ecos.commons.data.ObjectData
@@ -22,6 +23,7 @@ import ru.citeck.ecos.data.sql.records.dao.atts.status.DbStatusEdge
 import ru.citeck.ecos.data.sql.records.dao.atts.status.DbStatusValue
 import ru.citeck.ecos.data.sql.records.dao.query.DbFindQueryContext
 import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
+import ru.citeck.ecos.data.sql.records.utils.DbReadToleranceLog
 import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceDesc
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -49,6 +51,8 @@ class DbRecord(
 ) : AttValue {
 
     companion object {
+        private val log = KotlinLogging.logger {}
+
         const val ATT_NAME = "_name"
         const val ATT_ASPECTS = "_aspects"
         const val ATT_PERMISSIONS = "permissions"
@@ -316,9 +320,11 @@ class DbRecord(
         }
 
         assocMapping = if (assocIdValues.isNotEmpty()) {
-            val assocIdValuesList = assocIdValues.toList()
-            val assocRefValues = ctx.recordRefService.getEntityRefsByIds(assocIdValuesList)
-            assocIdValuesList.mapIndexed { idx, id -> id to assocRefValues[idx] }.toMap()
+            // Use the map variant instead of getEntityRefsByIds: a dangling refId (the column
+            // stayed BIGINT but ed_record_ref has no matching row) must not fail the whole read.
+            // getEntityRefsByIdsMap silently drops ids it can't resolve instead of throwing, and
+            // toEntityRef()/metaAssocIdToRef() below already tolerate a missing map entry.
+            ctx.recordRefService.getEntityRefsByIdsMap(assocIdValues)
         } else {
             emptyMap()
         }
@@ -367,7 +373,7 @@ class DbRecord(
                     fullAspects.add(it.ref.getLocalId())
                 }
                 if (value != null) {
-                    val refs = toEntityRef(value)
+                    val refs = toEntityRef(attId, value)
                     if (refs is Collection<*>) {
                         for (ref in refs) {
                             (ref as? EntityRef)?.let { fullAspects.add(it.getLocalId()) }
@@ -378,7 +384,7 @@ class DbRecord(
                 }
                 DbAspectsValue(fullAspects)
             } else {
-                toEntityRef(value)
+                toEntityRef(attId, value)
             }
         } else {
             when (attType) {
@@ -447,20 +453,52 @@ class DbRecord(
         }
     }
 
-    private fun toEntityRef(value: Any?): Any {
+    /**
+     * Converts a stored column value of the attribute [attId] into an [EntityRef].
+     *
+     * Never throws on an unexpected value: the model can legitimately disagree with the physical
+     * column type - a failed conversion leaves the schema behind forever, and background column
+     * migration makes the mismatch a normal transient state. This method is called from the
+     * constructor for every record of a query result, so throwing here empties the whole journal
+     * instead of a single attribute.
+     *
+     * [attId] is part of every warning (and of its deduplication key): without it the log says
+     * that something in the table is broken, but not which column, and the first broken attribute
+     * would silence every other one in the same table forever.
+     */
+    private fun toEntityRef(attId: String, value: Any?): Any {
         value ?: return EntityRef.EMPTY
         return when (value) {
             is Iterable<*> -> {
                 val result = ArrayList<Any>()
                 value.forEach {
                     if (it != null) {
-                        result.add(toEntityRef(it))
+                        result.add(toEntityRef(attId, it))
                     }
                 }
                 result
             }
-            is Long -> assocMapping[value] ?: error("Ref doesn't found for id $value")
-            else -> error("Unexpected ref value type: ${value::class}")
+            is Long -> assocMapping[value] ?: run {
+                DbReadToleranceLog.warnOnce(
+                    log,
+                    "ref-not-found-${ctx.tableCtx.getTableRef()}-$attId"
+                ) {
+                    "Ref doesn't found for id $value of attribute '$attId' in table " +
+                        "${ctx.tableCtx.getTableRef()}. Attribute value will be empty"
+                }
+                EntityRef.EMPTY
+            }
+            else -> run {
+                DbReadToleranceLog.warnOnce(
+                    log,
+                    "unexpected-ref-type-${ctx.tableCtx.getTableRef()}-$attId-${value::class.java.name}"
+                ) {
+                    "Unexpected ref value type: ${value::class} of attribute '$attId' in table " +
+                        "${ctx.tableCtx.getTableRef()}. The type model and the database schema " +
+                        "are out of sync. Attribute value will be empty"
+                }
+                EntityRef.EMPTY
+            }
         }
     }
 
@@ -718,11 +756,29 @@ class DbRecord(
         return super.getAs(type)
     }
 
-    private fun metaAssocIdToRef(id: Long): EntityRef {
+    /**
+     * Resolves a `_creator`/`_modifier` id ([metaAttId]) to an [EntityRef]. Same tolerance as
+     * [toEntityRef]: a dangling id (schema/model out of sync, or the row in ed_record_ref is gone)
+     * must not fail the whole record read.
+     *
+     * The deduplication key is deliberately distinct from [toEntityRef]'s one: they report the
+     * same kind of problem for different sources, and a shared key would let one of them silence
+     * the other forever.
+     */
+    private fun metaAssocIdToRef(metaAttId: String, id: Long): EntityRef {
         return if (id < 0L) {
             EntityRef.EMPTY
         } else {
-            assocMapping[id] ?: error("Ref doesn't found for id $id")
+            assocMapping[id] ?: run {
+                DbReadToleranceLog.warnOnce(
+                    log,
+                    "meta-ref-not-found-${ctx.tableCtx.getTableRef()}-$metaAttId"
+                ) {
+                    "Ref doesn't found for id $id of attribute '$metaAttId' in table " +
+                        "${ctx.tableCtx.getTableRef()}. Attribute value will be empty"
+                }
+                EntityRef.EMPTY
+            }
         }
     }
 
@@ -739,8 +795,8 @@ class DbRecord(
             ATT_NAME -> displayName
             RecordConstants.ATT_MODIFIED, "cm:modified" -> entity.modified
             RecordConstants.ATT_CREATED, "cm:created" -> entity.created
-            RecordConstants.ATT_MODIFIER -> metaAssocIdToRef(entity.modifier)
-            RecordConstants.ATT_CREATOR -> metaAssocIdToRef(entity.creator)
+            RecordConstants.ATT_MODIFIER -> metaAssocIdToRef(RecordConstants.ATT_MODIFIER, entity.modifier)
+            RecordConstants.ATT_CREATOR -> metaAssocIdToRef(RecordConstants.ATT_CREATOR, entity.creator)
             RecordConstants.ATT_WORKSPACE -> {
                 val workspaceId = getWorkspaceId()
                 if (workspaceId.isNullOrBlank()) {
@@ -778,7 +834,24 @@ class DbRecord(
                         assocName,
                         DbFindPage(0, 300)
                     ).entities.map { it.sourceId }
-                    return ctx.recordRefService.getEntityRefsByIds(sourceAssocsIds)
+                    // Map variant instead of getEntityRefsByIds: a row in ed_associations may
+                    // point to a source id which has no row in ed_record_ref anymore, and one
+                    // such broken row must not fail the reading of the whole record. Same
+                    // tolerance as toEntityRef() gives to a forward dangling ref.
+                    val refsBySourceId = ctx.recordRefService.getEntityRefsByIdsMap(sourceAssocsIds)
+                    return sourceAssocsIds.mapNotNull { sourceId ->
+                        refsBySourceId[sourceId] ?: run {
+                            DbReadToleranceLog.warnOnce(
+                                log,
+                                "src-assoc-ref-not-found-${ctx.tableCtx.getTableRef()}-$assocName"
+                            ) {
+                                "Ref doesn't found for source id $sourceId of attribute " +
+                                    "'$name' in table ${ctx.tableCtx.getTableRef()}. " +
+                                    "The source association will be skipped"
+                            }
+                            null
+                        }
+                    }
                 }
                 if (isCurrentUserHasAttReadPerms(name)) {
                     if (name == ATT_CONTENT_VERSION &&

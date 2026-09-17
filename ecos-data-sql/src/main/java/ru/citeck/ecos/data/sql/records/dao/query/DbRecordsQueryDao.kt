@@ -3,10 +3,12 @@ package ru.citeck.ecos.data.sql.records.dao.query
 import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.context.lib.auth.AuthContext
+import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.utils.DbDateUtils
+import ru.citeck.ecos.data.sql.records.utils.DbReadToleranceLog
 import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceDesc
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -198,10 +200,11 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         val userAuthorities = DbRecordsUtils.getCurrentAuthorities(runAsAuth).toMutableSet()
         val delegationsList: MutableList<Pair<Set<Long>, Set<String>>> = ArrayList()
 
-        val isRunAsSystem = AuthContext.isRunAsSystem() || (
-            typeInfo?.workspaceScope == WorkspaceScope.PRIVATE &&
-                workspaceService.isRunAsSystemOrWsSystem(typeInfo.defaultWorkspace)
-            )
+        val isRunAsSystem = AuthContext.isRunAsSystem() ||
+            (
+                typeInfo?.workspaceScope == WorkspaceScope.PRIVATE &&
+                    workspaceService.isRunAsSystemOrWsSystem(typeInfo.defaultWorkspace)
+                )
 
         if (!isRunAsSystem && predicateData.queryPermsPolicy != QueryPermsPolicy.PUBLIC) {
             val delegations = daoCtx.delegationService.getActiveAuthDelegations(
@@ -647,6 +650,36 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
         val targetRecordsCtx = queryCtx.getAssocRecordsCtxToJoin(srcAttDef?.id)
         if (srcAttDef == null || targetRecordsCtx == null) {
             return null
+        }
+        // A non-multiple association is joined by comparing this table's column against the
+        // target's __ref_id (a single BIGINT). If the column drifted to another type - or became
+        // an array, e.g. bigint[] after the attribute was made multiple - the model and the
+        // schema are out of sync and the comparison could only fail the whole query. Degrade the
+        // same way a missing target table degrades just below: the filter matches nothing, but
+        // the query completes. Which records a mismatched filter returns is unspecified.
+        if (!srcAttDef.multiple) {
+            val srcColumn = dataService.getTableContext().getColumnByName(srcAttDef.id)
+            if (srcColumn != null && (srcColumn.type != DbColumnType.LONG || srcColumn.multiple)) {
+                // WARN, not DEBUG: the filter stops finding records and nothing else tells the
+                // operator why. Deduplicated - the mismatch repeats on every query.
+                DbReadToleranceLog.warnOnce(
+                    log,
+                    "assoc-join-predicate-skipped-${dataService.getTableContext().getTableRef()}-${srcAttDef.id}"
+                ) {
+                    "Assoc join by predicate is skipped for attribute '${srcAttDef.id}' in table " +
+                        "${dataService.getTableContext().getTableRef()}: column type is " +
+                        "${srcColumn.type}" + (if (srcColumn.multiple) "[] (multiple)" else "") +
+                        ", expected ${DbColumnType.LONG}. The type model and the database schema " +
+                        "are out of sync. The condition will not match any record"
+                }
+                return PredicateUtils.mapAttributePredicates(predicate, { pred ->
+                    when (pred) {
+                        is ValuePredicate -> Predicates.alwaysFalse()
+                        is EmptyPredicate -> Predicates.alwaysTrue()
+                        else -> pred
+                    }
+                }, onlyAnd = false, optimize = true, filterEmptyComposite = false)
+            }
         }
         if (!targetRecordsCtx.dataService.isTableExists()) {
             return PredicateUtils.mapAttributePredicates(predicate, { pred ->

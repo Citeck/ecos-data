@@ -23,7 +23,8 @@ class DbContentValue(
     private val contentDbId: Long,
     private val attribute: String,
     private val isDefaultContent: Boolean
-) : AttValue, HasEcosContentDbData {
+) : AttValue,
+    HasEcosContentDbData {
 
     companion object {
         const val CONTENT_DATA = "content-data"

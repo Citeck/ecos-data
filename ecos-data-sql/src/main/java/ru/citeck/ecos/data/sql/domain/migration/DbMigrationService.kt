@@ -35,6 +35,9 @@ class DbMigrationService {
         schemaMigrations.add(MakeAttributesExtIdUnique())
         schemaMigrations.add(EnsureSystemTablesExist())
         schemaMigrations.add(EnsureUploadSessionTableExists())
+        schemaMigrations.add(EnsureColumnMetaTableExists())
+        schemaMigrations.add(EnsureBatchTaskTableExists())
+        schemaMigrations.add(EnsureAssocBackupTableExists())
     }
 
     fun runDomainMigrations(context: DbDomainMigrationContext) {
@@ -98,6 +101,9 @@ class DbMigrationService {
                 context.assocsService.createTableIfNotExists()
                 context.trashcanService.createTableIfNotExists()
                 context.uploadSessionService.createTableIfNotExists()
+                context.columnMetaService.createTableIfNotExists()
+                context.batchTaskService.createTableIfNotExists()
+                context.assocBackupService.createTableIfNotExists()
             }
             if (isNewSchema.get()) {
                 return

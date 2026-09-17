@@ -9,6 +9,7 @@ import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.commons.utils.DataUriUtil
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthUser
+import ru.citeck.ecos.data.sql.columnmeta.DbExpectedAttTypes
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
@@ -351,6 +352,10 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     ecosTypeService.getColumnsForTypes(listOf(typeInfo))
                 }
             ),
+            frozenColumnsProvider = {
+                val tableAttTypes = ecosTypeService.getTableAttTypes(typeInfo)
+                DbExpectedAttTypes.ConflictsInfo(tableAttTypes.conflicts, tableAttTypes.groupingMayBeOverBroad)
+            },
             isRunAsSystemOrAdmin = isRunAsSystemOrAdmin,
             disableEvents = disableEvents,
             isNewEntity = isNewEntity,
@@ -561,13 +566,15 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         val recAttributes = record.attributes.deepCopy()
 
-        if (isNewEntity && typeInfo.defaultStatus.isNotBlank() &&
+        if (isNewEntity &&
+            typeInfo.defaultStatus.isNotBlank() &&
             recAttributes[StatusConstants.ATT_STATUS].isEmpty()
         ) {
             recAttributes[StatusConstants.ATT_STATUS] = typeInfo.defaultStatus
         }
 
-        if (recAttributes[StatusConstants.ATT_STATUS].isNotEmpty() && !disableAudit &&
+        if (recAttributes[StatusConstants.ATT_STATUS].isNotEmpty() &&
+            !disableAudit &&
             entityToMutate.status != recAttributes[StatusConstants.ATT_STATUS].asText()
         ) {
             recAttributes[DbRecord.ATT_STATUS_MODIFIED] = nowInstant
@@ -873,7 +880,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             }
         }
 
-        val recAfterSave = dataService.save(entityToMutate, fullColumns)
+        val recAfterSave = dataService.save(entityToMutate, fullColumns, mutCtx.getExpectedAttTypes())
         val metaAfterSave = daoCtx.getEntityMeta(recAfterSave)
 
         processAssocsAfterMutation(
@@ -1450,7 +1457,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                             fullColumns.add(column)
                         }
                     }
-                    recAfterSave = dataService.save(entityToMutate, fullColumns)
+                    recAfterSave = dataService.save(entityToMutate, fullColumns, mutCtx.getExpectedAttTypes())
                     val metaAfterSave = daoCtx.getEntityMeta(recAfterSave)
 
                     processAssocsAfterMutation(
@@ -1629,6 +1636,10 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             disableEvents = mutCtx.disableEvents,
             entityToMutate = mutCtx.entityToMutate,
             typeAttColumns = ArrayList(ecosTypeService.getColumnsForTypes(listOf(typeInfo))),
+            frozenColumnsProvider = {
+                val tableAttTypes = ecosTypeService.getTableAttTypes(typeInfo)
+                DbExpectedAttTypes.ConflictsInfo(tableAttTypes.conflicts, tableAttTypes.groupingMayBeOverBroad)
+            },
             currentUser = mutCtx.currentUser,
             currentUserRefId = mutCtx.currentUserRefId,
             isRunAsSystemOrAdmin = mutCtx.isRunAsSystemOrAdmin,

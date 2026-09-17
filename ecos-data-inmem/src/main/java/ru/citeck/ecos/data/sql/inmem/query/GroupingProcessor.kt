@@ -76,13 +76,16 @@ class GroupingProcessor(
             is CaseToken -> token.branches.all {
                 isValidForGroupedSelect(groupBy, it.condition) &&
                     isValidForGroupedSelect(groupBy, it.thenResult)
-            } && isValidForGroupedSelect(groupBy, token.orElse)
+            } &&
+                isValidForGroupedSelect(groupBy, token.orElse)
             else -> true
         }
     }
 }
 
-/** An aggregated group of source rows. */
+/**
+ * An aggregated group of source rows.
+ */
 class GroupResultRow(
     private val groupKey: List<Any?>,
     private val rows: List<RowEvalContext>,

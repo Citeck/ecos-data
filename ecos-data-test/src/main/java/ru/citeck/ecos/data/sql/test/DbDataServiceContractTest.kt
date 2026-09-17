@@ -110,6 +110,19 @@ abstract class DbDataServiceContractTest {
         )
     }
 
+    /**
+     * A `bigint[]`, the physical shape of a multi-valued association column.
+     */
+    private fun longArrayColumns(): List<DbColumnDef> {
+        return listOf(
+            DbColumnDef.create {
+                withName(NUM_COLUMN)
+                withType(DbColumnType.LONG)
+                withMultiple(true)
+            }
+        )
+    }
+
     private fun textColumns(multiple: Boolean = false): List<DbColumnDef> {
         return listOf(
             DbColumnDef.create {
@@ -391,6 +404,35 @@ abstract class DbDataServiceContractTest {
         assertThat(stored.updVersion).isEqualTo(entity.updVersion)
     }
 
+    /**
+     * A backend that resolved the row before validating the column maps would let a missing ext id
+     * hide an invalid map behind a plain `false` instead of the `Exception` every other backend
+     * throws - exactly the divergence a naive in-memory read-compare-write is one refactor away
+     * from reintroducing. This pins the ordering: validation must happen before the row lookup.
+     */
+    @Test
+    fun testConditionalUpdateRejectsInvalidColumnMapsEvenForAMissingRow() {
+
+        val columns = textColumns()
+        val service = createService("contract-cond-update-reject-missing")
+
+        val entity = newEntity()
+        entity.attributes[STR_COLUMN] = V0
+        service.save(entity, columns)
+
+        val missingExtId = "ext-id-of-nothing"
+        val match = mapOf(STR_COLUMN to V0)
+
+        assertThrows<Exception> { service.updateByExtIdIfMatches(missingExtId, match, emptyMap()) }
+        assertThrows<Exception> { service.updateByExtIdIfMatches(missingExtId, emptyMap(), match) }
+        assertThrows<Exception> {
+            service.updateByExtIdIfMatches(missingExtId, match, mapOf("no_such_column" to V1))
+        }
+        assertThrows<Exception> {
+            service.updateByExtIdIfMatches(missingExtId, match, mapOf(DbEntity.ID to 1L))
+        }
+    }
+
     @Test
     @Timeout(value = 120, unit = TimeUnit.SECONDS)
     fun testConcurrentConditionalUpdatesLetExactlyOneWin() {
@@ -444,6 +486,289 @@ abstract class DbDataServiceContractTest {
         assertThat(results).hasSize(threads)
 
         val stored = service.findByExtId(extId) ?: error("not found by ext id")
+        assertThat(stored.attributes[NUM_COLUMN] as Int).isBetween(1, threads)
+    }
+
+    /**
+     * The id-keyed sibling of [testConditionalUpdateWithMatchingExpectedValues] /
+     * [testConditionalUpdateWithNonMatchingExpectedValues] - `updateByIdIfMatches`'s KDoc claims
+     * "everything else about the contract is identical" to `updateByExtIdIfMatches`; this and the
+     * three tests below are what actually verify that rather than take the claim on faith.
+     */
+    @Test
+    fun testIdConditionalUpdateWithMatchingAndNonMatchingExpectedValues() {
+
+        val columns = textColumns()
+        val service = createService("contract-id-cond-update-match")
+
+        var entity = newEntity()
+        entity.attributes[STR_COLUMN] = V0
+        entity = service.save(entity, columns)
+
+        val mismatch = service.updateByIdIfMatches(
+            entity.id,
+            mapOf(STR_COLUMN to V2),
+            mapOf(STR_COLUMN to V1)
+        )
+        assertThat(mismatch).isFalse
+        assertThat(service.findById(entity.id)?.attributes?.get(STR_COLUMN)).isEqualTo(V0)
+
+        val updated = service.updateByIdIfMatches(
+            entity.id,
+            mapOf(STR_COLUMN to V0),
+            mapOf(STR_COLUMN to V1)
+        )
+
+        assertThat(updated).isTrue
+        val stored = service.findById(entity.id) ?: error("not found by id")
+        assertThat(stored.attributes[STR_COLUMN]).isEqualTo(V1)
+        // the update version moves too, so a holder of the pre-update copy can no longer save over it
+        assertThat(stored.updVersion).isEqualTo(entity.updVersion + 1)
+        assertThrows<Exception> { service.save(entity, columns) }
+    }
+
+    /**
+     * A `null` in the expected map means "this column holds no value", and it has to be compiled
+     * into an `IS NULL` test rather than an `= NULL` comparison, which is never true in SQL.
+     *
+     * The column migration's whole safety rule rests on this: it writes a converted value only
+     * while the target column is still empty, so that a value the user wrote during the transfer is
+     * never overwritten. Rendered as `= NULL` the condition would match no row at all - every
+     * transfer would report success and move nothing - and rendered as "no condition" it would
+     * overwrite the very values the rule exists to protect. Neither failure is visible from the
+     * return value alone, so both directions are pinned here.
+     */
+    /**
+     * A conditional update on an **array** column has to compare the array by its content.
+     *
+     * This is not a theoretical nicety. `DbColumnMigrationHandler.rewriteAssocColumnCache` - the
+     * write that puts a restored record's association cache back into its column - is a
+     * compare-and-set whose expected value is the array it read a moment earlier, and for a
+     * multi-valued assoc that column is a `bigint[]`. If the comparison is by identity the write
+     * lands only while the read happened to hand back the very same array object, which is an
+     * implementation detail of one backend and not a contract anybody stated.
+     *
+     * The expected value here is deliberately a **new** list equal to the stored one, which is the
+     * shape a caller that re-read, converted or copied the value would produce.
+     */
+    @Test
+    fun testIdConditionalUpdateComparesAnArrayColumnByContent() {
+
+        val columns = longArrayColumns()
+        val service = createService("contract-id-cond-update-array")
+
+        var entity = newEntity()
+        entity.attributes[NUM_COLUMN] = listOf(10L, 20L)
+        entity = service.save(entity, columns)
+
+        val mismatch = service.updateByIdIfMatches(
+            entity.id,
+            mapOf(NUM_COLUMN to listOf(10L, 30L)),
+            mapOf(NUM_COLUMN to listOf(99L))
+        )
+        assertThat(mismatch)
+            .describedAs("a different content is a different value, whatever the array identity says")
+            .isFalse
+
+        val updated = service.updateByIdIfMatches(
+            entity.id,
+            mapOf(NUM_COLUMN to listOf(10L, 20L)),
+            mapOf(NUM_COLUMN to listOf(30L, 40L))
+        )
+        assertThat(updated)
+            .describedAs("an equal array satisfies the condition even though it is not the same object")
+            .isTrue
+        assertThat(service.findById(entity.id)?.attributes?.get(NUM_COLUMN) as List<*>)
+            .containsExactly(30L, 40L)
+    }
+
+    @Test
+    fun testIdConditionalUpdateMatchesANullColumn() {
+
+        val columns = textColumns()
+        val service = createService("contract-id-cond-update-null")
+
+        var empty = newEntity()
+        empty = service.save(empty, columns)
+        var filled = newEntity()
+        filled.attributes[STR_COLUMN] = V0
+        filled = service.save(filled, columns)
+
+        assertThat(service.findById(empty.id)?.attributes?.get(STR_COLUMN))
+            .describedAs("fixture: the column really is null, not an empty string")
+            .isNull()
+
+        val intoEmpty = service.updateByIdIfMatches(
+            empty.id,
+            mapOf(STR_COLUMN to null),
+            mapOf(STR_COLUMN to V1)
+        )
+        assertThat(intoEmpty)
+            .describedAs("a null expectation is IS NULL, and the empty column satisfies it")
+            .isTrue
+        assertThat(service.findById(empty.id)?.attributes?.get(STR_COLUMN)).isEqualTo(V1)
+
+        val ontoFilled = service.updateByIdIfMatches(
+            filled.id,
+            mapOf(STR_COLUMN to null),
+            mapOf(STR_COLUMN to V1)
+        )
+        assertThat(ontoFilled)
+            .describedAs("and a column that holds a value does not satisfy it")
+            .isFalse
+        assertThat(service.findById(filled.id)?.attributes?.get(STR_COLUMN))
+            .describedAs("the value the condition rejected is still the one that was there")
+            .isEqualTo(V0)
+
+        val clearing = service.updateByIdIfMatches(
+            filled.id,
+            mapOf(STR_COLUMN to V0),
+            mapOf(STR_COLUMN to null)
+        )
+        assertThat(clearing)
+            .describedAs("null is also a legitimate new value - the maps are symmetric")
+            .isTrue
+        assertThat(service.findById(filled.id)?.attributes?.get(STR_COLUMN)).isNull()
+    }
+
+    @Test
+    fun testIdConditionalUpdateOfMissingRow() {
+
+        val columns = textColumns()
+        val service = createService("contract-id-cond-update-missing")
+
+        val entity = newEntity()
+        entity.attributes[STR_COLUMN] = V0
+        service.save(entity, columns)
+
+        val updated = service.updateByIdIfMatches(
+            entity.id + 1_000_000L,
+            mapOf(STR_COLUMN to V0),
+            mapOf(STR_COLUMN to V1)
+        )
+
+        assertThat(updated).isFalse
+        assertThat(service.findAll().map { it.attributes[STR_COLUMN] }).containsExactly(V0)
+    }
+
+    @Test
+    fun testIdConditionalUpdateRejectsInvalidColumnMaps() {
+
+        val columns = dateColumns()
+        val service = createService("contract-id-cond-update-reject")
+
+        var entity = newEntity()
+        entity.attributes[STR_COLUMN] = V0
+        entity = service.save(entity, columns)
+        val id = entity.id
+        val match = mapOf(STR_COLUMN to V0)
+        val set = mapOf(STR_COLUMN to V1)
+
+        // nothing to assign
+        assertThrows<Exception> { service.updateByIdIfMatches(id, match, emptyMap()) }
+        // nothing to compare - an unconditional overwrite by id, never what the caller meant
+        assertThrows<Exception> { service.updateByIdIfMatches(id, emptyMap(), set) }
+
+        // a column the table doesn't have: dropping it would lose an assignment, or a condition
+        assertThrows<Exception> {
+            service.updateByIdIfMatches(id, match, mapOf("no_such_column" to V1))
+        }
+        assertThrows<Exception> {
+            service.updateByIdIfMatches(id, mapOf("no_such_column" to V0), set)
+        }
+
+        // reserved columns: the first two identify the row, the last is maintained by the update
+        for (reserved in listOf(DbEntity.ID, DbEntity.EXT_ID, DbEntity.UPD_VERSION)) {
+            assertThrows<Exception> {
+                service.updateByIdIfMatches(id, match, set + mapOf(reserved to 1L))
+            }
+            assertThrows<Exception> {
+                service.updateByIdIfMatches(id, match + mapOf(reserved to 1L), set)
+            }
+        }
+
+        // every rejection happened before any write
+        val stored = service.findById(id) ?: error("not found by id")
+        assertThat(stored.attributes[STR_COLUMN]).isEqualTo(V0)
+        assertThat(stored.updVersion).isEqualTo(entity.updVersion)
+    }
+
+    @Test
+    fun testIdConditionalUpdateRejectsInvalidColumnMapsEvenForAMissingRow() {
+
+        val columns = textColumns()
+        val service = createService("contract-id-cond-update-reject-missing")
+
+        val entity = newEntity()
+        entity.attributes[STR_COLUMN] = V0
+        service.save(entity, columns)
+
+        val missingId = entity.id + 1_000_000L
+        val match = mapOf(STR_COLUMN to V0)
+
+        assertThrows<Exception> { service.updateByIdIfMatches(missingId, match, emptyMap()) }
+        assertThrows<Exception> { service.updateByIdIfMatches(missingId, emptyMap(), match) }
+        assertThrows<Exception> {
+            service.updateByIdIfMatches(missingId, match, mapOf("no_such_column" to V1))
+        }
+        assertThrows<Exception> {
+            service.updateByIdIfMatches(missingId, match, mapOf(DbEntity.EXT_ID to "x"))
+        }
+    }
+
+    @Test
+    @Timeout(value = 120, unit = TimeUnit.SECONDS)
+    fun testConcurrentIdConditionalUpdatesLetExactlyOneWin() {
+
+        val columns = listOf(
+            DbColumnDef.create {
+                withName(NUM_COLUMN)
+                withType(DbColumnType.INT)
+            }
+        )
+        val service = createService("contract-id-cond-update-race")
+
+        var entity = newEntity()
+        entity.attributes[NUM_COLUMN] = 0
+        entity = service.save(entity, columns)
+        val id = entity.id
+
+        val threads = 6
+        val results = ConcurrentLinkedQueue<Boolean>()
+        val errors = ConcurrentLinkedQueue<Throwable>()
+        val startGate = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(threads)
+        try {
+            val futures = (1..threads).map { t ->
+                executor.submit {
+                    startGate.await()
+                    try {
+                        results.add(
+                            service.updateByIdIfMatches(
+                                id,
+                                mapOf(NUM_COLUMN to 0),
+                                mapOf(NUM_COLUMN to t)
+                            )
+                        )
+                    } catch (e: Throwable) {
+                        errors.add(e)
+                    }
+                }
+            }
+            startGate.countDown()
+            futures.forEach { it.get(100, TimeUnit.SECONDS) }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        // Same discriminator as testConcurrentConditionalUpdatesLetExactlyOneWin, keyed on id
+        // instead of ext id: a read-then-check-then-save implementation would let several threads
+        // through or blow up on the optimistic lock.
+        assertThat(errors).isEmpty()
+        assertThat(results.count { it }).isEqualTo(1)
+        assertThat(results).hasSize(threads)
+
+        val stored = service.findById(id) ?: error("not found by id")
         assertThat(stored.attributes[NUM_COLUMN] as Int).isBetween(1, threads)
     }
 

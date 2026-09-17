@@ -3,11 +3,13 @@ package ru.citeck.ecos.data.sql.records.dao.query
 import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.data.sql.context.DbTableContext
+import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
+import ru.citeck.ecos.data.sql.records.utils.DbReadToleranceLog
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
@@ -82,7 +84,24 @@ class DbFindQueryContext(
             typeRefs = if (typesInTable.isEmpty()) {
                 emptyList()
             } else {
-                ctx.recordRefService.getEntityRefsByIds(typesInTable)
+                // Map variant instead of getEntityRefsByIds: a __type value which has no row in
+                // ed_record_ref anymore is a dangling ref, and it must not fail the building of
+                // the query. The unresolvable ids are dropped - the types they stood for simply
+                // do not participate in the resulting type condition.
+                val refsById = ctx.recordRefService.getEntityRefsByIdsMap(typesInTable)
+                typesInTable.mapNotNull { typeId ->
+                    refsById[typeId] ?: run {
+                        DbReadToleranceLog.warnOnce(
+                            log,
+                            "type-ref-not-found-${ctx.dataService.getTableContext().getTableRef()}"
+                        ) {
+                            "Ref doesn't found for type id $typeId in table " +
+                                "${ctx.dataService.getTableContext().getTableRef()}. " +
+                                "The type will be excluded from the query condition"
+                        }
+                        null
+                    }
+                }
             }
             typeRefsInTable = typeRefs
         }
@@ -141,7 +160,8 @@ class DbFindQueryContext(
                 return
             }
             val innerAtt = att.substring(dotIdx + 1)
-            if (innerAtt.startsWith(RecordConstants.ATT_TYPE) && (
+            if (innerAtt.startsWith(RecordConstants.ATT_TYPE) &&
+                (
                     innerAtt.length == RecordConstants.ATT_TYPE.length ||
                         innerAtt[RecordConstants.ATT_TYPE.length] == '?'
                     )
@@ -253,6 +273,39 @@ class DbFindQueryContext(
         }
 
         val mappedSrcAtt = DbRecord.ATTS_MAPPING.getOrDefault(srcAttName, srcAttName)
+
+        // The join compares the target's __ref_id (a single BIGINT) against this column. When the
+        // column has a different type - or is an array, e.g. bigint[] for an attribute which
+        // became multiple - the model and the schema are out of sync (a failed conversion, or a
+        // migration still running in background) and the join could only produce "operator does
+        // not exist: bigint = ...", failing the entire query. Skipping the registration here,
+        // rather than skipping the JOIN when building SQL, also keeps the "asj__" alias out of
+        // the select list and out of expressions.
+        val srcColumn = ctx.dataService.getTableContext().getColumnByName(mappedSrcAtt)
+        if (srcColumn != null && (srcColumn.type != DbColumnType.LONG || srcColumn.multiple)) {
+            val describeColumnType = {
+                "${srcColumn.type}" + if (srcColumn.multiple) "[] (multiple)" else ""
+            }
+            // Reported at WARN, separately from printError: printError is the strict/non-strict
+            // contract of this method (throw for the caller, or stay quiet), while an operator
+            // still has to see - once - why a journal column silently went empty.
+            DbReadToleranceLog.warnOnce(
+                log,
+                "assoc-select-join-skipped-${ctx.dataService.getTableContext().getTableRef()}-$mappedSrcAtt"
+            ) {
+                "Assoc select is skipped for attribute '$srcAttName' in table " +
+                    "${ctx.dataService.getTableContext().getTableRef()}: column type is " +
+                    "${describeColumnType()}, expected ${DbColumnType.LONG}. The type model and " +
+                    "the database schema are out of sync. Attribute value will be empty"
+            }
+            printError {
+                "Assoc select can't be executed for attribute '$srcAttName': column type is " +
+                    "${describeColumnType()}, expected ${DbColumnType.LONG}. The type model and " +
+                    "the database schema are out of sync. Full attribute: '$att'"
+            }
+            return null
+        }
+
         assocSelectJoins[mappedSrcAtt] = tableCtx
 
         val result = "$mappedSrcAtt.$mappedTargetColumnName"

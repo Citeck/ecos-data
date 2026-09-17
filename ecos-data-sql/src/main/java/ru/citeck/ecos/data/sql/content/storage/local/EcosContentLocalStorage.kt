@@ -13,7 +13,8 @@ import java.io.OutputStream
 
 class EcosContentLocalStorage(
     private val dataService: DbDataService<DbContentDataEntity>
-) : EcosContentStorage, DbMigrationsExecutor {
+) : EcosContentStorage,
+    DbMigrationsExecutor {
 
     companion object {
         // legacy prefix. Will be removed in future

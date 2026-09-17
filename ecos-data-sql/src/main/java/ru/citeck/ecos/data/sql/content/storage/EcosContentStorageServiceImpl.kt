@@ -18,7 +18,8 @@ import java.io.OutputStream
 class EcosContentStorageServiceImpl(
     webAppApi: EcosWebAppApi,
     schemaCtx: DbSchemaContext
-) : EcosContentStorageService, DbMigrationsExecutor {
+) : EcosContentStorageService,
+    DbMigrationsExecutor {
 
     private val remoteStorage = EcosContentRemoteStorage(webAppApi.getWebClientApi())
     private val localStorage = EcosContentLocalStorage(

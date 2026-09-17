@@ -80,10 +80,13 @@ import ru.citeck.ecos.webapp.api.EcosWebAppApi
 import ru.citeck.ecos.webapp.api.content.EcosContentData
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
+import ru.citeck.ecos.webapp.api.lock.EcosLock
+import ru.citeck.ecos.webapp.api.lock.EcosLockApi
 import ru.citeck.ecos.webapp.api.mime.MimeType
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 open class DataMockFactory : AutoCloseable {
@@ -216,6 +219,16 @@ open class DataMockFactory : AutoCloseable {
     }
 
     private val typesInfo = mutableMapOf<String, TypeInfo>()
+
+    /**
+     * Subscribers of the mock [TypesRepo], i.e. what a real registry keeps in `listenEvents`.
+     *
+     * Not cleared by [setUp]: the data source context - and therefore the model change queue that
+     * subscribed through it - is built once per factory and survives a second `setUp`, so dropping
+     * the listeners here would leave that queue subscribed to a repo that no longer publishes
+     * anything. The listeners are per factory instance, and a factory instance is per test.
+     */
+    private val typeChangeListeners = CopyOnWriteArrayList<(String, TypeInfo?, TypeInfo?) -> Unit>()
     private val aspectsInfo = mutableMapOf<String, AspectInfo>()
     private val numTemplates = mutableMapOf<String, NumTemplateDef>()
 
@@ -223,6 +236,12 @@ open class DataMockFactory : AutoCloseable {
     lateinit var recordsServiceFactory: RecordsServiceFactory
     lateinit var dbDataSource: DbDataSource
     lateinit var dataSourceCtx: DbDataSourceContext
+
+    /**
+     * What the platform told the other applications about association changes. Non-null for every
+     * test - see [RecordingRemoteActionsClient] for why it is installed unconditionally.
+     */
+    val remoteActionsClient = RecordingRemoteActionsClient()
 
     lateinit var dbSchemaDao: DbSchemaDao
     lateinit var dbRecordRefService: DbRecordRefService
@@ -285,8 +304,12 @@ open class DataMockFactory : AutoCloseable {
             }
         } else {
             webAppApi = object : EcosWebAppApiMock(APP_NAME) {
+                private val countingLockApi = CountingLockApi(super.getAppLockApi())
                 override fun getContentApi(): ContentApiMock {
                     return ContentApiTest()
+                }
+                override fun getAppLockApi(): EcosLockApi {
+                    return countingLockApi
                 }
             }
 
@@ -337,6 +360,12 @@ open class DataMockFactory : AutoCloseable {
                         override fun getTypeInfo(typeRef: EntityRef): TypeInfo? {
                             return typesInfo[typeRef.getLocalId()]
                         }
+
+                        override fun listenTypeChanges(
+                            listener: (typeId: String, before: TypeInfo?, after: TypeInfo?) -> Unit
+                        ) {
+                            typeChangeListeners.add(listener)
+                        }
                     }
                 }
 
@@ -386,6 +415,7 @@ open class DataMockFactory : AutoCloseable {
                 DbMigrationService(),
                 webAppApi,
                 ecosContext,
+                remoteActionsClient = remoteActionsClient,
                 props = dataProps,
                 mimeTypeDetector = mimeTypeDetectorOverride,
                 contentStorageServiceFactory = EcosContentStorageServiceFactory { schemaCtx ->
@@ -451,7 +481,17 @@ open class DataMockFactory : AutoCloseable {
 
     private fun getOrCreateSchemaCtx(schema: String): DbSchemaContext {
         return schemaContexts.computeIfAbsent(schema) {
-            dataSourceCtx.getSchemaContext(schema)
+            val schemaCtx = dataSourceCtx.getSchemaContext(schema)
+            // The one moment in the whole run at which this schema is provably pristine:
+            // getSchemaContext has just run runSchemaMigrations, so every ed_* system table exists
+            // with the structure and the metadata rows ecos-data itself gave it, and no test body
+            // has executed yet. That is what the cache has to be able to restore, so it is where
+            // it is captured. Only the suite's own schema is cacheable - a test which builds a
+            // second schema is building it for a reason and gets it fresh every time.
+            if (schema == DEFAULT_TABLE_REF.schema && DbTestSchemaCache.isSchemaReuseActive()) {
+                backend.snapshotPristineSchema(schema)
+            }
+            schemaCtx
         }
     }
 
@@ -462,7 +502,12 @@ open class DataMockFactory : AutoCloseable {
             return
         }
         RequestContext.setDefaultServices(null)
-        dropAllTables()
+        if (DbTestSchemaCache.isSchemaReuseActive()) {
+            // Same post-condition as dropAllTables(), reached the cheap way where the backend can.
+            backend.resetForNextTest()
+        } else {
+            dropAllTables()
+        }
         backend.close()
     }
 
@@ -585,16 +630,18 @@ open class DataMockFactory : AutoCloseable {
 
                     override fun hasAttWritePerms(name: String): Boolean {
                         val writePerms = recAttWritePerms[globalRef to name]
-                        return writePerms.isNullOrEmpty() || authorities.any {
-                            writePerms.contains(it)
-                        }
+                        return writePerms.isNullOrEmpty() ||
+                            authorities.any {
+                                writePerms.contains(it)
+                            }
                     }
 
                     override fun hasAttReadPerms(name: String): Boolean {
                         val readPerms = recAttReadPerms[globalRef to name]
-                        return readPerms.isNullOrEmpty() || authorities.any {
-                            readPerms.contains(it)
-                        }
+                        return readPerms.isNullOrEmpty() ||
+                            authorities.any {
+                                readPerms.contains(it)
+                            }
                     }
 
                     private fun hasDelegatedPerms(perms: Set<String>): Boolean {
@@ -731,8 +778,58 @@ open class DataMockFactory : AutoCloseable {
         return mainCtx.getColumns()
     }
 
+    /**
+     * Forces the main table's own [DbTableContext] to be rebuilt from the physical schema on the
+     * next read. [DbSchemaContext.resetColumnsCache] alone is not enough for this: it only resets
+     * the schema's *system* services (content, perms, record refs, ...), not an arbitrary domain
+     * table's [ru.citeck.ecos.data.sql.service.DbDataService], which normally only learns about a
+     * DDL change it did not itself run through the reactive `column ... does not exist` handler
+     *. A test that renames a column straight through [DbSchemaDao] - bypassing the data
+     * service entirely, as the migration machinery itself will later do from inside its own lock -
+     * has to invalidate that cache explicitly instead.
+     */
+    fun resetColumnsCache() {
+        getTableCtx().getSchemaCtx().resetColumnsCache()
+        mainCtx.dataService.resetColumnsCache()
+    }
+
     fun cleanRecords() {
         mainCtx.cleanRecords()
+    }
+
+    /**
+     * How many times the current table's schema migration lock has been requested so far. Exists
+     * for the cases where "no migration happened" is the property under test and there is no more
+     * direct signal available - see
+     * [DbColumnMetaSeedTest.aSubsetOfAnAlreadyReconciledMapNeedsNoNewMigrationTest] for why a lock
+     * count is the only honest proxy there. Wraps every real key this table's [DbDataServiceImpl]
+     * ever requests through [DbDataServiceImpl.schemaMigrationLockKey], including nested tables
+     * like `ed_column_meta` under their own key, so counting only this table's exact key is what
+     * makes the assertion mean something.
+     */
+    fun schemaMigrationLockCallCount(): Int {
+        val lockApi = webAppApi.getAppLockApi() as CountingLockApi
+        return lockApi.callCount(DbDataServiceImpl.schemaMigrationLockKey(tableRef))
+    }
+
+    /**
+     * Delegates every call through to the real (mock) lock API, counting [getLock] requests per
+     * key. `getLock` is the one method every [EcosLockApi] entry point (`doInSync`, `doInSyncOrSkip`,
+     * ...) funnels through, so counting it counts every acquisition attempt regardless of which one
+     * was used.
+     */
+    private class CountingLockApi(private val delegate: EcosLockApi) : EcosLockApi {
+
+        private val callsByKey = ConcurrentHashMap<String, AtomicInteger>()
+
+        fun callCount(key: String): Int {
+            return callsByKey[key]?.get() ?: 0
+        }
+
+        override fun getLock(key: String): EcosLock {
+            callsByKey.computeIfAbsent(key) { AtomicInteger() }.incrementAndGet()
+            return delegate.getLock(key)
+        }
     }
 
     /**
@@ -766,6 +863,21 @@ open class DataMockFactory : AutoCloseable {
             "Skipped on the '" + activeBackendId +
                 "' backend: this test relies on PostgreSQL-internal expressions (to_char/date_trunc/" +
                 "date_part('epoch')/interval) that only a real SQL backend evaluates."
+        )
+    }
+
+    /**
+     * Skip the current test when the active backend does not convert stored values during an
+     * in-place column type change. Only a backend that does has two conversion paths for
+     * require agreement between; the in-memory backend changes the column's type and leaves the
+     * values as they were.
+     */
+    fun assumeColumnValuesConvertedInPlace() {
+        Assumptions.assumeTrue(
+            backend.convertsColumnValuesInPlace,
+            "Skipped on the '" + activeBackendId +
+                "' backend: an in-place type change there rewrites the column definition without " +
+                "converting the stored values, so there is no second conversion to agree with."
         )
     }
 
@@ -848,7 +960,40 @@ open class DataMockFactory : AutoCloseable {
         } else {
             type
         }
-        this.typesInfo[fixedType.id] = fixedType
+        val before = this.typesInfo.put(fixedType.id, fixedType)
+        fireTypeChanged(fixedType.id, before, fixedType)
+    }
+
+    /**
+     * Drops a type from the mock types repo, the way `emodel` drops a deleted one: the records DAO
+     * built over it stays registered and keeps answering, exactly as it does in production until
+     * something unregisters it.
+     */
+    fun unregisterType(typeId: String) {
+        val before = this.typesInfo.remove(typeId)
+        fireTypeChanged(typeId, before, null)
+    }
+
+    /**
+     * What `EcosRegistryImpl.fireEvent` does: calls every listener synchronously, on the thread
+     * that made the change, and lets none of them stop the others.
+     *
+     * This is what turns the mock model into something the trigger can be tested against at all -
+     * without it every test of the trigger would have to call `onTypeChanged` by hand and would
+     * therefore prove nothing about the path a real registry takes.
+     *
+     * Both writers of [typesInfo] go through here, and they are the only two: every other helper
+     * of this factory that changes a type - `updateType`, `addAttribute`, `registerAtts`,
+     * `setQueryPermsPolicy` - ends in [registerType].
+     */
+    private fun fireTypeChanged(typeId: String, before: TypeInfo?, after: TypeInfo?) {
+        typeChangeListeners.forEach { listener ->
+            try {
+                listener.invoke(typeId, before, after)
+            } catch (e: Throwable) {
+                log.error(e) { "Type change listener failed for type '$typeId'" }
+            }
+        }
     }
 
     fun addAttribute(typeId: String = REC_TEST_TYPE_ID, attribute: AttributeDef) {

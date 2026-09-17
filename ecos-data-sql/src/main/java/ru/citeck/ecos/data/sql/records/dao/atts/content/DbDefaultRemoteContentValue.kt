@@ -21,7 +21,8 @@ class DbDefaultRemoteContentValue(
     private val baseRecId: String,
     private val baseTypeId: String,
     private val name: String
-) : AttValue, AttValueProxy {
+) : AttValue,
+    AttValueProxy {
 
     companion object {
         private val ATTS_WITHOUT_LOADING = setOf("_as", "name", "url")
@@ -151,7 +152,9 @@ class DbDefaultRemoteContentValue(
         )
     }
 
-    private inner class InnerAttsWrapper(value: AttValue) : AttValueDelegate(value), AttValueProxy {
+    private inner class InnerAttsWrapper(value: AttValue) :
+        AttValueDelegate(value),
+        AttValueProxy {
 
         override fun getAtt(name: String): Any? {
             return when (name) {
