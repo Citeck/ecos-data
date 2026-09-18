@@ -39,6 +39,11 @@ class InMemRecordsTestBackend : DbRecordsTestBackend {
     // InMemDataSource), so writes made inside a doInTxn block are rolled back when the block throws.
     override val supportsTransactionRollback: Boolean = true
 
+    // One shared store and one undo log, so transactions are serialized on a single lock rather
+    // than isolated (InMemDataSource, "Threading"). A second transaction started while another is
+    // open does not interleave with it - it waits, and fails when the wait runs out.
+    override val runsTransactionsConcurrently: Boolean = false
+
     override fun close() {
         // no pooled resources to release for the in-memory backend
     }

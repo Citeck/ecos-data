@@ -571,7 +571,7 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
             }
             if (from == DbColumnType.DATETIME) {
                 // to_char has no fractional-seconds field and would silently truncate sub-second
-                // precision, which this conversion is not allowed to do (spec: lossless class).
+                // precision, which a conversion classified as lossless is not allowed to do.
                 // to_json's date/time rendering is always ISO 8601 regardless of DateStyle, keeps
                 // fractional digits when present and trims them when absent, and never appends a
                 // zone suffix for a bare timestamp - hence the manual 'Z' once AT TIME ZONE 'UTC'

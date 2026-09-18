@@ -13,6 +13,7 @@ import ru.citeck.ecos.data.sql.records.utils.DbAttValueUtils
 import ru.citeck.ecos.data.sql.records.utils.DbReadToleranceLog
 import ru.citeck.ecos.data.sql.repo.DbConditionalUpdate
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
+import ru.citeck.ecos.data.sql.repo.DbInsertOrGetRes
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
@@ -294,7 +295,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         )
     }
 
-    override fun insertIfNoConflictByExtId(context: DbTableContext, entity: Map<String, Any?>): Long? {
+    override fun insertOrGetByExtId(
+        context: DbTableContext,
+        entity: Map<String, Any?>,
+        extraLongColumns: List<String>
+    ): DbInsertOrGetRes {
 
         checkAuth(context)
 
@@ -327,8 +332,18 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         query.setLength(query.length - 1)
         query.append(")")
 
-        if (context.hasIdColumn()) {
-            query.append(" ON CONFLICT (${DbEntity.EXT_ID}) DO NOTHING RETURNING id")
+        if (!context.hasIdColumn()) {
+            error(
+                "Table ${context.getTableRef().fullName} has no id column, " +
+                    "so there is no id to answer with"
+            )
+        }
+        // The assignment is a no-op: what the clause is for is the wait and the RETURNING. See
+        // DbEntityRepo.insertOrGetByExtId for why DO NOTHING cannot do this.
+        query.append(" ON CONFLICT (${DbEntity.EXT_ID}) DO UPDATE SET ${DbEntity.EXT_ID} = EXCLUDED.${DbEntity.EXT_ID}")
+        query.append(" RETURNING id")
+        for (column in extraLongColumns) {
+            query.append(", \"").append(column).append("\"")
         }
         query.append(";")
 
@@ -337,8 +352,22 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             values.add(preparedValue.values[0])
         }
 
-        val ids = context.getDataSource().update(query.toString(), values)
-        return ids.firstOrNull()
+        return context.getDataSource().updateReturning(query.toString(), values) { rs ->
+            if (!rs.next()) {
+                error(
+                    "Insertion into ${context.getTableRef().fullName} answered no row. " +
+                        "Entity ext id: ${entity[DbEntity.EXT_ID]}"
+                )
+            }
+            val longs = LinkedHashMap<String, Long>()
+            for (column in extraLongColumns) {
+                val value = rs.getLong(column)
+                if (!rs.wasNull()) {
+                    longs[column] = value
+                }
+            }
+            DbInsertOrGetRes(rs.getLong("id"), longs)
+        }
     }
 
     override fun updateByExtIdIfMatches(
@@ -524,7 +553,9 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
     private fun insertImpl(
         context: DbTableContext,
-        entities: List<Map<String, Any?>>
+        entities: List<Map<String, Any?>>,
+        conflictColumns: List<String> = emptyList(),
+        returningColumn: String = DbEntity.ID
     ): List<Long> {
 
         if (entities.isEmpty()) {
@@ -565,8 +596,15 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             query.append("),")
         }
         query.setLength(query.length - 1)
+        if (conflictColumns.isNotEmpty()) {
+            // The columns of a unique index, so the clause is an upsert target and not the bare
+            // "any constraint" form: naming the index makes the skip mean one definite thing.
+            query.append(" ON CONFLICT (")
+            query.append(conflictColumns.joinToString(",") { "\"$it\"" })
+            query.append(") DO NOTHING")
+        }
         if (context.hasIdColumn()) {
-            query.append(" RETURNING id")
+            query.append(" RETURNING \"").append(returningColumn).append("\"")
         }
         query.append(";")
 
@@ -577,6 +615,27 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             }
         }
         return context.getDataSource().update(query.toString(), values)
+    }
+
+    override fun insertIfNoConflict(
+        context: DbTableContext,
+        entities: List<Map<String, Any?>>,
+        conflictColumns: List<String>,
+        returningColumn: String
+    ): List<Long> {
+
+        checkAuth(context)
+
+        if (entities.isEmpty()) {
+            return emptyList()
+        }
+        // Rows are new by construction here, and `insertImpl` would write whatever `id` it is given.
+        return insertImpl(
+            context,
+            entities.map { entity -> LinkedHashMap(entity).apply { remove(DbEntity.ID) } },
+            conflictColumns,
+            returningColumn
+        )
     }
 
     private fun updateImpl(context: DbTableContext, entities: List<EntityToUpdate>) {

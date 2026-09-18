@@ -338,7 +338,7 @@ class DbConversionPathAgreementTest : DbRecordsTestBase() {
                     "$from -> $to (multiple=$multiple) is now converted by the backend where it " +
                         "stands, so what the user ends up with is decided by the backend's " +
                         "expression on a small table and by DbColumnValueConverter on a large one. " +
-                        "Spec 5.3 requires the two to agree, and no test in this class compares " +
+                        "The two have to agree, and no test in this class compares " +
                         "them for it - add one, or refuse it in isInPlaceConversionSafe"
                 }
             )

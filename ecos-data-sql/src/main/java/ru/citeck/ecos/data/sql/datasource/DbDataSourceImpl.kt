@@ -77,7 +77,12 @@ class DbDataSourceImpl(
             execSqlQuery(query, DbDsQueryType.UPDATE, params) { query ->
                 connection.prepareStatement(query).use { statement ->
                     setParams(connection, statement, params)
-                    if (query.contains("RETURNING id")) {
+                    // Any RETURNING clause, not the literal "RETURNING id" this used to look for:
+                    // the statement either gives rows back or it does not, and which column it names
+                    // has nothing to do with that. The old text match answered the wrong question
+                    // and turned a returning clause over any other column into
+                    // "A result was returned when none was expected".
+                    if (query.contains("RETURNING ")) {
                         val ids = arrayListOf<Long>()
                         statement.executeQuery().use { rs ->
                             while (rs.next()) {
@@ -180,6 +185,17 @@ class DbDataSourceImpl(
             value.isArrayOf<Timestamp>() -> "timestamp"
             value.isArrayOf<LocalDate>() -> "date"
             else -> null
+        }
+    }
+
+    override fun <T> updateReturning(query: String, params: List<Any?>, action: (ResultSet) -> T): T {
+        return withConnection { connection ->
+            execSqlQuery(query, DbDsQueryType.UPDATE, params) { query ->
+                connection.prepareStatement(query).use { statement ->
+                    setParams(connection, statement, params)
+                    statement.executeQuery().use { action.invoke(it) }
+                }
+            }
         }
     }
 

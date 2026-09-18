@@ -289,23 +289,20 @@ class DbColumnRestoreTest : DbRecordsTestBase() {
     }
 
     /**
-     * The other half of the departure, and the one that makes releasing a child safe rather
-     * than merely less destructive: **the return of the type gives the children back their parent.**
+     * **A child of a restricted parent stays restricted while the attribute is not an association.**
      *
-     * The departure clears `_parent`/`_parentAtt` of the children whose links it parks, because
-     * leaving them makes the child undeletable (`RecMutAssocHandler.validateChildAssocs` refuses the
-     * parent mutation `DbRecordsDeleteDao` performs for a deleted child). That has a price, stated
-     * here rather than discovered: `DefaultDbPermsComponent` answers `canRead = true` / `EVERYONE`
-     * for a record with no `_parent`, so a child of a restricted parent is world-readable while the
-     * attribute is not an association. The price is accepted **because this test passes** - the
-     * state is reversible, and the alternative on the table was deleting the child, which nothing in
-     * this platform reverses (`DbTrashcanService` stores a snapshot and has no restore).
+     * The departure takes the links and leaves `_parent`/`_parentAtt` exactly as they were, and this
+     * is the user-visible reason why. `DefaultDbPermsComponent` answers `canRead = true` /
+     * `EVERYONE` for a record with no `_parent`, so a departure that cleared the back-reference
+     * would publish every child of every restricted parent for as long as an administrator left the
+     * attribute as text - a window of arbitrary length, opened by a type change nobody connected
+     * with permissions.
      *
      * Asserted through the permission check rather than through the column, because that is the
-     * user-visible consequence and the column is only how it is reached.
+     * consequence and the column is only how it is reached.
      */
     @Test
-    fun aChildReleasedByADepartureInheritsItsParentsPermissionsAgainOnTheReturnTest() {
+    fun aChildOfARestrictedParentStaysRestrictedWhileItsLinkIsParkedTest() {
 
         // registered because this test has to read it back through the permission check
         val someKey = AttributeDef.create {
@@ -341,12 +338,12 @@ class DbColumnRestoreTest : DbRecordsTestBase() {
         drain()
 
         assertThat(records.getAtt(child, "_parent?id").asText())
-            .describedAs("while the attribute is text the child has no parent - the accepted price")
-            .isEmpty()
+            .describedAs("while the attribute is text the child still names its parent")
+            .isEqualTo(rec.toString())
         AuthContext.runAs("a-stranger", listOf(AuthGroup.EVERYONE)) {
             assertThat(records.getAtt(child, "someKey").asText())
-                .describedAs("and is readable by anybody, which is that price being paid")
-                .isEqualTo("c")
+                .describedAs("so a stranger cannot read it, as before the type changed")
+                .isEmpty()
         }
 
         registerAtts(
@@ -367,26 +364,26 @@ class DbColumnRestoreTest : DbRecordsTestBase() {
             .describedAs("the link came back out of the association backup")
             .containsExactly(child.toString())
         assertThat(records.getAtt(child, "_parent?id").asText())
-            .describedAs("and so did the back-reference, which is what makes the release reversible")
+            .describedAs("and the back-reference is the one the user made, never taken away")
             .isEqualTo(rec.toString())
         assertThat(records.getAtt(child, "_parentAtt").asText()).isEqualTo("att")
         AuthContext.runAs("a-stranger", listOf(AuthGroup.EVERYONE)) {
             assertThat(records.getAtt(child, "someKey").asText())
-                .describedAs("so the child is restricted with its parent again")
+                .describedAs("and the child is restricted with its parent, as it was throughout")
                 .isEmpty()
         }
     }
 
     /**
-     * And a child released by a departure is deletable while the attribute is text, which is the
-     * whole reason the departure releases it.
+     * And a child whose link is parked is deletable while the attribute is text, keeping its parent
+     * all the while.
      *
      * Read here rather than only in [DbColumnMigrationHandlerTest] because this file is where the
-     * round trip lives: the point is that the record is deletable **and** that the state is undone
-     * by the return, not one or the other.
+     * round trip lives: the point is that the record is deletable **and** that the parked state is
+     * undone by the return, not one or the other.
      */
     @Test
-    fun aChildReleasedByADepartureIsDeletableWhileTheAttributeIsTextTest() {
+    fun aChildWhoseLinkIsParkedIsDeletableWhileTheAttributeIsTextTest() {
 
         asChildAssoc()
         val child = createRecord("someKey" to "c")

@@ -120,8 +120,8 @@ class DbColumnRestore(private val tableCtx: DbTableContext) {
      * **Every reason to answer null is decided before the first `ALTER`**, so a null return always
      * means the table is untouched and the fallback is safe.
      *
-     * Three renames, in this order, so that no moment exists in which the attribute's own name is
-     * unclaimed by a column holding data:
+     * Two renames and then the registry, in this order, so that no moment exists in which the
+     * attribute's own name is unclaimed by a column holding data:
      *  1. the current column moves to a backup name of its own;
      *  2. the chosen backup takes the attribute's name;
      *  3. both registry rows are rewritten to say so.
@@ -214,8 +214,8 @@ class DbColumnRestore(private val tableCtx: DbTableContext) {
             targetMultiple = expectedColumn.multiple,
             // from the model the attribute is returning to, not from the registry row being
             // restored: `ed_column_meta` records an AttributeType and nothing about `child`, and
-            // the links that appear on a restore are created by the same transfer that
-            // creates them for an ordinary rule-11 change
+            // the links that appear on a restore are created by the same transfer that creates
+            // them for an ordinary change into an assoc-like type
             targetChild = targetChild,
             targetIndexEnabled = expectedColumn.index.enabled,
             conversionClass = DbColumnConversions.classify(

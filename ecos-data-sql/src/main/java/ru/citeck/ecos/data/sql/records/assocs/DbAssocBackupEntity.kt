@@ -23,6 +23,11 @@ import java.time.Instant
  */
 @Indexes(
     Index(columns = [DbAssocBackupEntity.COLUMN_META_ID, DbAssocBackupEntity.SOURCE_ID]),
+    // Every deletion of a record asks this table what it has parked, keyed on the source alone -
+    // the two indexes below lead on the departure and answer nothing about that. Added to an
+    // existing table by AddAssocBackupSourceIndex, since a schema reconciliation builds indexes
+    // for new columns only.
+    Index(columns = [DbAssocBackupEntity.SOURCE_ID]),
     Index(
         columns = [
             DbAssocBackupEntity.COLUMN_META_ID,

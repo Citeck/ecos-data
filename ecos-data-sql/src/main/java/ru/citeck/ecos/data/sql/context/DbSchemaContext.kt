@@ -44,7 +44,7 @@ class DbSchemaContext(
     val ecosContext: EcosContext
 ) {
     companion object {
-        const val NEW_SCHEMA_VERSION = 11
+        const val NEW_SCHEMA_VERSION = 12
     }
 
     val schemaMetaService: DbSchemaMetaService = DbSchemaMetaServiceImpl(this)

@@ -647,6 +647,16 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             }
         }
 
+        // Before the operations are extracted, because this one takes its own out of the mutation:
+        // a child telling its parent it is gone, for an attribute whose links a column migration
+        // has parked. The parent has no association to remove anything from and the snapshot is
+        // what has to stop naming the child.
+        val parkedChildAtts = daoCtx.mutAssocHandler.forgetParkedChildLinks(
+            recAttributes,
+            entityToMutate,
+            mutCtx.typeAttColumns
+        )
+
         val changedByOperationsAtts = mutableSetOf<String>()
         val operations = daoCtx.mutAttOperationHandler.extractAttValueOperations(recAttributes)
             .filter { !recAttributes.has(it.getAttName()) }
@@ -869,7 +879,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             record.attributes,
             changedByOperationsAtts,
             entityToMutate.extId,
-            mutCtx.typeAttColumns
+            mutCtx.typeAttColumns,
+            parkedChildAtts
         )
 
         // If while mutation nothing changed, then we return

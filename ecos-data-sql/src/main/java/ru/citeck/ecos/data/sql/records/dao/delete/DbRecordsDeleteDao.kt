@@ -141,6 +141,24 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
             }
         }
 
+        // The children of an attribute that stopped being a child association: their links are not
+        // in the table the cascade above reads, they are parked in `ed_associations_backup` until
+        // the type comes back. Reading them here is what keeps "a parent takes its children with
+        // it" true while the attribute holds text instead of links - the alternative being a child
+        // left naming a parent that no longer exists, which nothing can reach and nothing can
+        // delete, since the notification it would send has no parent to answer it.
+        //
+        // The snapshot goes with the record in the same read: there is no record left for a restore
+        // to put anything back into, and asking for the two answers separately would read that table
+        // twice on every deletion of every record to be told "nothing" twice.
+        AuthContext.runAsSystem {
+            val parkedChildren = ctx.tableCtx.getSchemaCtx().assocBackupService
+                .takeParkedLinksOf(entity.refId)
+            if (parkedChildren.isNotEmpty()) {
+                ctx.recordsService.delete(ctx.recordRefService.getEntityRefsByIds(parkedChildren))
+            }
+        }
+
         ctx.remoteActionsClient?.deleteRemoteAssocs(ctx.tableCtx, meta.globalRef, isForceDeletion)
 
         if (isForceDeletion) {

@@ -38,6 +38,7 @@ class DbMigrationService {
         schemaMigrations.add(EnsureColumnMetaTableExists())
         schemaMigrations.add(EnsureBatchTaskTableExists())
         schemaMigrations.add(EnsureAssocBackupTableExists())
+        schemaMigrations.add(AddAssocBackupSourceIndex())
     }
 
     fun runDomainMigrations(context: DbDomainMigrationContext) {

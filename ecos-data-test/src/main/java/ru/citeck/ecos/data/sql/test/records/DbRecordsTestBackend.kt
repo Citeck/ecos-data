@@ -66,6 +66,21 @@ interface DbRecordsTestBackend {
         get() = true
 
     /**
+     * Whether two transactions can be open on this backend at the same time.
+     *
+     * A defect that only exists between two statements - a check and the write it authorises, with
+     * another transaction committing in between - can be reproduced only on a backend that lets the
+     * second transaction run at all. The JDBC/PG backend does: a transaction per connection, and a
+     * thread of its own is all a test needs. The in-memory backend deliberately does not - it
+     * mutates one shared store through a single undo log and serializes every transaction on one
+     * lock (see `InMemDataSource`), so a second one does not interleave, it waits and then times
+     * out. Tests about such a window declare this requirement and are skipped there with a
+     * documented assumption, rather than failing for a reason that is not the defect.
+     */
+    val runsTransactionsConcurrently: Boolean
+        get() = true
+
+    /**
      * Whether an in-place column type change (`setColumnType`) converts the **values** already
      * stored, rather than only the column's declared type. PostgreSQL's `ALTER ... TYPE ... USING`
      * does, which is what makes the in-place path an alternative to the row-by-row transfer at all;

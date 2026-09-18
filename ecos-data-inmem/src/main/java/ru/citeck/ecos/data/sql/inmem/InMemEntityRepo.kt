@@ -13,6 +13,7 @@ import ru.citeck.ecos.data.sql.inmem.query.RowEvalContext
 import ru.citeck.ecos.data.sql.inmem.store.InMemTable
 import ru.citeck.ecos.data.sql.repo.DbConditionalUpdate
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
+import ru.citeck.ecos.data.sql.repo.DbInsertOrGetRes
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
@@ -35,8 +36,10 @@ import java.util.UUID
  *    insert and increments it on update with optimistic-lock (concurrent-modification) checking;
  *    assigns auto-incremented long ids; converts every value to the column's common JVM type
  *    (array thereof for multiple columns, except JSON) exactly like the PG repo's read/write path.
- *  - **insertIfNoConflictByExtId**: returns null when a row with the same ext-id already exists,
- *    otherwise inserts and returns the new id.
+ *  - **insertOrGetByExtId**: answers the id of the row that already holds the ext id, and inserts
+ *    and answers a new one otherwise. The waiting the PG backend gets from `ON CONFLICT DO UPDATE`
+ *    is not needed here: [ru.citeck.ecos.data.sql.inmem.datasource.InMemDataSource] serializes write
+ *    transactions, so there is never an uncommitted row of somebody else's to wait for.
  *  - **updateByExtIdIfMatches**: compares the expected columns against the stored row and rewrites it
  *    only on a full match. The single statement the PG backend relies on is replaced by a
  *    read-compare-write sequence, which is equally atomic here because
@@ -173,7 +176,57 @@ class InMemEntityRepo : DbEntityRepo {
         table.putRow(id, extId, newRow)
     }
 
-    override fun insertIfNoConflictByExtId(context: DbTableContext, entity: Map<String, Any?>): Long? {
+    override fun insertIfNoConflict(
+        context: DbTableContext,
+        entities: List<Map<String, Any?>>,
+        conflictColumns: List<String>,
+        returningColumn: String
+    ): List<Long> {
+
+        checkAuth(context)
+
+        if (entities.isEmpty()) {
+            return emptyList()
+        }
+        val table = context.getStoreTable()
+        val typesConverter = context.getTypesConverter()
+        // What the unique index of a real backend would refuse, collected once from the rows that
+        // are already there and then extended as this call inserts - so two entities of one call
+        // collide with each other exactly as they would in the database.
+        //
+        // Stored values on one side and the caller's on the other, so [conflictColumns] have to name
+        // columns this store keeps as it was given them - the numbers and flags a unique index is
+        // built on in practice. A column whose stored form differs from the given one would compare
+        // unequal here and equal in PostgreSQL, which is why this is said rather than assumed.
+        val taken = HashSet<List<Any?>>()
+        table.getRows().mapTo(taken) { row -> conflictColumns.map { row[it] } }
+
+        val result = ArrayList<Long>(entities.size)
+        for (entity in entities) {
+            val key = conflictColumns.map { entity[it] }
+            if (!taken.add(key)) {
+                continue
+            }
+            val atts = LinkedHashMap(entity)
+            atts.remove(DbEntity.ID)
+            val id = insertOne(context, table, typesConverter, atts)
+            val returned = if (returningColumn == DbEntity.ID) {
+                id
+            } else {
+                (entity[returningColumn] as? Number)?.toLong()
+            }
+            if (returned != null) {
+                result.add(returned)
+            }
+        }
+        return result
+    }
+
+    override fun insertOrGetByExtId(
+        context: DbTableContext,
+        entity: Map<String, Any?>,
+        extraLongColumns: List<String>
+    ): DbInsertOrGetRes {
 
         checkAuth(context)
 
@@ -188,14 +241,34 @@ class InMemEntityRepo : DbEntityRepo {
 
         val table = context.getStoreTable()
         val extId = entity[DbEntity.EXT_ID] as? String ?: ""
-        if (extId.isNotEmpty() && table.getRowByExtId(extId) != null) {
-            return null
+        if (extId.isNotEmpty()) {
+            val existing = table.getRowByExtId(extId)
+            if (existing != null) {
+                val id = existing[DbEntity.ID] as? Long ?: error(
+                    "Row with ext id '$extId' in ${context.getTableRef().fullName} has no id"
+                )
+                return DbInsertOrGetRes(id, extraLongsOf(existing, extraLongColumns))
+            }
         }
         if (!context.hasIdColumn()) {
-            insertOne(context, table, context.getTypesConverter(), entity)
-            return null
+            error(
+                "Table ${context.getTableRef().fullName} has no id column, " +
+                    "so there is no id to answer with"
+            )
         }
-        return insertOne(context, table, context.getTypesConverter(), entity)
+        val id = insertOne(context, table, context.getTypesConverter(), entity)
+        return DbInsertOrGetRes(id, extraLongsOf(entity, extraLongColumns))
+    }
+
+    private fun extraLongsOf(row: Map<String, Any?>, columns: List<String>): Map<String, Long> {
+        if (columns.isEmpty()) {
+            return emptyMap()
+        }
+        val result = LinkedHashMap<String, Long>()
+        for (column in columns) {
+            (row[column] as? Number)?.let { result[column] = it.toLong() }
+        }
+        return result
     }
 
     override fun updateByExtIdIfMatches(

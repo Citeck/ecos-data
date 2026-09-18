@@ -77,12 +77,11 @@ class DbShadowColumnTransition(
      * - the caches, the cancellation, the task - is the same as an ordinary transition; only the
      * params differ.
      *
-     * **Asked before the strategy is chosen, not inside one of the strategies.** A matching backup is
-     * unconditional, and "in place" comes before "shadow" without either of them being ordered
-     * before 8.5. Asked only on the shadow path, it would miss every round trip whose return leg is
-     * a pure cast - `DATE -> DATETIME`, `NUMBER -> G_STR`, `X -> X[]` (spec
-     * 5.2) - and those are the common ones, because the *forward* leg of such a pair is exactly
-     * what makes it lossy enough to have left a backup in the first place.
+     * **Asked before the strategy is chosen, not inside one of the strategies.** A matching backup
+     * wins whichever strategy the pair would otherwise take. Asked only on the shadow path, it
+     * would miss every round trip whose return leg is a pure cast - `DATE -> DATETIME`,
+     * `NUMBER -> G_STR`, `X -> X[]` - and those are the common ones, because the *forward* leg of
+     * such a pair is exactly what makes it lossy enough to have left a backup in the first place.
      *
      * Returns false having touched nothing when there is no backup to return to, or when the one
      * there is cannot be used ([DbColumnRestore.restore] decides every reason before the first

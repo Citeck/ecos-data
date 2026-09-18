@@ -5,6 +5,7 @@ import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
+import ru.citeck.ecos.data.sql.repo.DbInsertOrGetRes
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
@@ -78,7 +79,31 @@ interface DbDataService<T : Any> {
 
     fun save(entity: T): T
 
-    fun saveAtomicallyOrGetExistingByExtId(entity: T): Long
+    /**
+     * Registers [entity] under its ext id and answers the id it is registered under - the one just
+     * created, or the one that was already there. In a transaction of its own, committed before this
+     * returns: an id handed out is a promise to every other transaction, so the caller's rollback
+     * must not take it back.
+     *
+     * @param extraLongColumns columns of the stored row to answer alongside the id, as in
+     *        [ru.citeck.ecos.data.sql.repo.DbEntityRepo.insertOrGetByExtId].
+     */
+    fun saveAtomicallyOrGetExistingByExtId(
+        entity: T,
+        extraLongColumns: List<String> = emptyList()
+    ): DbInsertOrGetRes
+
+    /**
+     * Inserts every entity that does not collide with an existing row on [conflictColumns] and
+     * answers the [returningColumn] of the ones actually inserted. A collision is an ordinary
+     * outcome, not a failure - see [ru.citeck.ecos.data.sql.repo.DbEntityRepo.insertIfNoConflict]
+     * for why a caller wants that rather than "select, then insert what is missing".
+     */
+    fun saveIfNoConflict(
+        entities: Collection<T>,
+        conflictColumns: List<String>,
+        returningColumn: String
+    ): List<Long>
 
     /**
      * Atomic compare-and-set on a single row, for state transitions that [save] can't express

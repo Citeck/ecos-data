@@ -311,4 +311,64 @@ class DbSchemaMigrationTest {
                 .isTrue()
         }
     }
+
+    /**
+     * The 11-to-12 upgrade: `ed_associations_backup` gets an index on `__source_id`.
+     *
+     * Not a tidying-up. Every record deletion asks this table two questions keyed on the source
+     * alone - which of my children are parked, and drop what I parked - and the indexes the table
+     * was created with both lead on `__column_meta_id`, which no such query names. Without one on
+     * `__source_id` every delete on the installation reads the whole backup, and that table is as
+     * large as the type changes an administrator has made.
+     *
+     * A schema created fresh gets the index from the entity's own `@Indexes`; a schema that already
+     * holds the table - which is every installation of `1.73.0` - can only get it from here, because
+     * `DbDataServiceImpl.addIndexesAndConstraintsForNewColumns` adds indexes for **new columns**
+     * and returns at once when there are none.
+     */
+    @Test
+    fun upgradeFrom11To12AddsTheSourceIndexToTheAssocBackupTableTest() {
+
+        val (dataSource, dsCtx) = createDsCtx("schema-migration-test-upgrade-11-12")
+
+        val schemaCtx = dsCtx.getSchemaContext(SCHEMA)
+        val assocBackupTableRef = schemaCtx.getTableRef(DbAssocBackupEntity.TABLE)
+
+        TxnContext.doInNewTxn {
+            dataSource.withTransaction(false) {
+                // the table as 1.73.0 created it: the two indexes of the entity as it was then,
+                // both leading on __column_meta_id
+                dataSource.updateSchema("DROP TABLE ${assocBackupTableRef.fullName}")
+                schemaCtx.setVersion(10)
+            }
+        }
+        schemaCtx.resetColumnsCache()
+        DbMigrationService().runSchemaMigrations(schemaCtx)
+
+        dataSource.withTransaction(true) {
+            assertThat(indexedColumnsOf(dataSource, assocBackupTableRef.table))
+                .describedAs("the source id has an index of its own after the upgrade")
+                .anyMatch { it.startsWith("__source_id") }
+        }
+    }
+
+    /**
+     * The column lists of every index of one table, in the order each index names them, read from
+     * the catalog rather than guessed from the entity - the point of the assertion being what the
+     * database really has.
+     */
+    private fun indexedColumnsOf(dataSource: DbDataSource, table: String): List<String> {
+        return dataSource.query(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = ? AND tablename = ?",
+            listOf(SCHEMA, table)
+        ) { rs ->
+            val result = ArrayList<String>()
+            while (rs.next()) {
+                result.add(
+                    rs.getString(1).substringAfterLast('(').substringBefore(')').replace("\"", "")
+                )
+            }
+            result
+        }
+    }
 }

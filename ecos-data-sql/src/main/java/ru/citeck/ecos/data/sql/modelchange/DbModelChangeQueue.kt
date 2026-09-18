@@ -229,11 +229,15 @@ class DbModelChangeQueue @JvmOverloads constructor(
      * afterwards would throw away every notification that arrived while the expansion ran, and a
      * type changed at exactly that moment would be reconciled only by the next change to it.
      *
-     * Every way out of this method puts back what it did not do. There are five of them - the
-     * empty tick, the per-tick ceiling, the normal end, a reconciliation that threw, and an
-     * interrupt - and only the first has nothing to put back. Dropping work here would be the one
-     * failure this whole feature exists to make unreachable: a model and a schema left apart with
-     * nothing remaining to announce them again.
+     * What comes back and what does not is worth stating exactly, because "nothing is ever
+     * dropped" would be too strong. The per-tick ceiling defers what it did not reach, and an
+     * interrupt defers what the pass had left; both are retried by the next tick unconditionally.
+     * A reconciliation that **fails** is not deferred: [reconcileOne] records the failure and the
+     * pass carries on, so that table waits for the next change announced for it or for the next
+     * full sweep. That is deliberate - a table failing every tick would otherwise hold the
+     * ceiling's worth of the queue for ever - and it is also the reason the fingerprint is stored
+     * only for a reconciliation that produced one: a failed table is not remembered as up to date,
+     * so the next time it is looked at, it is looked at properly.
      *
      * @return how many DAOs this pass handed to the reconciler. Attempted, not necessarily
      *         changed - a DAO whose table does not exist yet is counted here and does nothing.

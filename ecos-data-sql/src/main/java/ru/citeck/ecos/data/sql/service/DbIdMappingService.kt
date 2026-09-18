@@ -32,6 +32,13 @@ open class DbIdMappingService<T : Any>(
     private val movedToGetter = entityMapper.getEntityColumnByColumnName(MOVED_TO_COLUMN)?.getter
 
     /**
+     * What [getOrCreateIds] asks the insert to answer besides the id: the redirect column, for the
+     * tables that have one. Asking for it there is what keeps the create path at one statement -
+     * reading the row back to learn the same thing would cost a round trip per reference registered.
+     */
+    private val movedToColumns = if (movedToGetter == null) emptyList() else listOf(MOVED_TO_COLUMN)
+
+    /**
      * extId -> CachedId(effectiveId, physicalId).
      * physicalId is stored alongside effectiveId so that [invalidate] can clean
      * [extIdByIdCache] without requiring the caller to pass both keys.
@@ -145,6 +152,11 @@ open class DbIdMappingService<T : Any>(
      * (one new transaction per item) for concurrent safety.
      * For entities with `movedTo`, a tombstone redirect is treated as "already existing"
      * and the effective (redirected) id is returned.
+     *
+     * The redirect is answered by the insert itself rather than read back afterwards: a tombstone
+     * created between the lookup above and the insert would otherwise be answered with the
+     * tombstone's own id, and a caller writing that into its associations sends every later reader
+     * to the reference's old text.
      */
     fun getOrCreateIds(extIds: Collection<String>): Map<String, Long> {
         if (extIds.isEmpty()) {
@@ -157,10 +169,12 @@ open class DbIdMappingService<T : Any>(
         for (extId in extIds) {
             if (!result.containsKey(extId)) {
                 val entity = entityMapper.convertToEntity(mapOf(DbEntity.EXT_ID to extId))
-                val id = dataService.saveAtomicallyOrGetExistingByExtId(entity)
-                result[extId] = id
-                idByExtIdCache.put(extId, CachedId(id, id))
-                extIdByIdCache.put(id, extId)
+                val stored = dataService.saveAtomicallyOrGetExistingByExtId(entity, movedToColumns)
+                val physicalId = stored.id
+                val effectiveId = stored.longs[MOVED_TO_COLUMN] ?: physicalId
+                result[extId] = effectiveId
+                idByExtIdCache.put(extId, CachedId(effectiveId, physicalId))
+                extIdByIdCache.put(physicalId, extId)
             }
         }
 

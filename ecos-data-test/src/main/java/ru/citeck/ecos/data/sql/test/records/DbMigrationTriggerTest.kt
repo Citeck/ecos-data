@@ -286,8 +286,8 @@ class DbMigrationTriggerTest : DbRecordsTestBase() {
 
         registerAtts(listOf(textAtt("someAtt")))
         // a value the conversion can actually carry across: an unconvertible one would leave the
-        // new column empty by design (spec: an untransferable cell is a normal outcome, the
-        // original stays in the backup), and this test would then be measuring that instead
+        // new column empty by design - an untransferable cell is a normal outcome and the original
+        // stays in the backup - and this test would then be measuring that instead
         val rec = createRecord("someAtt" to "42")
 
         val neighbour = createRecordsDao(

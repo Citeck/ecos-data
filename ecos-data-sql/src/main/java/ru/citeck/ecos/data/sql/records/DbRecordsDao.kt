@@ -213,7 +213,8 @@ class DbRecordsDao(
         if (record.id.isNotEmpty() &&
             record.getAtt(RecMutAssocHandler.MUTATION_FROM_PARENT_FLAG).asBoolean() &&
             record.hasAtt(RecordConstants.ATT_PARENT) &&
-            record.getAtt(RecordConstants.ATT_PARENT).isNull()
+            record.getAtt(RecordConstants.ATT_PARENT).isNull() &&
+            !record.getAtt(DbRecordsControlAtts.RELEASE_CHILD).asBoolean()
         ) {
             val entity = dataService.doWithPermsPolicy(QueryPermsPolicy.PUBLIC) {
                 dataService.findByExtId(record.id, emptyMap())

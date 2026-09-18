@@ -76,4 +76,20 @@ object DbRecordsControlAtts {
      * When set to a JSON object, its contents are used as the complete attribute map.
      */
     const val FULL_ATTS = "__fullAtts"
+
+    /**
+     * Take back the `_parent`/`_parentAtt` back-reference of a child **without deleting it**.
+     *
+     * Only meaningful together with [ru.citeck.ecos.data.sql.records.dao.mutate
+     * .RecMutAssocHandler.MUTATION_FROM_PARENT_FLAG] and `_parent = null`, which
+     * [ru.citeck.ecos.data.sql.records.DbRecordsDao.mutate] otherwise reads as "the parent has let
+     * this child go" and answers by deleting the record - recursively, taking the links of every
+     * unrelated record that pointed at it. That is the right answer for a parent dropping a child
+     * and the wrong one for a parent that merely stops holding the link: a background transfer
+     * undoing what it wrote, or an attribute that stopped being a child association.
+     *
+     * The mutation still clears both columns and still leaves the parent's own links alone.
+     * System context only.
+     */
+    const val RELEASE_CHILD = "__releaseChild"
 }

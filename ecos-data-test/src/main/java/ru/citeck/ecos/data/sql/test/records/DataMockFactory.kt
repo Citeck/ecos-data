@@ -247,6 +247,15 @@ open class DataMockFactory : AutoCloseable {
     lateinit var dbRecordRefService: DbRecordRefService
     lateinit var assocsService: DbAssocsService
     lateinit var backend: DbRecordsTestBackend
+
+    /**
+     * A barrier the test can put **inside** a transaction the production code owns: called with the
+     * table and the rows immediately before the storage writes them, on the same thread, so the test
+     * can run a second transaction of its own from between two statements that were written as if
+     * nothing could happen between them. Null - no barrier - for every test that does not set it,
+     * and reset to null before each one. See [DbStorageWriteBarrier].
+     */
+    var beforeStorageWrite: ((DbTableRef, List<Map<String, Any?>>) -> Unit)? = null
     lateinit var computedAttsComponent: DbComputedAttsComponent
     lateinit var modelServiceFactory: ModelServiceFactory
 
@@ -290,6 +299,7 @@ open class DataMockFactory : AutoCloseable {
         aspectsInfo.clear()
         numTemplates.clear()
         schemaContexts.clear()
+        beforeStorageWrite = null
 
         DEFAULT_ASPECTS.forEach { aspectsInfo[it.id] = it }
         DEFAULT_TYPES.forEach { typesInfo[it.id] = it }
@@ -411,7 +421,7 @@ open class DataMockFactory : AutoCloseable {
 
             dataSourceCtx = DbDataSourceContext(
                 dbDataSource,
-                backend.dataServiceFactory,
+                DbStorageWriteBarrier(backend.dataServiceFactory) { beforeStorageWrite },
                 DbMigrationService(),
                 webAppApi,
                 ecosContext,
@@ -894,6 +904,21 @@ open class DataMockFactory : AutoCloseable {
             "Skipped on the '" + activeBackendId +
                 "' backend: this test asserts on state after a transaction rollback, which requires the " +
                 "backend to participate in the platform transaction manager's commit/rollback."
+        )
+    }
+
+    /**
+     * Skip the current test when the active backend cannot have two transactions open at once - see
+     * [DbRecordsTestBackend.runsTransactionsConcurrently]. A test that interleaves two transactions
+     * declares this; on a serializing backend the second one would wait for a lock it cannot get and
+     * fail on a timeout that says nothing about what the test is for.
+     */
+    fun assumeConcurrentTransactionsSupported() {
+        Assumptions.assumeTrue(
+            backend.runsTransactionsConcurrently,
+            "Skipped on the '" + activeBackendId +
+                "' backend: this test needs two transactions open at the same time, and this backend " +
+                "serializes them on one lock."
         )
     }
 

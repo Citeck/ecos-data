@@ -33,6 +33,7 @@ import ru.citeck.ecos.data.sql.records.refs.DbRecordRefService
 import ru.citeck.ecos.data.sql.records.utils.DbReadToleranceLog
 import ru.citeck.ecos.data.sql.records.workspace.DbWorkspaceService
 import ru.citeck.ecos.data.sql.repo.DbEntityRepo
+import ru.citeck.ecos.data.sql.repo.DbInsertOrGetRes
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapperImpl
@@ -479,58 +480,47 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         return save(entity, emptyList())
     }
 
-    override fun saveAtomicallyOrGetExistingByExtId(entity: T): Long {
+    override fun saveIfNoConflict(
+        entities: Collection<T>,
+        conflictColumns: List<String>,
+        returningColumn: String
+    ): List<Long> {
+        if (entities.isEmpty()) {
+            return emptyList()
+        }
+        return dataSource.withTransaction(false) {
+            runMigrationsInTxn(emptyList(), DbExpectedAttTypes.EMPTY, mock = false, diff = true)
+            entityRepo.insertIfNoConflict(
+                getTableContext(),
+                entities.map { entityMapper.convertToMap(it) },
+                conflictColumns,
+                returningColumn
+            )
+        }
+    }
+
+    override fun saveAtomicallyOrGetExistingByExtId(
+        entity: T,
+        extraLongColumns: List<String>
+    ): DbInsertOrGetRes {
 
         val entityMap = HashMap(entityMapper.convertToMap(entity))
         entityMap.remove(DbEntity.ID)
 
-        repeat(3) {
-            val newId = TxnContext.doInNewTxn {
-                dataSource.withTransaction(false, true) {
-                    entityRepo.insertIfNoConflictByExtId(getTableContext(), entityMap)
-                }
-            }
-            if (newId != null) {
-                return newId
-            }
-            val extId = entityMap[DbEntity.EXT_ID] as? String
-            if (extId.isNullOrBlank()) {
-                error("Invalid entity without ${DbEntity.EXT_ID}")
-            }
-            val findQuery = DbFindQuery.create()
-                .withPredicate(Predicates.eq(DbEntity.EXT_ID, extId))
-                .build()
+        if ((entityMap[DbEntity.EXT_ID] as? String).isNullOrBlank()) {
+            error("Invalid entity without ${DbEntity.EXT_ID}")
+        }
 
-            var entityId: Long? = null
-            var iterations = 5
-            while (entityId == null && iterations-- > 0) {
-                entityId = TxnContext.doInNewTxn {
-                    dataSource.withTransaction(true, true) {
-                        val queryRes = entityRepo.find(
-                            getTableContext(),
-                            findQuery,
-                            DbFindPage.FIRST,
-                            false
-                        ).entities.firstOrNull()
-                        if (queryRes != null) {
-                            queryRes[DbEntity.ID] as? Long
-                        } else {
-                            null
-                        }
-                    }
-                }
-                if (entityId == null) {
-                    Thread.sleep(400)
-                }
-            }
-            if (entityId != null) {
-                return entityId
+        // A transaction of its own, committed before this returns: an id is a promise to every other
+        // transaction, including ones that have already written it into a row of theirs, so the
+        // caller's rollback must not take it back. It is also what keeps the row lock `ON CONFLICT
+        // DO UPDATE` takes as short as the statement - held to the end of a user's mutation instead,
+        // it would put this table into the same lock cycles `ed_associations` is in.
+        return TxnContext.doInNewTxn {
+            dataSource.withTransaction(false, true) {
+                entityRepo.insertOrGetByExtId(getTableContext(), entityMap, extraLongColumns)
             }
         }
-        error(
-            "Entity insertion failed. Table ${getTableContext().getTableRef()} " +
-                "entity extId: ${entityMap[DbEntity.EXT_ID]}"
-        )
     }
 
     override fun updateByExtIdIfMatches(

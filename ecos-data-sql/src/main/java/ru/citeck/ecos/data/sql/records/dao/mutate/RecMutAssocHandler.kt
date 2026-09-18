@@ -51,6 +51,50 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
          *        **System context only** - `DbRecordsMutateDao` refuses it anywhere else - which is
          *        exactly where the batch engine runs (`DbBatchTaskEngine.runTaskAttempt`).
          */
+        /**
+         * Takes back the `_parent`/`_parentAtt` a parent wrote on a child, **without deleting the
+         * child**.
+         *
+         * [updateParentRefOfChildren] with `add = false` is not this: it sends `_parent = null`
+         * under [MUTATION_FROM_PARENT_FLAG], which `DbRecordsDao.mutate` reads as "the parent has
+         * let this child go" and answers by deleting the record. That is right for a parent
+         * dropping a child and wrong for a parent taking back a back-reference it should not have
+         * written - a background transfer undoing a pass whose claim did not hold, say, where the
+         * child is a record the user made and nobody asked to delete.
+         *
+         * Goes through the records service rather than the child's columns, so a child living in
+         * another schema or another application is released by the application that owns it, which
+         * is the only one holding the ids its `_parent` is written in.
+         *
+         * @param disableEvents as in [updateParentRefOfChildren].
+         * @param disableAudit as in [updateParentRefOfChildren]. **System context only.**
+         */
+        @JvmStatic
+        fun releaseChildren(
+            recordsService: RecordsService,
+            childRefs: Collection<EntityRef>,
+            disableEvents: Boolean = false,
+            disableAudit: Boolean = false
+        ) {
+            for (childRef in childRefs) {
+                if (EntityRef.isEmpty(childRef)) {
+                    continue
+                }
+                val childAtts = RecordAtts(childRef)
+                childAtts.setAtt(RecordConstants.ATT_PARENT, null)
+                childAtts.setAtt(RecordConstants.ATT_PARENT_ATT, null)
+                childAtts.setAtt(MUTATION_FROM_PARENT_FLAG, true)
+                childAtts.setAtt(DbRecordsControlAtts.RELEASE_CHILD, true)
+                if (disableEvents) {
+                    childAtts.setAtt(DbRecordsControlAtts.DISABLE_EVENTS, true)
+                }
+                if (disableAudit) {
+                    childAtts.setAtt(DbRecordsControlAtts.DISABLE_AUDIT, true)
+                }
+                recordsService.mutate(childAtts)
+            }
+        }
+
         @JvmStatic
         fun updateParentRefOfChildren(
             recordsService: RecordsService,
@@ -400,16 +444,88 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         }
     }
 
+    /**
+     * A child telling its parent it is gone, for an attribute whose links are **parked**: the
+     * attribute has stopped being an association and a column migration holds its links in
+     * `ed_associations_backup`.
+     *
+     * The notification is an ordinary `att_remove` and there is nothing to remove it from - the
+     * attribute the parent has now holds text, or numbers, or nothing the reference means anything
+     * to. What has to happen instead is that the **snapshot** stops naming the record: it is what a
+     * later return of the type restores from, and a link restored to a deleted record is a dangling
+     * reference nobody asked for.
+     *
+     * The parked copy is also what tells a legitimate notification from a mistaken one. An
+     * `att_remove` under [MUTATION_FROM_CHILD_FLAG] naming an attribute that is not a child
+     * association is an error - it always was - unless this record really does hold that
+     * attribute's links parked, and that question is the same query as the removal. So nothing is
+     * forgotten: either a row is dropped and the attribute is handled here, or the caller is left to
+     * refuse the mutation exactly as before.
+     *
+     * The operation is taken out of [recAttributes] rather than let through, because the parent's
+     * value is no longer a set of links: applying it would quietly edit a user's text - and only
+     * when the conversion happened to produce a string equal to the reference, which is a difference
+     * between attribute types and not a rule anybody could rely on.
+     *
+     * @return the attributes handled this way, for [validateChildAssocs] to pass over.
+     */
+    fun forgetParkedChildLinks(
+        recAttributes: ObjectData,
+        entityToMutate: DbEntity,
+        columns: List<EcosAttColumnDef>
+    ): Set<String> {
+        if (!recAttributes.get(MUTATION_FROM_CHILD_FLAG, false) || entityToMutate.refId <= 0) {
+            return emptySet()
+        }
+        val prefix = OperationType.ATT_REMOVE.prefix
+        val columnsById = columns.associateBy { it.attribute.id }
+        val handled = LinkedHashSet<String>()
+        val backupService = ctx.tableCtx.getSchemaCtx().assocBackupService
+        for (name in recAttributes.fieldNamesList()) {
+            if (!name.startsWith(prefix)) {
+                continue
+            }
+            val att = name.substring(prefix.length)
+            if (DbRecordsUtils.isChildAssocAttribute(columnsById[att]?.attribute)) {
+                continue
+            }
+            val attributeId = ctx.assocsService.getIdForAtt(att)
+            if (attributeId == -1L) {
+                continue
+            }
+            // A single reference and a list of them, because the notification carries one target
+            // per deleted child and the same key can carry several: `asList` answers an empty list
+            // for a scalar, which would silently forget nothing.
+            val value = recAttributes[name]
+            val targetRefs = if (value.isArray()) {
+                value.asList(EntityRef::class.java)
+            } else {
+                listOf(value.getAs(EntityRef::class.java) ?: EntityRef.EMPTY)
+            }
+            val targetIds = targetRefs
+                .filter { EntityRef.isNotEmpty(it) }
+                .map { ctx.recordRefService.getIdByEntityRef(it) }
+                .filter { it != -1L }
+            if (backupService.forgetTargets(entityToMutate.refId, attributeId, targetIds) == 0) {
+                continue
+            }
+            recAttributes.remove(name)
+            handled.add(att)
+        }
+        return handled
+    }
+
     fun validateChildAssocs(
         attributes: ObjectData,
         changedByOperationsAtts: Set<String>,
         recExtId: String,
-        columns: List<EcosAttColumnDef>
+        columns: List<EcosAttColumnDef>,
+        parkedAtts: Set<String> = emptySet()
     ) {
         if (!attributes.get(MUTATION_FROM_CHILD_FLAG, false)) {
             return
         }
-        if (changedByOperationsAtts.isEmpty()) {
+        if (changedByOperationsAtts.isEmpty() && parkedAtts.isEmpty()) {
             error(
                 "Mutation from child without operations... " +
                     "RecordRef: '${ctx.getGlobalRef(recExtId)}'"
@@ -532,12 +648,10 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
      * under [MUTATION_FROM_PARENT_FLAG] as "the parent has let this child go". Only a caller that
      * really is dropping the child may pass `false`.
      *
-     * **Which is why a departure does not come through here.** An attribute that stops being a child
-     * association has to release its children, not delete them, and no route through record mutation
-     * does that: `add = false` deletes, and clearing `_parent` without the flag throws
-     * `'<att>' is not a child association` precisely because the attribute has stopped being one.
-     * [ru.citeck.ecos.data.sql.migration.column.DbAssocGroupDeparture] writes the two columns
-     * directly instead.
+     * **A caller that means "take the back-reference back" wants [releaseChildren] instead**, which
+     * says so explicitly and leaves the record where it is. The difference is not a nuance: an
+     * attribute that stops being a child association parks its links and keeps its children, and a
+     * background transfer undoing its own write must not answer that with a deletion.
      */
     fun updateParentRefOfChildren(
         parentRef: EntityRef,

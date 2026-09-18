@@ -7,6 +7,7 @@ import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbTableRef
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
+import ru.citeck.ecos.data.sql.repo.DbInsertOrGetRes
 import ru.citeck.ecos.data.sql.repo.entity.DbEntityMapper
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
@@ -178,7 +179,15 @@ class EcosContentLocalStorageRangeTest {
         override fun getCount(query: DbFindQuery): Long = error("not used")
         override fun getCount(predicate: Predicate): Long = error("not used")
         override fun save(entity: DbContentDataEntity): DbContentDataEntity = error("not used")
-        override fun saveAtomicallyOrGetExistingByExtId(entity: DbContentDataEntity): Long = error("not used")
+        override fun saveAtomicallyOrGetExistingByExtId(
+            entity: DbContentDataEntity,
+            extraLongColumns: List<String>
+        ): DbInsertOrGetRes = error("not used")
+        override fun saveIfNoConflict(
+            entities: Collection<DbContentDataEntity>,
+            conflictColumns: List<String>,
+            returningColumn: String
+        ): List<Long> = error("not used")
         override fun updateByExtIdIfMatches(
             extId: String,
             expected: Map<String, Any?>,

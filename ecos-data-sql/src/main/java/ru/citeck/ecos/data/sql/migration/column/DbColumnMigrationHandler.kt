@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.migration.column
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import ru.citeck.ecos.commons.data.ObjectData
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthUser
 import ru.citeck.ecos.data.sql.batch.DbBatchTaskBatch
@@ -17,6 +18,7 @@ import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocBackupDto
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocRefsDiff
+import ru.citeck.ecos.data.sql.records.dao.atts.DbRecord
 import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
@@ -26,6 +28,7 @@ import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.records3.RecordsService
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import java.util.concurrent.ConcurrentHashMap
@@ -89,6 +92,28 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
         // synchronous phase - may have altered the table since the last tick
         service.resetColumnsCache()
 
+        if (isSupersededTransition(ctx, params)) {
+            // The status is put right so that an administrator sees why nothing happened, but
+            // nothing here depends on it landing: `cancel` answers false for a task an
+            // administrator has already cancelled, and a restart between this call and the
+            // engine's compare-and-set would let the run through. What actually keeps a superseded
+            // task from doing anything is that every callback asks the same question - see
+            // [processBatch] and [onFinish].
+            ctx.schemaCtx.batchTaskService.cancel(ctx.task.id)
+            log.info {
+                "Batch task ${ctx.task.id} of attribute '${params.attId}' in " +
+                    "${ctx.getTableRef().fullName} was queued for a column that has since been " +
+                    "replaced, so it is cancelled instead of run"
+            }
+            return null
+        }
+
+        // Before the first write of the run, and that is the whole point of the placement - see
+        // [addChildBackReferenceColumns].
+        if (params.targetChild) {
+            addChildBackReferenceColumns(params, service)
+        }
+
         // When this transition takes the attribute out of the association group, the links are
         // copied into the backup and removed through the ordinary path, with the remote
         // notification: an association may point at an entity in another application and a raw
@@ -96,7 +121,9 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
         //
         // Ahead of the backup-column check below on purpose: the links live in `ed_associations`,
         // not in that column, so a DBA who dropped the backup has removed what the value transfer
-        // reads - not the links' only chance to reach a backup of their own.
+        // reads - not the links' only chance to reach a backup of their own. Safe to keep that
+        // order only because the check above has already ruled out the one case where a missing
+        // backup column means the transition itself is gone.
         DbAssocGroupDeparture(service, dataSourceCtx.remoteActionsClient).runIfDeparture(params)
 
         val tableCtx = service.getTableContext()
@@ -123,9 +150,129 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
         return if (estimate < 0) null else estimate
     }
 
+    /**
+     * `_parent` and `_parentAtt` are columns of [DbRecord.OPTIONAL_COLUMNS]: they do not exist until
+     * the first mutation that gives a record a parent adds them, inside that user's transaction. A
+     * table on which no attribute has ever been a child association therefore does not have them,
+     * and a transfer into a **child** association is the announcement that they are about to be
+     * needed - by [takeChildren], which writes them.
+     *
+     * **Here, and not where they are written.** [takeChildren] runs after the links, holding the
+     * `ed_associations` rows this batch has just created; an `ALTER TABLE` from there asks for an
+     * `AccessExclusiveLock` on the table while a user's mutation may be waiting for one of those
+     * link rows, and PostgreSQL breaks that cycle by killing one of the two transactions. Measured,
+     * on the arrival path:
+     *
+     * ```
+     * Process 84 waits for ShareLock on transaction 499; blocked by process 85.
+     * Process 85 waits for AccessExclusiveLock on relation 16543; blocked by process 84.
+     * ```
+     *
+     * The other half of that measurement is why it is not left to the user's mutation either: with
+     * the columns missing, whichever of the two needs them first pays, and the batch is holding row
+     * locks by then whoever it is.
+     *
+     * **In `prepare` and not in the transition that queues the task**, for three reasons: the engine
+     * calls `prepare` before the first batch of *every* run, so a task queued by an older build, a
+     * restarted task and a resumed one are all covered, where the queuing transition covers only
+     * tasks queued after this code shipped; `prepare` opens the run's first statement holding
+     * nothing, so the `ALTER` can only wait and never deadlock; and the transition runs inside a
+     * user's mutation, where the index that comes with `_parent` would be a table scan that user
+     * waits for - the very thing [DbShadowColumnTransition] exists to keep out of it.
+     *
+     * Idempotent and free on the ordinary path: a table that has ever held a child has both columns
+     * and nothing is issued. Through `runMigrations` rather than `DbSchemaDao.addColumns` directly,
+     * because that is the path which takes the schema migration lock and re-reads the columns under
+     * it - so a second instance preparing the same task adds nothing twice.
+     *
+     * **This covers the migrated table and only it**, which is narrower than "the transfer issues no
+     * DDL". A child may live in any other table - `DbSchemaContext.getRecordsService` is a
+     * `RecordsService` and not a dao context for exactly that reason - and the `_parent` written on
+     * such a child still adds the column to *its* table, from inside the batch's transaction. What
+     * would close that is knowing a target's table before the batch runs, and the data layer has no
+     * such mapping: `ed_record_ref` holds an `EntityRef` and nothing about storage. The two ways out
+     * are a platform change, not a change here - make these columns part of every records table, or
+     * give the layer a reference-to-table mapping - and both are written up in the review notes.
+     * Where types share the parent's table, which is the common layout, the question does not arise.
+     */
+    private fun addChildBackReferenceColumns(
+        params: DbColumnMigrationParams,
+        service: DbDataService<DbEntity>
+    ) {
+        val tableCtx = service.getTableContext()
+        val taken = tableCtx.getAllPhysicalColumns().mapTo(HashSet()) { it.name }
+        val missing = DbRecord.OPTIONAL_COLUMNS.filter {
+            (it.name == RecordConstants.ATT_PARENT || it.name == RecordConstants.ATT_PARENT_ATT) &&
+                !taken.contains(it.name)
+        }
+        if (missing.isEmpty()) {
+            return
+        }
+        val tableRef = tableCtx.getTableRef()
+        // Through the data service and not `DbSchemaDao.addColumns` directly: that is the path that
+        // takes the schema migration lock and re-reads the columns under it, so a second instance
+        // preparing the same task at the same moment adds nothing twice and does not fail the run
+        // with "column already exists". Additive, like every schema reconciliation here - the
+        // columns not named are left exactly as they are.
+        service.runMigrations(missing, mock = false, diff = true)
+        log.info {
+            "Attribute '" + params.attId + "' of " + tableRef.fullName + " is becoming a child " +
+                "association, so the columns its back-reference lives in were added before the " +
+                "transfer wrote anything: " + missing.joinToString(", ") { it.name }
+        }
+    }
+
+    /**
+     * Whether a later transition of the same attribute has replaced this one, which makes
+     * everything the task was queued to do wrong rather than merely late.
+     *
+     * A task is normally re-runnable however often the model has moved since: the params are a
+     * snapshot and the job is "carry the values of *that* backup into *that* column". What breaks
+     * that is a later transition of the same attribute, which gives the column a different meaning
+     * and a backup of its own. A stale task that runs then removes links belonging to whatever the
+     * attribute has become, and parks them over the backup that was written for what it used to be.
+     *
+     * **The newer task is the generation marker, and nothing about the columns is.** A column's
+     * name is the attribute's own whatever happens to it. Its type can return to what the task
+     * expects through a round trip. Even the registry row of the target column is reused - a
+     * restore makes an older row live again under the same id - so an attribute that goes
+     * `TEXT -> PERSON -> TEXT` presents the first task with exactly the target row it was queued
+     * against. Task ids do not come back: every transition queues one, ids only go up, so a task
+     * with a larger id for the same attribute is a later transition and there is nothing older
+     * about it that can be true again.
+     */
+    private fun isSupersededTransition(ctx: DbBatchTaskContext, params: DbColumnMigrationParams): Boolean {
+        return ctx.schemaCtx.batchTaskService.findByTable(ctx.task.table).any { other ->
+            other.id > ctx.task.id &&
+                other.handler == DbColumnMigrationParams.HANDLER_TYPE &&
+                attIdOf(other.params) == params.attId
+        }
+    }
+
+    /**
+     * The attribute another task was queued for, or null when its params cannot be read - which is
+     * not this task's business to fail over, so an unreadable neighbour simply does not count as a
+     * later transition of anything.
+     */
+    private fun attIdOf(params: ObjectData): String? {
+        return try {
+            DbColumnMigrationParams.from(params).attId
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     override fun processBatch(ctx: DbBatchTaskContext, batch: DbBatchTaskBatch) {
 
         val params = DbColumnMigrationParams.from(ctx.getParams())
+        if (isSupersededTransition(ctx, params)) {
+            // Asked again rather than trusted from `prepare`: the engine decides whether to run a
+            // batch from the task's status, and a status is not a lock. An administrator
+            // cancelling and restarting the task around `prepare` leaves it PENDING again by the
+            // time the engine looks, and this is the callback that would then write into a column
+            // that belongs to a later transition.
+            return
+        }
         val transfersValues = DbColumnConversions.isTransferable(params.conversionClass)
         val restoresAssocs = isAssocRestore(params)
         if (!transfersValues && !restoresAssocs) {
@@ -234,47 +381,52 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
                 ctx.processed++
                 continue
             }
-            // Conditional on the target still being null, so that a value written between the read
-            // above and this write is not overwritten either. The whole batch shares the engine's
-            // transaction, so this commits or rolls back with the cursor.
-            val updated = service.updateByIdIfMatches(
-                id,
-                mapOf(params.targetColumn to null),
-                mapOf(params.targetColumn to converted)
-            )
-            if (!updated) {
-                // The user's own value arrived between the read above and this write, and the
+            // The record is claimed by a write conditional on the target column still being null,
+            // so that a value written between the read above and it is not overwritten either. The
+            // whole batch shares the engine's transaction, so this commits or rolls back with the
+            // cursor.
+            //
+            // **Where that write goes depends on whether links are involved**, and the difference
+            // is not a detail: a transfer into an assoc-like type writes rows of `ed_associations`
+            // as well, and the ordinary write path takes those **before** the record's row. Taking
+            // them in the other order - claim, then links - closes a cycle with any mutation naming
+            // the same reference, and PostgreSQL breaks it by killing one of the two, which can be
+            // the user's. So an arrival writes its links first and claims afterwards
+            // ([createArrivedAssocs]); a plain value has nothing to order and claims here.
+            val arrival = if (assocArrival) {
+                createArrivedAssocs(params, service, id, row, converted)
+            } else if (
+                service.updateByIdIfMatches(
+                    id,
+                    mapOf(params.targetColumn to null),
+                    mapOf(params.targetColumn to converted)
+                )
+            ) {
+                Arrival.WHOLE
+            } else {
+                Arrival.LOST
+            }
+            if (arrival == Arrival.LOST) {
+                // The user's own value arrived between the read above and the claim, and the
                 // conditional update declined to overwrite it: the same deliberate no-op as the
                 // "target is not null" check above, reached from the other side of the race.
+                // Whatever an arrival had written for this record is out again before this is
+                // reached.
                 ctx.skipped++
                 continue
             }
-            // After the write and only if it won: the conditional update is what claims the
-            // record, so a value arriving between the read above and this point takes the row and
-            // its links with it, instead of having ours added on top of it.
-            val arrival = if (assocArrival) {
-                createArrivedAssocs(params, service, id, row, converted)
-            } else {
-                Arrival.WHOLE
-            }
             if (arrival == Arrival.NONE) {
                 // Not one of the references this row named could be linked - for a child arrival
-                // that means not one of them could be told it has a parent. Leaving the column
-                // holding ids no association backs is the disagreement this branch exists to
-                // remove, so the row is put back the way it was. That leaves the target cell as the
-                // transfer found it and the original untouched in the backup, which is the same
-                // state as a value that does not fit and is counted the same way.
-                service.updateByIdIfMatches(
-                    id,
-                    mapOf(params.targetColumn to converted),
-                    mapOf(params.targetColumn to null)
-                )
+                // that means not one of them could be told it has a parent. So nothing was claimed
+                // and nothing was written: the target cell is as the transfer found it and the
+                // original is untouched in the backup, which is the same state as a value that
+                // does not fit and is counted the same way.
                 ctx.skipped++
                 log.warn {
                     "Row $id of ${tableCtx.getTableRef().fullName}, attribute '${params.attId}': " +
-                        "none of the references its value names could become a link, so the " +
-                        "converted value was rolled back and nothing was carried over for this " +
-                        "row. The original is in '${params.backupColumn}'"
+                        "none of the references its value names could become a link, so nothing " +
+                        "was carried over for this row. The original is in " +
+                        "'${params.backupColumn}'"
                 }
                 continue
             }
@@ -303,6 +455,12 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
     }
 
     override fun onFinish(ctx: DbBatchTaskContext) {
+        if (isSupersededTransition(ctx, DbColumnMigrationParams.from(ctx.getParams()))) {
+            // Same question as [processBatch], for the same reason: this builds an index on the
+            // target column, and a superseded task's idea of that column belongs to a transition
+            // that no longer exists.
+            return
+        }
         val params = DbColumnMigrationParams.from(ctx.getParams())
         buildDeferredIndex(ctx, params)
         if (!DbColumnConversions.isTransferable(params.conversionClass)) {
@@ -476,20 +634,28 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
     }
 
     /**
-     * For one record whose converted value has just been written into the column: the ids become
-     * rows in `ed_associations`, and the column is then rewritten to hold what `DbRecordsMutateDao`
-     * would have left there.
+     * For one record whose converted value names references: the ids become rows in
+     * `ed_associations` and **then** the record's row is claimed, holding what `DbRecordsMutateDao`
+     * would have left in the column.
      *
      * **Through `createAssocs` and not a raw insert**, for the reason the departure removes links
      * the same way: an association may point at an entity owned by another application which keeps a
      * back-reference, so the peers are told ([notifyAssocsCreated]).
      *
-     * **The column is rewritten rather than left holding the converted array**, because the two
+     * **The column holds what `ed_associations` holds, not the converted array**, because the two
      * differ in three ways: `createAssocs` deduplicates, so a value naming one reference twice
      * becomes one link and a column that still said two; the column caches only the first ten of a
      * multi-valued attribute where the converted array may hold any number; and the order has to be
      * `__index` order, which is what the attribute answers in. Re-reading is also the only form of
      * this that stays right if the record already had links of its own.
+     *
+     * **The links go in before the claim**, which is the order every ordinary mutation uses
+     * (`DbRecordsMutateDao` writes a record's links and saves the record afterwards). Claiming
+     * first would take the same two things the other way round, and a user naming the same
+     * reference - which is what somebody re-entering a value they can no longer see does - would
+     * close a cycle on them that PostgreSQL breaks by killing one of the two transactions. The
+     * price of the ordinary order is an undo when the claim does not hold
+     * ([undoLinksWrittenForRecord]), and it is the cheaper price by far.
      *
      * Idempotent: a re-processed window finds the column non-null and skips the record long before
      * this is reached, and `createAssocs` would skip every link the record already has anyway.
@@ -505,13 +671,13 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
         val sourceId = row[DbEntity.REF_ID] as? Long
         if (sourceId == null) {
             // Every row of a domain table has one - it is written on insert and never cleared - so
-            // this is a repair case rather than a shape of the data. The converted value is in the
-            // column either way; what is missing is the key an association is written under.
+            // this is a repair case rather than a shape of the data. What is missing is the key an
+            // association is written under, so the converted value is all this row can be given.
             log.warn {
                 "Record $id of ${tableCtx.getTableRef().fullName} has no '${DbEntity.REF_ID}', so " +
                     "the '${params.attId}' links its converted value names could not be created"
             }
-            return Arrival.WHOLE
+            return claimWithConvertedValue(params, service, id, row, converted)
         }
         val targetIds = when (converted) {
             is Collection<*> -> converted.mapNotNull { (it as? Number)?.toLong() }
@@ -519,22 +685,32 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
             else -> emptyList()
         }
         if (targetIds.isEmpty()) {
-            // An empty array converted into an empty array: the column and `ed_associations` agree
-            // already, and there is nothing to link.
-            return Arrival.WHOLE
+            // An empty array converted into an empty array: there is nothing to link, and the
+            // column is all there is to write.
+            return claimWithConvertedValue(params, service, id, row, converted)
         }
         val schemaCtx = tableCtx.getSchemaCtx()
         // A child link is two facts, and the second one can refuse. Anything it refuses must not
-        // become a link either, or the record ends up with a child that does not know it.
+        // become a link either, or the record ends up with a child that does not know it - so which
+        // of them may be taken is established first, by reading. The taking itself waits until the
+        // links are in, because a child's row is the third thing a user's mutation takes and it
+        // takes it last ([takeChildren]).
+        val adoptable = if (params.targetChild) {
+            childrenThisRecordMayTake(params, tableCtx, sourceId, targetIds)
+        } else {
+            null
+        }
         val linkableIds = if (params.targetChild) {
-            adoptArrivedChildren(params, tableCtx, sourceId, targetIds) ?: emptyList()
+            adoptable?.linkable ?: emptyList()
         } else {
             targetIds
         }
         if (linkableIds.isEmpty()) {
+            // Nothing is written at all in this case, so there is nothing to claim and nothing to
+            // take back - not even the `_parent` of a child, since none was adoptable.
             return Arrival.NONE
         }
-        val added = schemaCtx.assocsService.createAssocs(
+        val created = schemaCtx.assocsService.createAssocs(
             sourceId,
             params.attId,
             // from the model, through the params - `ed_column_meta` records an AttributeType and
@@ -544,22 +720,74 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
             linkableIds,
             migrationCreatorRefId(schemaCtx)
         )
+        // The second fact of a child link, now that the first one is written.
+        val adoptedChildren = adoptable?.let { takeChildren(params, it) }
+        val refused = adoptedChildren?.refused ?: emptyList()
+        var added = created
+        var linkedIds = linkableIds
+        if (refused.isNotEmpty()) {
+            // A child that refused its back-reference is not a child link either, and its link was
+            // created a moment ago rather than found, so taking it out puts the record back where
+            // the ordinary write path would have left it.
+            val refusedIds = refused.toHashSet()
+            val toRemove = created.filter { it in refusedIds }
+            if (toRemove.isNotEmpty()) {
+                schemaCtx.assocsService.removeAssocs(sourceId, params.attId, toRemove, true)
+            }
+            added = created.filter { it !in refusedIds }
+            linkedIds = linkableIds.filter { it !in refusedIds }
+        }
+        if (linkedIds.isEmpty()) {
+            // Every one of them refused, so this record ends where it would have ended had none
+            // been adoptable: no link, no claim and the original still in the backup.
+            return Arrival.NONE
+        }
+        // The claim, and the record's first and only write of this transfer: `converted` is never
+        // put in the column on its own, because what belongs there is what `ed_associations` now
+        // holds - deduplicated, capped at the cache size and in `__index` order - and one write is
+        // one lock rather than two.
+        if (!claimTheRecord(params, service, id, row, sourceId)) {
+            undoLinksWrittenForRecord(
+                params,
+                tableCtx,
+                sourceId,
+                mapOf(params.targetChild to added),
+                adoptedChildren
+            )
+            return Arrival.LOST
+        }
+        // After the claim: a peer must not be told about a link that is about to be taken out again.
         notifyAssocsCreated(params, tableCtx, sourceId, mapOf(params.targetChild to added))
-        rewriteAssocColumnCache(
-            params,
-            service,
-            id,
-            // the value this transfer has just written is what the rewrite has to find in the
-            // column for its own conditional update to fire
-            row + (params.targetColumn to converted),
-            sourceId
-        )
         // Measured on distinct targets, because `createAssocs` is keyed on the target and a value
         // naming the same reference twice is one link and not half a transfer.
-        return if (linkableIds.toHashSet().size < targetIds.toHashSet().size) {
+        return if (linkedIds.toHashSet().size < targetIds.toHashSet().size) {
             Arrival.PART
         } else {
             Arrival.WHOLE
+        }
+    }
+
+    /**
+     * The claim for an arrival that turned out to have no links to write - an unresolvable record,
+     * or a value naming nothing. There is no `ed_associations` row to take first, so the record's
+     * row is the only thing to take, and the converted value is what goes in it.
+     */
+    private fun claimWithConvertedValue(
+        params: DbColumnMigrationParams,
+        service: DbDataService<DbEntity>,
+        id: Long,
+        row: Map<String, Any?>,
+        converted: Any
+    ): Arrival {
+        val claimed = service.updateByIdIfMatches(
+            id,
+            mapOf(params.targetColumn to row[params.targetColumn]),
+            mapOf(params.targetColumn to converted)
+        )
+        return if (claimed) {
+            Arrival.WHOLE
+        } else {
+            Arrival.LOST
         }
     }
 
@@ -582,6 +810,13 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
         WHOLE,
 
         /**
+         * Somebody else wrote this record between the moment the window was read and the claim, so
+         * the transfer left it alone. Anything the arrival had already written for it - links, and
+         * the `_parent` of a child - is out again by the time this is returned.
+         */
+        LOST,
+
+        /**
          * Some became links and some were refused. The column agrees with `ed_associations`.
          */
         PART,
@@ -593,15 +828,16 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
     }
 
     /**
-     * The other half of a child association: `_parent` and `_parentAtt` on each target, written
-     * through the very
-     * [ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler.updateParentRefOfChildren]
-     * that `DbRecordsMutateDao` writes them with, so the two cannot drift.
+     * The read half of a child association's second fact: which of the targets this record may take
+     * as its children, and which of those still have to be told. **Nothing is written here**, and
+     * that is the whole point of the split - the writing is [takeChildren], and it runs after the
+     * links.
      *
      * A link with `__child = true` whose target has no `_parent` makes three answers come out
      * wrong: a deleted child leaves the parent holding a link to it, a `_parent` predicate reads the
      * `__parent` column and finds nothing, and a child of a restricted parent becomes world-readable
-     * because its `_parent` is empty.
+     * because its `_parent` is empty. So a target that cannot be taken must not become a link
+     * either - and deciding that needs a read and not a write, which is what lets the write wait.
      *
      * @return the targets that may become links, or **null** when the back-reference cannot be
      *         written at all - not the same answer as "none of them qualified". A caller that gets
@@ -617,27 +853,23 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
      *    column each, so a record is a child under exactly one attribute. Linking it under a second
      *    one leaves, after the child is deleted, a link to a record that no longer exists.
      *  - **it is already ours under this very attribute.** No mutation at all, so a re-processed
-     *    window does not churn.
+     *    window does not churn - such a target is linkable but not one [takeChildren] writes.
      *  - **the record itself**, which the platform refuses as a recursive parent link.
      *  - **one the platform cannot address.** `EntityRef.valueOf` is subtractive enough that
      *    `user@example.com` parses as the non-existent source `user`; the ordinary write path
      *    refuses it by throwing, so linking it anyway would manufacture the undeletable record all
      *    over again.
      *
-     * The per-target `catch` covers the records layer refusing a target, which is the shape above.
-     * A failure raised by the **database** has already aborted the batch's transaction - there are
-     * no savepoints - so carrying on changes nothing: the remaining statements fail too, the batch
-     * rolls back whole and the error is booked on the task row. What this must not do is swallow
-     * such a failure into one more counted row and report `DONE`, and it cannot: the counters live
-     * in the transaction that rolled back. `Exception` rather than `Throwable`, because an
-     * `OutOfMemoryError` is not a row that did not fit.
+     * The per-target `catch` covers the records layer refusing to answer for a target, which is the
+     * last shape above. `Exception` rather than `Throwable`, because an `OutOfMemoryError` is not a
+     * row that did not fit.
      */
-    private fun adoptArrivedChildren(
+    private fun childrenThisRecordMayTake(
         params: DbColumnMigrationParams,
         tableCtx: DbTableContext,
         sourceId: Long,
         targetIds: List<Long>
-    ): List<Long>? {
+    ): AdoptableChildren? {
         val schemaCtx = tableCtx.getSchemaCtx()
         val table = tableCtx.getTableRef().table
         val recordsService = schemaCtx.getRecordsService(table)
@@ -650,8 +882,10 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
             // the defect this function exists to prevent - a child that does not know it has a
             // parent leaves the parent holding a link to it after it is deleted, answers nothing to
             // a `_parent` predicate and reads as world-readable - and it is irreversible, where
-            // deferring the row is not. The caller leaves the row alone with its original in the
-            // backup, or leaves a parked link set parked; either way the work is still there to do.
+            // deferring the row is not. Because this half is a read, the caller learns it here,
+            // before it has written anything at all: it leaves the row alone with its original in
+            // the backup, or leaves a parked link set parked; either way the work is still there to
+            // do.
             log.warn {
                 "No records service is registered for ${tableCtx.getTableRef().fullName}, so the " +
                     "'${params.attId}' child links cannot be given their " +
@@ -662,6 +896,9 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
         val parentRef = schemaCtx.recordRefService.getEntityRefById(sourceId)
         val refsById = schemaCtx.recordRefService.getEntityRefsByIdsMap(targetIds)
         val result = ArrayList<Long>(targetIds.size)
+        // the ones that do not name this record as their parent yet, as opposed to the ones that do
+        // already: only these are written, and only these have to be given back if the pass is undone
+        val toTell = LinkedHashMap<Long, EntityRef>()
         for (targetId in targetIds) {
             val childRef = refsById[targetId] ?: continue
             if (EntityRef.isEmpty(childRef)) {
@@ -706,9 +943,59 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
                     }
                     continue
                 }
+                result.add(targetId)
+                toTell[targetId] = childRef
+            } catch (e: Exception) {
+                if (e is InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw e
+                }
+                log.warn(e) {
+                    "It could not be established whether $childRef may become a child of " +
+                        "$parentRef through the '${params.attId}' migration, so it does not become " +
+                        "a child link. The original value stays in '${params.backupColumn}'"
+                }
+            }
+        }
+        return AdoptableChildren(recordsService, parentRef, result, toTell)
+    }
+
+    /**
+     * The write half: `_parent` and `_parentAtt` on every child that does not name this record yet,
+     * written through the very
+     * [ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler.updateParentRefOfChildren]
+     * that `DbRecordsMutateDao` writes them with, so the two cannot drift.
+     *
+     * **After the links, not before**, and this is the ordering the whole split exists for. A child
+     * association puts a **third** row in play - the child's - and a user adding the same child
+     * takes the three in the order `link -> record's row -> child's row`: `setMutationAtts` creates
+     * the link, `dataService.save` writes the record, and `processAssocsAfterMutation` writes the
+     * child's `_parent` last. Writing `_parent` before the link would take the first two of those
+     * the other way round and close a cycle PostgreSQL breaks by killing one of the two
+     * transactions - and the killed one can be the user's. Taking the link first leaves the link
+     * itself as the first thing both want, and it orders them before either touches a child's row.
+     *
+     * The price is that a refusal now arrives with the link already created, so a refused target is
+     * reported back ([AdoptedChildren.refused]) and its caller takes that link out again.
+     *
+     * A failure raised by the **database** has already aborted the batch's transaction - there are
+     * no savepoints - so carrying on changes nothing: the remaining statements fail too, the batch
+     * rolls back whole and the error is booked on the task row. What this must not do is swallow
+     * such a failure into one more counted row and report `DONE`, and it cannot: the counters live
+     * in the transaction that rolled back. `Exception` rather than `Throwable`, because an
+     * `OutOfMemoryError` is not a row that did not fit.
+     */
+    private fun takeChildren(
+        params: DbColumnMigrationParams,
+        adoptable: AdoptableChildren
+    ): AdoptedChildren {
+        val written = LinkedHashMap<Long, EntityRef>()
+        val refused = ArrayList<Long>()
+        for ((targetId, childRef) in adoptable.toTell) {
+            try {
                 RecMutAssocHandler.updateParentRefOfChildren(
-                    recordsService,
-                    parentRef,
+                    adoptable.recordsService,
+                    adoptable.parentRef,
                     params.attId,
                     listOf(childRef),
                     add = true,
@@ -718,21 +1005,47 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
                     disableEvents = true,
                     disableAudit = true
                 )
-                result.add(targetId)
+                written[targetId] = childRef
             } catch (e: Exception) {
                 if (e is InterruptedException) {
                     Thread.currentThread().interrupt()
                     throw e
                 }
+                refused.add(targetId)
                 log.warn(e) {
-                    "$childRef could not be told that $parentRef is its parent through the " +
-                        "'${params.attId}' migration, so it does not become a child link either. " +
-                        "The original value stays in '${params.backupColumn}'"
+                    "$childRef could not be told that ${adoptable.parentRef} is its parent through " +
+                        "the '${params.attId}' migration, so it does not stay a child link either " +
+                        "- the link just created for it is taken out again and the original value " +
+                        "stays in '${params.backupColumn}'"
                 }
             }
         }
-        return result
+        return AdoptedChildren(adoptable.parentRef, written, refused)
     }
+
+    /**
+     * What [childrenThisRecordMayTake] found: every target that may become a child link, and -
+     * separately - the ones that do not name this record as their parent yet, which are the only
+     * ones [takeChildren] writes and the only ones an undo has to give back. A child that already
+     * named this record as its parent keeps it either way.
+     */
+    private class AdoptableChildren(
+        val recordsService: RecordsService,
+        val parentRef: EntityRef,
+        val linkable: List<Long>,
+        val toTell: Map<Long, EntityRef>
+    )
+
+    /**
+     * What [takeChildren] wrote, and what it could not: a child whose row refused the back-reference
+     * is not a child link either, so the link its caller has already created for it has to go.
+     */
+    private class AdoptedChildren(
+        val parentRef: EntityRef,
+        /** by target id, because an undo has to ask whether the record still links to each one */
+        val written: Map<Long, EntityRef>,
+        val refused: List<Long>
+    )
 
     /**
      * The `ed_record_ref` id stamped on a link this handler creates, resolved the same way
@@ -776,6 +1089,41 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
             if (parked.isEmpty()) {
                 continue
             }
+            // Write only where the attribute has nothing, the rule the value transfer follows one
+            // method below. A restore runs in the background, and between the moment the column
+            // came back and the moment this window reaches the record, the user can have given the
+            // attribute a value of their own - through the ordinary mutation path, with every
+            // notification that implies. Laying the parked snapshot on top of it would add links
+            // the record no longer has, and the user would have no way to tell where they came from.
+            //
+            // A read cannot establish that on its own, though: the user can be writing *right now*,
+            // their rows are invisible to this transaction until they commit, and their link and a
+            // parked one for another target collide on no unique key.
+            //
+            // So this read is **not** what makes the decision safe - [claimTheRecord] is, and it
+            // runs after the links are written rather than before. This one only spares the work
+            // for a record that plainly has a value already, which is the common case and the one
+            // worth not doing the work for.
+            if (schemaCtx.assocsService.getTargetAssocs(sourceId, params.attId, DbFindPage.FIRST)
+                    .entities.isNotEmpty()
+            ) {
+                // Spent, not kept. A snapshot is offered exactly once - by the restore of the
+                // column it was parked under - and here the offer is declined because the record
+                // has a value of its own. Leaving the rows would key a stale generation to a
+                // registry row that departs again on the next type change, and the restore after
+                // that would hand the record both: the link it chose and the one it replaced a
+                // round trip ago. A snapshot the restore never reached - the task an administrator
+                // cancelled - is untouched by this and stays waiting, which is what keeps it
+                // reachable by every later return to the type.
+                schemaCtx.assocBackupService.consume(params.restoredColumnMetaId, sourceId)
+                log.info {
+                    "Record $sourceId of ${tableCtx.getTableRef().fullName} already has " +
+                        "'${params.attId}' links of its own, so the ${parked.size} link(s) that " +
+                        "were waiting for it in the association backup are dropped rather than " +
+                        "restored on top of them"
+                }
+                continue
+            }
             // The ordinary path, not a raw insert, for the same reason the departure used it: an
             // association may point at an entity owned by another application which keeps a
             // back-reference, and a link appearing without that application hearing about it is as
@@ -788,16 +1136,22 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
             // are corrected from the snapshot below, in the same transaction and before the column
             // cache is rewritten, because that cache is read in `__index` order.
             //
-            // The links coming back with `__child = true` also need their `_parent`/`_parentAtt`,
-            // because the departure cleared exactly those two columns. Restoring only the
-            // `ed_associations` rows would put the record back into the undeletable state from the
-            // other side. Adopted before the first `createAssocs` of this record, so a child the
-            // ordinary write path would refuse never becomes a link at all.
+            // The links coming back with `__child = true` are checked against their
+            // `_parent`/`_parentAtt` and given them where they have none. A departure leaves the two
+            // columns alone, so the usual answer here is "this record is already its parent, under
+            // this very attribute" and nothing is written - but two shapes need the write: a child
+            // released by the departure of `1.73.0`, whose columns that version cleared and which no
+            // upgrade puts back, and a child re-parented while the links were parked, which is
+            // refused rather than taken. Which children may be taken is **read** before the first
+            // `createAssocs` of this record, so a child the ordinary write path would refuse never
+            // becomes a link at all; the `_parent` itself is written after them ([takeChildren]),
+            // because that is the order a user's mutation takes the same three rows in.
             val parkedChildren = parked.filter { it.child }
+            var adoptableChildren: AdoptableChildren? = null
             val adopted = if (parkedChildren.isEmpty()) {
                 emptySet()
             } else {
-                val adoptable = adoptArrivedChildren(
+                val adoptable = childrenThisRecordMayTake(
                     params,
                     tableCtx,
                     sourceId,
@@ -818,7 +1172,8 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
                     }
                     continue
                 }
-                adoptable.toHashSet()
+                adoptableChildren = adoptable
+                adoptable.linkable.toHashSet()
             }
             if (adopted.size < parkedChildren.size) {
                 log.warn {
@@ -854,12 +1209,31 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
                 val addedTargets = added.toHashSet()
                 linkable.filterTo(recreated) { it.targetId in addedTargets }
             }
+            // The second fact of a child link, after the links themselves: a user putting the same
+            // child back names the link first and the child's row last, and a restore writing the
+            // child's row first would hold one end of that pair each.
+            val adoptedChildren = adoptableChildren?.let { takeChildren(params, it) }
+            val refused = adoptedChildren?.refused ?: emptyList()
+            if (refused.isNotEmpty()) {
+                // A child that refused its back-reference is not a child link either. Its link was
+                // created by this pass a moment ago, so taking it out leaves the record exactly
+                // where a refusal during the read would have left it - and the snapshot, spent
+                // below, keeps the whole original for the administrator either way.
+                val refusedIds = refused.toHashSet()
+                val children = addedByChild[true] ?: emptyList()
+                val toRemove = children.filter { it in refusedIds }
+                if (toRemove.isNotEmpty()) {
+                    schemaCtx.assocsService.removeAssocs(sourceId, params.attId, toRemove, true)
+                    addedByChild[true] = children.filter { it !in refusedIds }
+                    recreated.removeIf { it.child && it.targetId in refusedIds }
+                }
+            }
             val corrected = schemaCtx.assocBackupService.restoreAssocsMeta(sourceId, recreated)
             if (corrected < recreated.size) {
                 // Not worth failing the task for - the links themselves are back - but a link that
                 // kept the migration's own `Instant.now()`, system creator and `max + 1` index has
                 // quietly lost its history, and no later pass would find it: the backup it came
-                // from is consumed on the next line.
+                // from is consumed once the record is claimed.
                 log.warn {
                     "Record $sourceId of ${tableCtx.getTableRef().fullName} got ${recreated.size} " +
                         "'${params.attId}' links back from the association backup, but only " +
@@ -867,12 +1241,23 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
                         "author back - the rest carry this migration's own metadata"
                 }
             }
+            // Now, and not before the links: this is where the record is taken from anyone else
+            // writing it, and the order is what keeps the two out of each other's way.
+            if (!claimTheRecord(params, service, id, row, sourceId)) {
+                undoLinksWrittenForRecord(params, tableCtx, sourceId, addedByChild, adoptedChildren)
+                log.info {
+                    "Record $sourceId of ${tableCtx.getTableRef().fullName} was written by somebody " +
+                        "else while its '${params.attId}' links were being restored, so the " +
+                        "${parked.size} link(s) that came back were taken out again and the " +
+                        "association backup keeps them for the next pass"
+                }
+                continue
+            }
             notifyAssocsCreated(params, tableCtx, sourceId, addedByChild)
-            // The links are back in the table that owns them, so the snapshot is spent. Keeping it
-            // would let a later restore of the same registry row resurrect links this record has
-            // since moved on from.
+            // The links are back in the table that owns them and the record is claimed, so the
+            // snapshot is spent. Keeping it would let a later restore of the same registry row
+            // resurrect links this record has since moved on from.
             schemaCtx.assocBackupService.consume(params.restoredColumnMetaId, sourceId)
-            rewriteAssocColumnCache(params, service, id, row, sourceId)
             restoredRecords++
             restoredLinks += parked.size
         }
@@ -943,23 +1328,45 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
     }
 
     /**
-     * The column of an assoc-like attribute caches only the first values, and after a restore that
-     * cache has to say what `ed_associations` says.
+     * The one step that takes the record for a restore: the column of an assoc-like attribute
+     * caches the first target ids, and rewriting that cache from what `ed_associations` now holds is
+     * both the last thing the restore owes the record **and** the thing that claims it. Returns
+     * whether the claim held.
      *
-     * Ten for a multi-valued attribute and one for a single-valued one, the same numbers
-     * `DbRecordsMutateDao` writes - ten being what `DbRecord` treats as "there may be more, go and
-     * read them all".
+     * **It is a conditional write, and the condition is the record's own column as this batch read
+     * it.** The transfer one method above claims its rows the same way and for the same reason: a
+     * read cannot say that nothing will be written between it and the write it authorises. Anyone
+     * who gave this attribute a value since the window was read has changed this column, and the
+     * claim fails; anyone about to has still to write the record's row, so they wait here and then
+     * find their own version stale and take their links back with their transaction.
      *
-     * Conditional on the column still holding what this batch read, so a value written between the
-     * read and this write is not overwritten: that mutation has already written a cache of its own.
+     * The one value a user's write can leave this column at is the one it already held, and that
+     * takes naming the same references in the same order - in which case their link and a parked one
+     * are the same row of `ed_associations`, and its unique index has decided the matter before this
+     * is reached: the loser's batch takes a duplicate key, rolls back and tries again, and the retry
+     * finds the link there and declines the snapshot the ordinary way.
+     *
+     * **After the links and not before.** The ordinary write path creates the links of a record and
+     * saves the record afterwards (`DbRecordsMutateDao`), and a restore that claimed the record
+     * first would be taking the same two things in the opposite order: with both wanting the same
+     * link - a user re-entering the value they could no longer see - the two transactions close a
+     * cycle on the record's row and that link's unique index entry, and PostgreSQL breaks it by
+     * killing one of them. Taking them in the same order as everybody else costs an undo when the
+     * claim fails ([undoLinksWrittenForRecord]) and cannot deadlock.
+     *
+     * A single-valued target keeps one id, a multi-valued one the first
+     * [ASSOC_COLUMN_CACHE_SIZE] in `__index` order - which is why the meta is corrected first.
+     *
+     * The other caller is an **arrival**, which has claimed the row before it created any link and
+     * calls this only for the cache; there the answer is known in advance and ignored.
      */
-    private fun rewriteAssocColumnCache(
+    private fun claimTheRecord(
         params: DbColumnMigrationParams,
         service: DbDataService<DbEntity>,
         id: Long,
         row: Map<String, Any?>,
         sourceId: Long
-    ) {
+    ): Boolean {
         val maxCachedValues = if (params.targetMultiple) {
             ASSOC_COLUMN_CACHE_SIZE
         } else {
@@ -975,11 +1382,91 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
         } else {
             targetIds.firstOrNull()
         }
-        service.updateByIdIfMatches(
+        return service.updateByIdIfMatches(
             id,
             mapOf(params.targetColumn to row[params.targetColumn]),
             mapOf(params.targetColumn to newValue)
         )
+    }
+
+    /**
+     * Puts the record back the way this pass found it, for a record whose claim did not hold. Both
+     * halves of the transfer that write links use it - a restore putting parked links back, and an
+     * arrival turning text into links.
+     *
+     * Only what this pass wrote is taken out: the links it created - by id, so a link the record
+     * held before is not touched - and the `_parent` back-references it wrote, but not the ones a
+     * child already had. Deleted outright rather than moved to the deleted-associations table,
+     * because these links never existed as far as anyone outside this transaction is concerned: the
+     * peers holding the other end have not been told about them either, `notifyAssocsCreated` being
+     * the next thing after the claim.
+     *
+     * Nothing else is undone because nothing else was written: the claim is the record's only write
+     * and it did not fire. A restore's snapshot therefore stays parked and an arrival's original
+     * stays in the backup column, so the next tick tries again against whatever the record has
+     * become by then - and finds a value of its own there, most likely, and leaves it alone the
+     * ordinary way.
+     *
+     * One thing is not given back: `createAssocs` clears the `ed_associations_deleted` row of a link
+     * it re-creates, and this does not put it back. That table is written and cleaned by
+     * `DbAssocsService` and read by nothing in the platform, so what is lost is a record of a removal
+     * and not anything a caller can observe - and re-creating it would mean teaching `createAssocs`
+     * to report what it cleaned, for a table nobody asks.
+     */
+    private fun undoLinksWrittenForRecord(
+        params: DbColumnMigrationParams,
+        tableCtx: DbTableContext,
+        sourceId: Long,
+        addedByChild: Map<Boolean, List<Long>>,
+        adoptedChildren: AdoptedChildren?
+    ) {
+        val schemaCtx = tableCtx.getSchemaCtx()
+        val added = addedByChild.values.flatten()
+        if (added.isNotEmpty()) {
+            schemaCtx.assocsService.removeAssocs(sourceId, params.attId, added, true)
+        }
+        if (adoptedChildren == null || adoptedChildren.written.isEmpty()) {
+            return
+        }
+        // Only the children the record no longer holds a link to. Writing a back-reference this pass
+        // did not need to write is possible - the deciding read happens before the links, and
+        // somebody else can make the same child this record's between the two - and for such a child
+        // the link that justifies the back-reference is *theirs* and still there. Clearing it then
+        // would leave exactly what this whole undo exists to prevent, only from the other side: a
+        // record holding a link to a child that does not know it.
+        val stillLinked = schemaCtx.assocsService.getTargetAssocs(
+            sourceId,
+            params.attId,
+            DbFindPage.ALL
+        ).entities.mapTo(HashSet()) { it.targetId }
+        val toRelease = adoptedChildren.written.filterKeys { it !in stillLinked }.values.toList()
+        if (toRelease.isEmpty()) {
+            return
+        }
+        val recordsService = schemaCtx.getRecordsService(tableCtx.getTableRef().table) ?: return
+        try {
+            RecMutAssocHandler.releaseChildren(
+                recordsService,
+                toRelease,
+                disableEvents = true,
+                disableAudit = true
+            )
+        } catch (e: Exception) {
+            if (e is InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw e
+            }
+            // The links are gone either way, so the child is no longer anyone's through this
+            // attribute and the parent holds nothing pointing at it. What is left is a `_parent`
+            // naming a record that does not claim it, which an administrator can see and clear -
+            // and failing the whole batch over it would undo the windows that did succeed.
+            log.warn(e) {
+                "The '${RecordConstants.ATT_PARENT}' this restore wrote on " +
+                    "${toRelease.size} record(s) could not be taken back after the " +
+                    "restore of ${adoptedChildren.parentRef} was undone, so they still name it as " +
+                    "their parent while holding no '${params.attId}' link from it"
+            }
+        }
     }
 
     /**

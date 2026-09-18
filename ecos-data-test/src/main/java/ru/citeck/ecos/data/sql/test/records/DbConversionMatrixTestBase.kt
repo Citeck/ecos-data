@@ -17,6 +17,7 @@ import ru.citeck.ecos.data.sql.columnmeta.DbConversionClass
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.props.DbEcosDataProps
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
+import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
@@ -369,6 +370,12 @@ abstract class DbConversionMatrixTestBase : DbRecordsTestBase() {
     ) {
         val rec = givenRecordWith(from, sourceMultiple)
         val before = readAtt(rec, from, sourceMultiple)
+        // what the column physically holds right now, so that "the original is recoverable" can be
+        // asserted against the original itself rather than against its shape
+        val physicalBefore = physicalValuesByExtId(ATT)[rec.getLocalId()]
+        // and, for an attribute whose real value is rows of ed_associations, those rows in full:
+        // the column holds only the first ten ids, so nothing read from it can speak for the rest
+        val linksBefore = liveLinkSnapshotOf(rec)
 
         registerAtts(listOf(attDefOf(ATT, to, targetMultiple)))
         // statement 3's moment, and the only one there is: the model asks for one type, the column
@@ -390,7 +397,12 @@ abstract class DbConversionMatrixTestBase : DbRecordsTestBase() {
                     .describedAs("$from -> $to: a journal must keep returning rows while a migration is pending")
                     .isNotEmpty()
             },
-            { assertOriginalIsRecoverable(from, sourceMultiple, to, targetMultiple, rec, backups, before, after) },
+            {
+                assertOriginalIsRecoverable(
+                    from, sourceMultiple, to, targetMultiple, rec, backups, before, after,
+                    physicalBefore, linksBefore
+                )
+            },
             { assertTheValueTheChangeProducesIsTheOnePromised(from, sourceMultiple, to, targetMultiple, before, after) }
         )
     }
@@ -406,7 +418,9 @@ abstract class DbConversionMatrixTestBase : DbRecordsTestBase() {
         rec: EntityRef,
         backups: List<String>,
         before: DataValue,
-        after: DataValue
+        after: DataValue,
+        physicalBefore: Any?,
+        linksBefore: List<LinkSnapshot>
     ) {
         if (movesNoBytes(from, sourceMultiple, to, targetMultiple)) {
             // the same bytes, meaning the same thing to both types. There is
@@ -425,13 +439,15 @@ abstract class DbConversionMatrixTestBase : DbRecordsTestBase() {
             .describedAs("$from -> $to (class ${classOf(from, sourceMultiple, to, targetMultiple)}): the original value must still be recoverable")
             .isNotEmpty()
 
-        // and "recoverable" means the value, not the column: a backup that came out empty is a
-        // column kept for ever with nothing in it, and every assertion about a backup existing would
-        // go on passing
-        val backupValue = backupValuesByExtId(backups.single())[rec.getLocalId()]
-        assertThat(backupValue)
-            .describedAs("$from -> $to: the backup column has to hold what the attribute held, not just exist")
-            .isNotNull()
+        // and "recoverable" means *this* value, not a value: the backup is compared with what the
+        // column physically held before the change, element for element and in order. Asserting
+        // anything weaker - that it is not null, that it has as many elements as it should - passes
+        // just as happily on a backup whose content has been replaced, and a backup that does not
+        // hold the original is the one failure the whole feature is built to make impossible.
+        val backupValue = physicalValuesByExtId(backups.single())[rec.getLocalId()]
+        assertThat(normalizePhysical(backupValue))
+            .describedAs("$from -> $to: the backup has to hold what the attribute held, unchanged")
+            .isEqualTo(normalizePhysical(physicalBefore))
 
         if (!isPhysicalArray(from, sourceMultiple)) {
             return
@@ -444,9 +460,13 @@ abstract class DbConversionMatrixTestBase : DbRecordsTestBase() {
             // whether this change took the attribute out of the association group:
             // parked under this backup's registry row if it did, still live if the target keeps its
             // values there too.
-            assertThat(recoverableLinkCount(rec, backups.single(), to))
-                .describedAs("$from -> $to: every link the attribute held has to still be somewhere, not just the ten the column cached")
-                .isEqualTo(sampleValuesFor(from).size)
+            assertThat(recoverableLinks(rec, backups.single(), to))
+                .describedAs(
+                    "$from -> $to: every link the attribute held has to still be somewhere, in its " +
+                        "own order and with its own child flag, creation time and author - not just " +
+                        "as many rows as there were, and not just the ten the column cached"
+                )
+                .isEqualTo(linksBefore)
             return
         }
         // the half a narrowing is named lossy for: what the new column could not keep
@@ -458,24 +478,63 @@ abstract class DbConversionMatrixTestBase : DbRecordsTestBase() {
     }
 
     /**
-     * How many of an assoc-like attribute's links are still recoverable after the change, read from
-     * whichever table the change left them in.
+     * One association as everything about it that a migration has to carry: which record it points
+     * at, where it sits among its siblings, whether it is a child link, when it was made and by
+     * whom.
+     *
+     * A count is not this, and the difference is the whole point of comparing it. `__index` is the
+     * user's own ordering of a multi-valued association; `__child` decides whether the target is
+     * deletable on its own; `__created` and `__creator` are the only record there is of who linked
+     * what and when. A backup that kept the right number of rows and lost any of the five is a
+     * backup that cannot put the attribute back the way it was.
+     */
+    protected data class LinkSnapshot(
+        val targetId: Long,
+        val index: Int,
+        val child: Boolean,
+        val created: Instant,
+        val creator: Long
+    )
+
+    /**
+     * Every association the record holds right now, in `__index` order, read from `ed_associations`
+     * itself rather than through the attribute - the column caches ten ids and the read path hands
+     * back what the column has.
+     */
+    private fun liveLinkSnapshotOf(rec: EntityRef): List<LinkSnapshot> {
+        val schemaCtx = getTableCtx().getSchemaCtx()
+        return TxnContext.doInTxn(readOnly = true) {
+            val sourceId = dbRecordRefService.getIdByEntityRef(rec)
+            DbDataServiceImpl(
+                DbAssocEntity::class.java,
+                DbDataServiceConfig.create { withTable(DbAssocEntity.MAIN_TABLE) },
+                schemaCtx
+            ).findAll(Predicates.eq(DbAssocEntity.SOURCE_ID, sourceId))
+                .map { LinkSnapshot(it.targetId, it.index, it.child, it.created, it.creator) }
+                .sortedBy { it.index }
+        }
+    }
+
+    /**
+     * The links of an assoc-like attribute after the change, read from whichever table the change
+     * left them in and in the same shape [liveLinkSnapshotOf] produces, so the two compare.
      *
      * A departure from the association group parks them in `ed_associations_backup` under the
      * registry row of the column that moved aside; a change that keeps the attribute assoc-like -
      * a narrowing inside `G_ASSOC` - leaves them exactly where they were.
      */
-    private fun recoverableLinkCount(rec: EntityRef, backupColumn: String, to: AttributeType): Int {
+    private fun recoverableLinks(rec: EntityRef, backupColumn: String, to: AttributeType): List<LinkSnapshot> {
+        if (DbRecordsUtils.isStoredInAssocsTable(to)) {
+            return liveLinkSnapshotOf(rec)
+        }
         val schemaCtx = getTableCtx().getSchemaCtx()
         return TxnContext.doInTxn(readOnly = true) {
             val sourceId = dbRecordRefService.getIdByEntityRef(rec)
-            if (DbRecordsUtils.isStoredInAssocsTable(to)) {
-                schemaCtx.assocsService.getTargetAssocs(sourceId, ATT, DbFindPage.ALL).entities.size
-            } else {
-                val meta = schemaCtx.columnMetaService.getByTableAndColumn(tableRef.table, backupColumn)
-                    ?: error("No ed_column_meta row for backup column '$backupColumn'")
-                schemaCtx.assocBackupService.findByColumnMeta(meta.id, sourceId).size
-            }
+            val meta = schemaCtx.columnMetaService.getByTableAndColumn(tableRef.table, backupColumn)
+                ?: error("No ed_column_meta row for backup column '$backupColumn'")
+            schemaCtx.assocBackupService.findByColumnMeta(meta.id, sourceId)
+                .map { LinkSnapshot(it.targetId, it.index, it.child, it.created, it.creator) }
+                .sortedBy { it.index }
         }
     }
 
@@ -739,11 +798,15 @@ abstract class DbConversionMatrixTestBase : DbRecordsTestBase() {
     }
 
     /**
-     * Every row's value in [backupColumn], keyed by ext id, read through the one service allowed to
-     * see a backup column - [DbDataServiceConfig.includeBackupColumns]. Raw SQL would have been
-     * shorter but it is PostgreSQL-only, and this has to answer the same on both backends.
+     * Every row's value in [column] as the database holds it, keyed by ext id, read through the one
+     * service allowed to see a backup column - [DbDataServiceConfig.includeBackupColumns]. Raw SQL
+     * would have been shorter but it is PostgreSQL-only, and this has to answer the same on both
+     * backends.
+     *
+     * Named for the physical column rather than for backups because both ends of the comparison go
+     * through it: the attribute's own column before the change, and the backup after it.
      */
-    private fun backupValuesByExtId(backupColumn: String): Map<String, Any?> {
+    private fun physicalValuesByExtId(column: String): Map<String, Any?> {
         val rawService = DbDataServiceImpl(
             DbEntity::class.java,
             DbDataServiceConfig.create {
@@ -761,12 +824,32 @@ abstract class DbConversionMatrixTestBase : DbRecordsTestBase() {
                 emptyList(),
                 emptyList(),
                 false
-            ).entities.associate { (it[DbEntity.EXT_ID] as String) to it[backupColumn] }
+            ).entities.associate { (it[DbEntity.EXT_ID] as String) to it[column] }
         }
     }
 
     private fun backupColumnsOfAtt(): List<String> {
         return getTableCtx().getAllPhysicalColumns().map { it.name }.filter { it.startsWith("__backup_$ATT") }
+    }
+
+    /**
+     * A physical column value in a shape two of them can be compared in.
+     *
+     * Arrays cannot be compared with `equals` - two `double[]` holding the same numbers are not
+     * equal - and the same column arrives in different array classes on the two backends: a
+     * `float8[]` is a `double[]` on the in-memory backend and a `Double[]` on PostgreSQL. Turning
+     * every array into a list, recursively so that a `bytea[]` compares by its bytes rather than by
+     * the identity of its rows, makes the comparison mean "the same values in the same order" on
+     * both.
+     */
+    private fun normalizePhysical(value: Any?): Any? {
+        return when {
+            value == null -> null
+            value.javaClass.isArray -> (0 until java.lang.reflect.Array.getLength(value))
+                .map { normalizePhysical(java.lang.reflect.Array.get(value, it)) }
+            value is Collection<*> -> value.map { normalizePhysical(it) }
+            else -> value
+        }
     }
 
     /**

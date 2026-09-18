@@ -113,6 +113,14 @@ class InMemDataSource : DbDataSource {
         throw UnsupportedOperationException("In-memory data source does not execute SQL updates")
     }
 
+    override fun <T> updateReturning(
+        query: String,
+        params: List<Any?>,
+        action: (java.sql.ResultSet) -> T
+    ): T {
+        throw UnsupportedOperationException("In-memory data source does not execute SQL updates")
+    }
+
     override fun <T> withMetaData(action: (DatabaseMetaData) -> T): T {
         throw UnsupportedOperationException("In-memory data source has no JDBC metadata")
     }

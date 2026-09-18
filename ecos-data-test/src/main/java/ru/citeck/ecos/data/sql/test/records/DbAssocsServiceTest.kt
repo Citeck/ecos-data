@@ -67,4 +67,41 @@ class DbAssocsServiceTest : DbRecordsTestBase() {
             checkAllAssocs(3, 4, 5)
         }
     }
+
+    /**
+     * A link the pre-select does not see, reached without a second transaction: it filters on
+     * `__child` as well, while the unique index of the table does not, so asking for a **child**
+     * link where a plain one already holds the same `(source, attribute, target)` sends an insert at
+     * a row that is already there.
+     *
+     * That is the same collision a concurrent transaction produces - it commits its row after the
+     * select and before the insert - and the outcome asserted here is the one that case needs: the
+     * insert is skipped rather than raised, and the answer names only what was really created, so a
+     * caller undoing its own writes or telling another application about them never names a link it
+     * did not make.
+     */
+    @Test
+    fun aLinkThatIsAlreadyThereIsSkippedRatherThanRaisedTest() {
+        TxnContext.doInTxn {
+
+            assertThat(assocsService.createAssocs(1, "test", false, listOf(2), 0L))
+                .describedAs("the premise: this call is the one that creates the link")
+                .containsExactly(2L)
+
+            assertThat(assocsService.createAssocs(1, "test", true, listOf(2, 3), 0L))
+                .describedAs(
+                    "target 2 is already linked from this source under this attribute, so only 3 " +
+                        "is created - and the call does not fail over the one that was there"
+                )
+                .containsExactly(3L)
+
+            val targets = assocsService.getTargetAssocs(1, "test", DbFindPage.ALL).entities
+            assertThat(targets.map { it.targetId })
+                .describedAs("one row per target, the skipped one included exactly once")
+                .containsExactlyInAnyOrder(2L, 3L)
+            assertThat(targets.first { it.targetId == 2L }.child)
+                .describedAs("and the row that was already there is left exactly as it was")
+                .isFalse()
+        }
+    }
 }

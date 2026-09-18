@@ -10,9 +10,20 @@ interface DbDataSource {
     fun <T> query(query: String, params: List<Any?>, action: (ResultSet) -> T): T
 
     /**
-     * Return updated rows count or id of last inserted column if query contains 'RETURNING id'
+     * Return updated rows count, or the values of the returned column for a query with a
+     * 'RETURNING' clause.
      */
     fun update(query: String, params: List<Any?>): List<Long>
+
+    /**
+     * [update] for a statement whose `RETURNING` clause names more than one column: [update] reads
+     * the first and nothing else.
+     *
+     * Separate from [query] so that a write is observed as a write - the query type reaches the
+     * metrics and the slow-query log, and a statement that inserts rows recorded there as a SELECT
+     * is a lie an operator would have to work out for themselves.
+     */
+    fun <T> updateReturning(query: String, params: List<Any?>, action: (ResultSet) -> T): T
 
     fun <T> withSchemaMock(action: () -> T): T
 

@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.records.assocs
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.data.sql.context.DbSchemaContext
 import ru.citeck.ecos.data.sql.records.refs.DbRecordRefEntity
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -24,6 +25,10 @@ class DbAssocsService(
     private val currentAppName: String,
     private val schemaCtx: DbSchemaContext
 ) {
+
+    companion object {
+        private val log = KotlinLogging.logger {}
+    }
 
     private val dataService: DbDataService<DbAssocEntity> = DbDataServiceImpl(
         DbAssocEntity::class.java,
@@ -132,7 +137,35 @@ class DbAssocsService(
                 entity.created = Instant.now()
                 entity
             }
-            dataService.save(entitiesToCreate)
+            // Conflict-tolerant, because the select above cannot see a link another transaction has
+            // written and not yet committed: the insert would wait for it and then fail on the
+            // unique index, which for the caller of "link these, if they are not linked already" is
+            // an aborted transaction reporting work that was in fact done - a failed save for a
+            // user's mutation, a rolled-back window for a batch. Skipping the collision answers the
+            // question that was actually asked.
+            //
+            // Answered with what was inserted rather than what was intended, so that a caller which
+            // has to undo its own writes - or tell another application about them - never names a
+            // link it did not create.
+            val created = dataService.saveIfNoConflict(
+                entitiesToCreate,
+                listOf(DbAssocEntity.SOURCE_ID, DbAssocEntity.ATTRIBUTE, DbAssocEntity.TARGET_ID),
+                DbAssocEntity.TARGET_ID
+            )
+            if (created.size < assocsToCreate.size) {
+                // Not a warning: the ordinary way to get here is the race above, and its outcome -
+                // the link exists - is what the caller wanted. The other way is a row that holds
+                // this very triple with the other `__child` flag, which the select does not match
+                // because it filters on the flag; that one is a model inconsistency, and it is
+                // visible here rather than lost only because this line names the targets.
+                val skipped = assocsToCreate - created.toHashSet()
+                log.debug {
+                    "Association(s) $skipped of source $sourceId, attribute '$attribute' were " +
+                        "already present when this transaction tried to create them, so they are " +
+                        "left as they are"
+                }
+            }
+            return created
         }
         return assocsToCreate.toList()
     }
