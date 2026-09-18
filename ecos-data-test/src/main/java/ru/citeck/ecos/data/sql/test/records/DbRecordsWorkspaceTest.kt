@@ -528,4 +528,24 @@ class DbRecordsWorkspaceTest : DbRecordsTestBase() {
             assertQueryRes(listOf("test"), rec3)
         }
     }
+
+    /**
+     * A record of a `PRIVATE`-scoped type has to be told where it goes, and the refusal when it is
+     * not told says so. Untested until now, and worth pinning because the answer is worked out
+     * before the record's id is resolved while the refusal is raised after - only there is it known
+     * that the mutation is a creation rather than an update addressed through the attributes.
+     */
+    @Test
+    fun aPrivateScopedRecordCannotBeCreatedWithoutAWorkspaceTest() {
+
+        registerType()
+            .withWorkspaceScope(WorkspaceScope.PRIVATE)
+            .withAttributes(AttributeDef.create().withId("text"))
+            .register()
+
+        val ex = assertThrows<RuntimeException> { createRecord("text" to "abc") }
+        assertThat(ex.message).contains(
+            "You should provide ${RecordConstants.ATT_WORKSPACE} attribute to create new record"
+        )
+    }
 }

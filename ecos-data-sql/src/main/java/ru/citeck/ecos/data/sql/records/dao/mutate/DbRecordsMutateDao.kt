@@ -9,6 +9,7 @@ import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.commons.utils.DataUriUtil
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.context.lib.auth.AuthUser
+import ru.citeck.ecos.context.lib.auth.data.AuthData
 import ru.citeck.ecos.data.sql.columnmeta.DbExpectedAttTypes
 import ru.citeck.ecos.data.sql.content.DbContentService
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
@@ -258,21 +259,51 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         var typeInfo = typeInfo ?: ecosTypeService.getTypeInfoNotNull(getTypeIdForRecord(record))
 
+        val runAsAuth = AuthContext.getCurrentRunAsAuth()
+        val isRunAsSystem = AuthContext.isSystemAuth(runAsAuth)
+        val isRunAsAdmin = AuthContext.isAdminAuth(runAsAuth)
+        val isRunAsSystemOrAdmin = isRunAsSystem || isRunAsAdmin
+
+        val isMutationFromParent = record.getAtt(RecMutAssocHandler.MUTATION_FROM_PARENT_FLAG).asBoolean()
+
         val mutComputeContext = MutationComputeContext(
             daoCtx = daoCtx,
             counterAttsToUpdate = extractCountersToUpdate(record.attributes)
         )
+
+        // The workspace this mutation aims its record at, and whether this user may put a record
+        // there - settled before anything with a side effect happens.
+        //
+        // Resolving a localIdTemplate that names a COUNTER attribute takes the next number from the
+        // model application, in a transaction of its own, and the rollback of a refused mutation
+        // does not give it back - so a creation denied for want of rights used to leave a hole in
+        // the numbering (COREDEV-517). Every record is asked, not just the numbered ones: what is
+        // being avoided is a side effect before a refusal, and the id resolution is only the one
+        // that bites today.
+        //
+        // A mutation that names no record id is *asking* to create, which is not the same as
+        // creating - an id built from the attributes can address a record that already exists. So
+        // only what the request itself can answer is answered here: a workspace it names, through
+        // `_parent`, `_workspace` or the type's default. Naming none is not an error yet, and the
+        // question goes on to the branch below, which by then knows whether there is a record to
+        // update.
+        val requestedWorkspace = if (record.id.isEmpty() && typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
+            resolveRequestedWorkspace(
+                record = record,
+                typeInfo = typeInfo,
+                isMutationFromParent = isMutationFromParent,
+                runAsAuth = runAsAuth,
+                isRunAsSystem = isRunAsSystem
+            )
+        } else {
+            null
+        }
 
         val extIdFromAtts = getExtIdFromAtts(
             typeInfo = typeInfo,
             record = record,
             mutComputeCtx = mutComputeContext
         )
-
-        val runAsAuth = AuthContext.getCurrentRunAsAuth()
-        val isRunAsSystem = AuthContext.isSystemAuth(runAsAuth)
-        val isRunAsAdmin = AuthContext.isAdminAuth(runAsAuth)
-        val isRunAsSystemOrAdmin = isRunAsSystem || isRunAsAdmin
 
         val entityToMutate: DbEntity = if (record.id.isNotEmpty()) {
             val entity = daoCtx.attsDao.findDbEntityByExtId(record.id, checkPerms = false)
@@ -387,57 +418,23 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
 
         handleRecordCustomId(mutCtx)?.let { return it }
 
-        val isMutationFromParent = record.getAtt(RecMutAssocHandler.MUTATION_FROM_PARENT_FLAG).asBoolean()
-
         // Handle workspace
 
         var workspaceRef = EntityRef.EMPTY
         var isRunAsSystemOrWsSystem = isRunAsSystem
         if (typeInfo.workspaceScope == WorkspaceScope.PRIVATE) {
             if (isNewEntity) {
-                var parentWsId = ""
-                val parentRef = record.getAtt(RecordConstants.ATT_PARENT).asText().toEntityRef()
-                if (!isMutationFromParent && parentRef.isNotEmpty() && parentRef.getAppName() != AppName.ALFRESCO) {
-                    val parentAtts = if (DbWorkspaceDesc.isWorkspaceRef(parentRef)) {
-                        OnCreateParentAtts(parentRef.getLocalId())
-                    } else {
-                        AuthContext.runAsSystem {
-                            daoCtx.recordsService.getAtts(parentRef, OnCreateParentAtts::class.java)
-                        }
-                    }
-                    /*
-                    // todo?
-                    // move to before commit action?
-                    if (parentAtts.notExists) {
-                        error(
-                            "Parent record doesn't exists: '$parentRef'. " +
-                                "Child record with type ${typeInfo.id} can't be created"
-                        )
-                    }*/
-                    parentWsId = parentAtts.workspace
-                }
-                var mutWorkspaceId = parentWsId.ifBlank {
-                    record.getAtt(RecordConstants.ATT_WORKSPACE).asText().toEntityRef().getLocalId()
-                }
-                if (mutWorkspaceId.isEmpty() && typeInfo.defaultWorkspace.isNotBlank()) {
-                    mutWorkspaceId = typeInfo.defaultWorkspace
-                }
-                if (mutWorkspaceId.isEmpty()) {
-                    error(
-                        "You should provide ${RecordConstants.ATT_WORKSPACE} attribute to create new record " +
-                            "with private workspace scope. Type: '${typeInfo.id}'"
-                    )
-                }
-                if (mutWorkspaceId.isNotBlank()) {
-                    workspaceRef = DbWorkspaceDesc.getRef(mutWorkspaceId)
-                }
-                if (!isRunAsSystem && workspaceRef.isNotEmpty()) {
-                    val workspaces = workspaceService.getUserOrWsSystemUserWorkspaces(runAsAuth) ?: emptySet()
-                    if (!workspaces.contains(workspaceRef.getLocalId())) {
-                        error("You can't create records in workspace $workspaceRef")
-                    }
-                    isRunAsSystemOrWsSystem = workspaceService.isRunAsSystemOrWsSystem(workspaceRef.getLocalId())
-                }
+                // The question was asked above: a new entity means the mutation named no record id,
+                // and `typeInfo` is only ever replaced in the branch that requires an existing one,
+                // so the scope was already PRIVATE when the asking was decided. Null is therefore
+                // the answer "the request named no workspace", not "nobody asked" - and for a record
+                // that really is being created, that is the error it always was.
+                val requested = requestedWorkspace ?: error(
+                    "You should provide ${RecordConstants.ATT_WORKSPACE} attribute to create new " +
+                        "record with private workspace scope. Type: '${typeInfo.id}'"
+                )
+                workspaceRef = requested.ref
+                isRunAsSystemOrWsSystem = requested.isRunAsSystemOrWsSystem
             } else if (!isRunAsSystemOrWsSystem) {
                 val workspaceId = entityBeforeMutation.workspace ?: -1L
                 if (workspaceId >= 0L) {
@@ -1870,6 +1867,76 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             emptySet()
         }
     }
+
+    /**
+     * The workspace a mutation of a `PRIVATE`-scoped type aims its record at, and the check that
+     * this user may put a record there - refused here, where a refusal still costs nothing.
+     *
+     * Null when the request names no workspace, directly or through the parent or the type's
+     * default. Not an error at this point: this runs before the record's id is resolved - because
+     * resolving it can take a number that cannot be given back - and the request may still turn out
+     * to address a record that already exists, which has a workspace of its own and needs none
+     * named. The caller raises the error once it knows the mutation is a creation.
+     */
+    private fun resolveRequestedWorkspace(
+        record: LocalRecordAtts,
+        typeInfo: TypeInfo,
+        isMutationFromParent: Boolean,
+        runAsAuth: AuthData,
+        isRunAsSystem: Boolean
+    ): RequestedWorkspace? {
+
+        var parentWsId = ""
+        val parentRef = record.getAtt(RecordConstants.ATT_PARENT).asText().toEntityRef()
+        if (!isMutationFromParent && parentRef.isNotEmpty() && parentRef.getAppName() != AppName.ALFRESCO) {
+            val parentAtts = if (DbWorkspaceDesc.isWorkspaceRef(parentRef)) {
+                OnCreateParentAtts(parentRef.getLocalId())
+            } else {
+                AuthContext.runAsSystem {
+                    daoCtx.recordsService.getAtts(parentRef, OnCreateParentAtts::class.java)
+                }
+            }
+            /*
+            // todo?
+            // move to before commit action?
+            if (parentAtts.notExists) {
+                error(
+                    "Parent record doesn't exists: '$parentRef'. " +
+                        "Child record with type ${typeInfo.id} can't be created"
+                )
+            }*/
+            parentWsId = parentAtts.workspace
+        }
+        var mutWorkspaceId = parentWsId.ifBlank {
+            record.getAtt(RecordConstants.ATT_WORKSPACE).asText().toEntityRef().getLocalId()
+        }
+        if (mutWorkspaceId.isEmpty() && typeInfo.defaultWorkspace.isNotBlank()) {
+            mutWorkspaceId = typeInfo.defaultWorkspace
+        }
+        if (mutWorkspaceId.isEmpty()) {
+            return null
+        }
+        var workspaceRef = EntityRef.EMPTY
+        if (mutWorkspaceId.isNotBlank()) {
+            workspaceRef = DbWorkspaceDesc.getRef(mutWorkspaceId)
+        }
+        if (!isRunAsSystem && workspaceRef.isNotEmpty()) {
+            val workspaces = workspaceService.getUserOrWsSystemUserWorkspaces(runAsAuth) ?: emptySet()
+            if (!workspaces.contains(workspaceRef.getLocalId())) {
+                error("You can't create records in workspace $workspaceRef")
+            }
+            return RequestedWorkspace(
+                workspaceRef,
+                workspaceService.isRunAsSystemOrWsSystem(workspaceRef.getLocalId())
+            )
+        }
+        return RequestedWorkspace(workspaceRef, isRunAsSystem)
+    }
+
+    private class RequestedWorkspace(
+        val ref: EntityRef,
+        val isRunAsSystemOrWsSystem: Boolean
+    )
 
     private class OnCreateParentAtts(
         @param:AttName(RecordConstants.ATT_WORKSPACE + ScalarType.LOCAL_ID_SCHEMA + "!")
