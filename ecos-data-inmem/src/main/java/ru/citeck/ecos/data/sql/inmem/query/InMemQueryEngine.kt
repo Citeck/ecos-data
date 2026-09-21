@@ -46,12 +46,9 @@ class InMemQueryEngine {
             return DbFindRes(emptyList(), 0)
         }
         // the SQL backend refuses such a query rather than answering it, and this one models that
-        // backend - left out, grouping by a name that is not there quietly put every record into
-        // one group here while PostgreSQL raised
-        val invalidGroupBy = DbQueryColumns.getUnreadableGroupBy(query, columns.mapTo(HashSet()) { it.name })
-        if (invalidGroupBy.isNotEmpty()) {
-            error("Grouping by columns $invalidGroupBy is not allowed")
-        }
+        // backend - left out, a name that is not there was quietly answered here while PostgreSQL
+        // raised, for a group-by name and for a column inside an expression alike
+        DbQueryColumns.checkQueryIsReadable(query, columns.mapTo(HashSet()) { it.name })
 
         val ds = dataSource(context)
         val table = ds.getStore().getTable(context.getTableRef())

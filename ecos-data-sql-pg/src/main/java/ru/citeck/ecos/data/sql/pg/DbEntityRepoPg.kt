@@ -797,31 +797,6 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         return sqlExpressionsByAlias
     }
 
-    /**
-     * Refuses a query naming something it cannot read - loudly, because a caller building a query
-     * by hand has made a mistake rather than asked an unanswerable question. The records DAO above
-     * answers the same situation with an empty result, having caught it before it gets here.
-     */
-    private fun checkQueryColumnsAreReadable(columnNames: Set<String>, query: DbFindQuery) {
-        if (query.expressions.isNotEmpty()) {
-            val invalidColumns = LinkedHashSet<String>()
-            query.expressions.values.forEach {
-                it.visitColumns { token ->
-                    if (!DbQueryColumns.isReadable(token.name, columnNames, query)) {
-                        invalidColumns.add(token.name)
-                    }
-                }
-            }
-            if (invalidColumns.isNotEmpty()) {
-                error("Invalid columns used in expressions: $invalidColumns")
-            }
-        }
-        val invalidGroupBy = DbQueryColumns.getUnreadableGroupBy(query, columnNames)
-        if (invalidGroupBy.isNotEmpty()) {
-            error("Grouping by columns $invalidGroupBy is not allowed")
-        }
-    }
-
     private fun getPermsColumn(context: DbTableContext): String {
         if (disableQueryPermsCheck.get()) {
             return ""
@@ -958,7 +933,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
         // before the count leaves through the branch below: it builds its own query from the same
         // names, and without this it reached the database with a column that is not there
-        checkQueryColumnsAreReadable(columns.mapTo(HashSet()) { it.name }, query)
+        DbQueryColumns.checkQueryIsReadable(query, columns.mapTo(HashSet()) { it.name })
         if (page.maxItems == 0) {
             // asked for no items, so the count is the whole answer - but still only when it was
             // asked for. The in-memory backend has always read the flag here, and a caller that
@@ -1368,7 +1343,17 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         expressions: Map<String, ExpressionToken>,
         groupBy: List<String>
     ) {
-        if (groupBy.isEmpty() || groupBy.size == 1 && groupBy[0] == "*") {
+        if (groupBy.size == 1 && groupBy[0] == "*") {
+            // "*" is one group over everything, and no GROUP BY is emitted for it - the rows are
+            // folded by the aggregate in the select list, which is how an aggregate query without
+            // GROUP BY behaves. That query yields its single row even over no input at all, so a
+            // filter matching nothing still reported a group; the count has always said there is
+            // none, and so does the in-memory backend. HAVING settles it, and it also folds the
+            // rows when the select list happens to carry no aggregate of its own.
+            query.append(" HAVING COUNT(*) > 0")
+            return
+        }
+        if (groupBy.isEmpty()) {
             return
         }
         query.append(" GROUP BY ")

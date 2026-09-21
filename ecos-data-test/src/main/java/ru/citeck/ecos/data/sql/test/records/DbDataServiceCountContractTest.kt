@@ -5,6 +5,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
+import ru.citeck.ecos.data.sql.service.expression.token.ColumnToken
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
 import ru.citeck.ecos.records2.predicate.model.Predicates
 
@@ -99,5 +100,44 @@ class DbDataServiceCountContractTest : DbRecordsTestBase() {
             .withGroupBy(listOf("textAtt"))
             .build()
         assertThat(mainCtx.dataService.getCount(valid)).isEqualTo(2)
+    }
+
+    /**
+     * A hand-built query whose expression names a column the table does not have.
+     *
+     * `find` refuses it on PostgreSQL, because the name would reach the database as a column that
+     * is not there. The in-memory backend answered instead, which is the one thing it must not do:
+     * it is there to model what the SQL backend does. Unreachable through the records API, where
+     * `DbExpressionAttsContext` turns such a column into NULL before the query is built - so only a
+     * query assembled in code can ask this, and that is the case being pinned.
+     */
+    @Test
+    fun anExpressionNamingSomethingItCannotReadIsRefusedByBothBackendsTest() {
+
+        registerAtts(listOf(AttributeDef.create { withId("textAtt") }))
+
+        createRecord("textAtt" to "abc")
+        createRecord("textAtt" to "def")
+
+        val invalid = DbFindQuery.create()
+            .withPredicate(Predicates.alwaysTrue())
+            .withExpressions(mapOf("broken" to ColumnToken("noSuchColumn")))
+            .build()
+
+        assertThatThrownBy { mainCtx.dataService.find(invalid, DbFindPage.ALL, true) }
+            .describedAs("both backends refuse a column that is not there")
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("Invalid columns used in expressions")
+
+        assertThatThrownBy { mainCtx.dataService.getCount(invalid) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("Invalid columns used in expressions")
+
+        // an expression over a column that is there still works
+        val valid = DbFindQuery.create()
+            .withPredicate(Predicates.alwaysTrue())
+            .withExpressions(mapOf("fine" to ColumnToken("textAtt")))
+            .build()
+        assertThat(mainCtx.dataService.find(valid, DbFindPage.ALL, true).entities).hasSize(2)
     }
 }

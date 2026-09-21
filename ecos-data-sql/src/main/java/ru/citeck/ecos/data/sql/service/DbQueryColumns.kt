@@ -39,4 +39,40 @@ object DbQueryColumns {
         }
         return query.groupBy.filter { it != "*" && !isReadable(it, columnNames, query) }
     }
+
+    /** The columns named inside the query's expressions that it cannot read. */
+    fun getUnreadableExpressionColumns(query: DbFindQuery, columnNames: Set<String>): List<String> {
+        if (query.expressions.isEmpty()) {
+            return emptyList()
+        }
+        val unreadable = LinkedHashSet<String>()
+        query.expressions.values.forEach { expression ->
+            expression.visitColumns { token ->
+                if (!isReadable(token.name, columnNames, query)) {
+                    unreadable.add(token.name)
+                }
+            }
+        }
+        return unreadable.toList()
+    }
+
+    /**
+     * Refuses a query naming something it cannot read - loudly, because a caller assembling a query
+     * in code has made a mistake rather than asked an unanswerable question. The records DAO above
+     * answers the same situation with an empty result, having caught it before it gets here.
+     *
+     * Both backends call this, and that is the point of it living here: the in-memory backend is
+     * there to model what the SQL one does, and a query one of them refuses is not a query the
+     * other should answer.
+     */
+    fun checkQueryIsReadable(query: DbFindQuery, columnNames: Set<String>) {
+        val unreadableExpressionColumns = getUnreadableExpressionColumns(query, columnNames)
+        if (unreadableExpressionColumns.isNotEmpty()) {
+            error("Invalid columns used in expressions: $unreadableExpressionColumns")
+        }
+        val unreadableGroupBy = getUnreadableGroupBy(query, columnNames)
+        if (unreadableGroupBy.isNotEmpty()) {
+            error("Grouping by columns $unreadableGroupBy is not allowed")
+        }
+    }
 }

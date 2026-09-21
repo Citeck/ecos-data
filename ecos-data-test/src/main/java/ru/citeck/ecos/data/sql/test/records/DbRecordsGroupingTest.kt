@@ -11,6 +11,7 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
+import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
@@ -988,6 +989,56 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         val valid = queryGroupedBy("text0")
         assertThat(valid.getRecords()).hasSize(2)
         assertThat(valid.getRecords().map { it["count"].asInt() }.sorted()).containsExactly(1, 2)
+    }
+
+    /**
+     * `groupBy = ["*"]` when nothing matches.
+     *
+     * One group over everything is still a group over the records that answered, so with none
+     * answering there is no group. The count says so, and the in-memory backend says so, but
+     * PostgreSQL returned a row all the same: `"*"` emits no `GROUP BY`, and an aggregate in the
+     * select list makes the whole query an aggregate one, which yields its single row even over no
+     * input. So the two halves of the same query disagreed - `find` handed back a group the count
+     * said did not exist.
+     */
+    @Test
+    fun groupingEverythingIntoOneGroupWhenNothingMatchesTest() {
+
+        registerAtts(listOf(AttributeDef.create { withId("text0") }))
+
+        createRecord("text0" to "abc")
+        createRecord("text0" to "def")
+
+        fun query(predicate: Predicate) = baseQuery.copy {
+            withSortBy(emptyList())
+            withGroupBy(listOf("*"))
+            withQuery(predicate)
+        }
+
+        val matching = records.query(query(Predicates.eq("text0", "abc")), mapOf("count" to "count(*)"))
+        assertThat(matching.getRecords()).hasSize(1)
+        assertThat(matching.getRecords()[0]["count"].asInt()).isEqualTo(1)
+
+        val empty = records.query(query(Predicates.eq("text0", "nothing")), mapOf("count" to "count(*)"))
+        assertThat(empty.getRecords())
+            .describedAs("no record answered, so there is no group to report")
+            .isEmpty()
+
+        // the count has always said this; the two have to say the same thing
+        fun countOf(predicate: Predicate): Long {
+            return records.query(
+                query(predicate).copy { withMaxItems(0) }
+            ).getTotalCount()
+        }
+        assertThat(countOf(Predicates.eq("text0", "abc"))).isEqualTo(1)
+        assertThat(countOf(Predicates.eq("text0", "nothing"))).isEqualTo(0)
+
+        // and the same when the select list carries no aggregate at all
+        val noAggregate = records.query(
+            query(Predicates.eq("text0", "nothing")),
+            mapOf("value" to "max(noSuchColumn)")
+        )
+        assertThat(noAggregate.getRecords()).isEmpty()
     }
 
     open class TaskIdWithCount(
