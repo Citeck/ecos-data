@@ -1589,18 +1589,61 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     private fun prepareQuery(query: DbFindQuery): DbFindQuery {
+        val assocJoins = prepareAssocJoinPredicates(query.assocJoinsWithPredicate)
         return query.copy()
+            .withAssocJoinWithPredicates(assocJoins)
             .withPredicate(
                 preparePredicate(
+                    getTableContext(),
                     query.predicate,
                     query.assocTableJoins,
-                    query.assocJoinsWithPredicate,
+                    assocJoins,
                     query.expressions
                 )
             ).build()
     }
 
+    /**
+     * The inner condition of an assoc join names attributes of the *target* table, so it needs the
+     * same preparation against that table that the main predicate gets against this one - above all
+     * [getPredicateForMissingColumn], which answers a condition on a column the target does not
+     * have instead of leaving it to be dropped silently further down.
+     *
+     * Without this, `empty` over a path whose last step names an attribute the target type has
+     * never had produced no SQL at all: PostgreSQL got `WHERE <link> AND )` and refused the query,
+     * and the in-memory backend, which mirrors the same "contributes nothing" rule, quietly
+     * answered "every record that has an association".
+     *
+     * Recursive, because a join's inner condition can carry joins of its own - one per step of a
+     * longer path.
+     */
+    private fun prepareAssocJoinPredicates(joins: List<AssocJoinWithPredicate>): List<AssocJoinWithPredicate> {
+        if (joins.isEmpty()) {
+            return joins
+        }
+        return joins.map { join ->
+            val innerJoins = prepareAssocJoinPredicates(join.assocJoinsWithPredicate)
+            AssocJoinWithPredicate(
+                join.attribute,
+                join.srcColumn,
+                join.srcAttributeId,
+                join.multipleAssoc,
+                join.tableContext,
+                preparePredicate(
+                    join.tableContext,
+                    join.predicate,
+                    join.assocTableJoins,
+                    innerJoins,
+                    emptyMap()
+                ),
+                join.assocTableJoins,
+                innerJoins
+            )
+        }
+    }
+
     private fun preparePredicate(
+        tableCtx: DbTableContext,
         predicate: Predicate,
         assocTableJoins: List<AssocTableJoin>,
         assocJoinWithPredicates: List<AssocJoinWithPredicate>,
@@ -1614,8 +1657,6 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         val assocAttToColumnMap = HashMap<String, String>()
         assocTableJoins.forEach { assocAttToColumnMap[it.attribute] = it.srcColumn }
         assocJoinWithPredicates.forEach { assocAttToColumnMap[it.attribute] = it.srcColumn }
-
-        val tableCtx = getTableContext()
 
         val columnsPred = PredicateUtils.mapAttributePredicates(
             predicate,
@@ -1653,13 +1694,8 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     private fun getPredicateForMissingColumn(predicate: AttributePredicate): Predicate {
-        if (predicate is EmptyPredicate) {
-            return Predicates.alwaysTrue()
-        }
-        if (predicate is ValuePredicate &&
-            predicate.getType() == ValuePredicate.Type.EQ &&
-            predicate.getValue().isNull()
-        ) {
+        // a column that is not there holds nothing, so an emptiness question is true of every row
+        if (DbPredicateUtils.isEmptinessCheck(predicate)) {
             return Predicates.alwaysTrue()
         }
         return Predicates.alwaysFalse()

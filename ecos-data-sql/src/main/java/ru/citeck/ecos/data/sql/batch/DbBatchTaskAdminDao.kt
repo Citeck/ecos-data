@@ -3,9 +3,9 @@ package ru.citeck.ecos.data.sql.batch
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.service.DbPredicateUtils
 import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.AttributePredicate
-import ru.citeck.ecos.records2.predicate.model.EmptyPredicate
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.records3.record.dao.AbstractRecordsDao
@@ -112,7 +112,10 @@ class DbBatchTaskAdminDao(
             return PredicateUtils.mapAttributePredicates(predicate) { pred: AttributePredicate ->
                 val column = ATT_TO_COLUMN[pred.getAttribute()]
                 if (column == null) {
-                    if (pred is EmptyPredicate) ALWAYS_MATCHES else NEVER_MATCHES
+                    // an attribute this view does not have holds nothing, so an emptiness question
+                    // matches everything and anything else matches nothing - classified by what the
+                    // predicate asks, so `eq(att, null)` is answered like `empty(att)`
+                    if (DbPredicateUtils.isEmptinessCheck(pred)) ALWAYS_MATCHES else NEVER_MATCHES
                 } else {
                     val mapped = pred.copy<AttributePredicate>()
                     mapped.setAttribute(column)

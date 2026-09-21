@@ -11,6 +11,11 @@ import ru.citeck.ecos.records2.predicate.model.Predicates
 class DbFindQuery(
     val expressions: Map<String, ExpressionToken>,
     val assocTableJoins: List<AssocTableJoin>,
+    /**
+     * Joins to reach an attribute behind associations, keyed by the path walked so far. **Ordered:**
+     * a step hangs off the one before it, both in the SQL the repo emits and in the alias it derives
+     * from a key's position, so a parent must come before its child. Keep it a `LinkedHashMap`.
+     */
     val assocSelectJoins: Map<String, DbTableContext>,
     val assocJoinsWithPredicate: List<AssocJoinWithPredicate>,
     val rawTableJoins: Map<String, RawTableJoin>,
@@ -48,7 +53,7 @@ class DbFindQuery(
 
         var expressions: MutableMap<String, ExpressionToken> = HashMap()
         var assocTableJoins: MutableList<AssocTableJoin> = ArrayList()
-        var assocSelectJoins: Map<String, DbTableContext> = HashMap()
+        var assocSelectJoins: Map<String, DbTableContext> = LinkedHashMap()
         var assocJoinWithPredicates: MutableList<AssocJoinWithPredicate> = ArrayList()
         var rawTableJoins: Map<String, RawTableJoin> = emptyMap()
         var userAuthorities: Set<String> = emptySet()
@@ -60,7 +65,7 @@ class DbFindQuery(
             this.groupBy = base.groupBy
             this.expressions = HashMap(base.expressions)
             this.assocTableJoins = ArrayList(base.assocTableJoins)
-            this.assocSelectJoins = HashMap(base.assocSelectJoins)
+            this.assocSelectJoins = LinkedHashMap(base.assocSelectJoins)
             this.assocJoinWithPredicates = ArrayList(base.assocJoinsWithPredicate)
             this.rawTableJoins = base.rawTableJoins
             this.userAuthorities = base.userAuthorities
@@ -103,7 +108,7 @@ class DbFindQuery(
         }
 
         fun withAssocSelectJoins(assocSelectJoins: Map<String, DbTableContext>?): Builder {
-            this.assocSelectJoins = HashMap(assocSelectJoins ?: emptyMap())
+            this.assocSelectJoins = LinkedHashMap(assocSelectJoins ?: emptyMap())
             return this
         }
 

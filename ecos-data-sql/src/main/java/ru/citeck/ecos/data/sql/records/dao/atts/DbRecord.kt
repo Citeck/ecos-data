@@ -40,6 +40,7 @@ import ru.citeck.ecos.records3.record.atts.value.AttEdge
 import ru.citeck.ecos.records3.record.atts.value.AttValue
 import ru.citeck.ecos.records3.record.atts.value.impl.EmptyAttValue
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.time.temporal.Temporal
 import java.util.*
 
@@ -293,23 +294,40 @@ class DbRecord(
 
         val assocsTypes = queryCtx?.getAssocsTypes() ?: emptyMap()
 
-        val innerAssocAttsByAtt = HashMap<String, Map<String, AttributeDef>>()
-        fun getInnerAssocAtts(assocId: String) = innerAssocAttsByAtt.computeIfAbsent(assocId) { id ->
-            val attsById = HashMap<String, AttributeDef>(GLOBAL_ATTS)
-            val typeInfo = ctx.ecosTypeService.getTypeInfo(assocsTypes[id] ?: "")
-            typeInfo?.model?.getAllAttributes()?.forEach {
-                attsById[it.id] = it
-            }
-            attsById
+        // The attribute def at the end of a dotted key, walking a type per step. Each step is
+        // resolved through the same query context the joins were registered against, so an
+        // attribute that a type carries through an aspect or a child type is found here too -
+        // asking the type model alone would miss it and leave the value without its reference.
+        // Memoized by key: both the ref-id collection right below and the nesting further down ask
+        // for the same keys, and the walk reads type info per step.
+        val innerAttDefByKey = HashMap<String, Optional<AttributeDef>>()
+        fun getInnerAttDef(segments: List<String>): AttributeDef? {
+            return innerAttDefByKey.computeIfAbsent(segments.joinToString(".")) {
+                var typeId = assocsTypes[segments[0]] ?: ""
+                for (i in 1 until segments.size - 1) {
+                    val stepDef = if (typeId.isBlank()) {
+                        null
+                    } else {
+                        queryCtx?.getTypeInfoData(typeId)?.getAttribute(segments[i])
+                    }
+                    typeId = stepDef?.config?.get("typeRef")?.asText()?.toEntityRef()?.getLocalId() ?: ""
+                }
+                val lastSegment = segments.last()
+                val lastDef = if (typeId.isBlank()) {
+                    null
+                } else {
+                    queryCtx?.getTypeInfoData(typeId)?.getAttribute(lastSegment)
+                }
+                Optional.ofNullable(lastDef ?: GLOBAL_ATTS[lastSegment])
+            }.orElse(null)
         }
 
         if (assocsTypes.isNotEmpty()) {
             recData.forEach { recDataEntry ->
-                val dotIdx = recDataEntry.key.indexOf('.')
-                if (dotIdx != -1) {
-                    val assocId = recDataEntry.key.substring(0, dotIdx)
-                    val innerAssocAttsById = getInnerAssocAtts(assocId)
-                    val attDef = innerAssocAttsById[recDataEntry.key.substring(dotIdx + 1)]
+                if (AttStrUtils.indexOf(recDataEntry.key, '.') != -1) {
+                    // the whole key, not just its first step: a value at the end of a longer path
+                    // is an association just as often, and its ref-id has to be resolvable too
+                    val attDef = getInnerAttDef(AttStrUtils.split(recDataEntry.key, '.'))
                     if (AttributeType.isAssocLike(attDef?.type)) {
                         DbAttValueUtils.forEachLongValue(recDataEntry.value) {
                             assocIdValues.add(it)
@@ -344,21 +362,46 @@ class DbRecord(
         } else {
             val complexAtts = LinkedHashMap<String, MutableMap<String, Any?>>()
 
-            for (key in assocInnerKeys) {
+            // Shortest paths first. Both `a.b` and `a.b.c` can be selected at once once a path may
+            // be longer than one step, and they name the same slot - `a.b` wants the reference it
+            // resolved to, `a.b.c` wants a map to walk into. The reference wins, because it answers
+            // both: `a.b?id` still resolves, and `a.b.c` resolves *through* it by loading the record
+            // it points at. A map there would answer only the second.
+            val innerKeysBySegments = assocInnerKeys
+                .map { it to AttStrUtils.split(it, '.') }
+                .filter { it.second.size >= 2 }
+                .sortedBy { it.second.size }
+
+            for ((key, segments) in innerKeysBySegments) {
                 val data = recData[key]
-                val dotIdx = AttStrUtils.indexOf(key, '.')
-                val keyFirst = key.substring(0, dotIdx)
-                if (recData[keyFirst] is EntityRef) {
+                if (recData[segments[0]] is EntityRef) {
                     continue
                 }
-                val keySecond = key.substring(dotIdx + 1)
-                val innerAttDef = getInnerAssocAtts(keyFirst)[keySecond]
+                val innerAttDef = getInnerAttDef(segments)
                 val convertedData = if (innerAttDef != null) {
-                    convertValue(keySecond, innerAttDef.type, innerAttDef, data)
+                    convertValue(segments.last(), innerAttDef.type, innerAttDef, data)
                 } else {
                     data
                 }
-                complexAtts.computeIfAbsent(keyFirst) { LinkedHashMap() }[keySecond] = convertedData
+                // A flat key is a path, and the reader walks it a step at a time - so it is nested
+                // a step at a time here. Cutting at the first dot only was enough while a path
+                // could not be longer than one step.
+                var node: MutableMap<String, Any?> = complexAtts.computeIfAbsent(segments[0]) { LinkedHashMap() }
+                var nested = true
+                for (i in 1 until segments.size - 1) {
+                    val next = node.computeIfAbsent(segments[i]) { LinkedHashMap<String, Any?>() }
+                    if (next !is MutableMap<*, *>) {
+                        // a shorter path already put its reference here - the reader walks through
+                        // it to reach this one, so there is nothing to write
+                        nested = false
+                        break
+                    }
+                    @Suppress("UNCHECKED_CAST")
+                    node = next as MutableMap<String, Any?>
+                }
+                if (nested) {
+                    node[segments.last()] = convertedData
+                }
             }
             assocsInnerAdditionalAtts = complexAtts
         }

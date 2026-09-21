@@ -14,6 +14,8 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.service.DbPredicateUtils
+import ru.citeck.ecos.data.sql.service.DbQueryColumns
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeDef
@@ -268,6 +270,19 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
             withUserAuthorities(userAuthorities)
             withDelegatedAuthorities(delegationsList)
         }
+        // A name the query cannot read is a question with no answer, not a mistake to raise at the
+        // caller of a journal: an attribute renamed away leaves such a group-by behind in every
+        // saved view that used it. Refused the way the other preparing failures are - the caller
+        // gets an empty result and the reason goes to the debug log - instead of the repository
+        // raising from underneath, which it still does for a query built by hand.
+        val unreadableGroupBy = DbQueryColumns.getUnreadableGroupBy(
+            dbQuery,
+            dataService.getTableContext().getColumns().mapTo(HashSet()) { it.name }
+        )
+        if (unreadableGroupBy.isNotEmpty()) {
+            throw DbQueryPreparingException("Grouping by columns $unreadableGroupBy is not allowed")
+        }
+
         val resultMaxItems = if (page.maxItems == -1) {
             config.queryMaxItems
         } else if (config.queryMaxItems == -1) {
@@ -672,23 +687,11 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
                         ", expected ${DbColumnType.LONG}. The type model and the database schema " +
                         "are out of sync. The condition will not match any record"
                 }
-                return PredicateUtils.mapAttributePredicates(predicate, { pred ->
-                    when (pred) {
-                        is ValuePredicate -> Predicates.alwaysFalse()
-                        is EmptyPredicate -> Predicates.alwaysTrue()
-                        else -> pred
-                    }
-                }, onlyAnd = false, optimize = true, filterEmptyComposite = false)
+                return degradeToNothingLinked(predicate)
             }
         }
         if (!targetRecordsCtx.dataService.isTableExists()) {
-            return PredicateUtils.mapAttributePredicates(predicate, { pred ->
-                when (pred) {
-                    is ValuePredicate -> Predicates.alwaysFalse()
-                    is EmptyPredicate -> Predicates.alwaysTrue()
-                    else -> pred
-                }
-            }, onlyAnd = false, optimize = true, filterEmptyComposite = false)
+            return degradeToNothingLinked(predicate)
         }
 
         val assocTypeId = queryCtx.getAssocTargetTypeId(srcAttDef.id)
@@ -701,10 +704,32 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
             queryCtx
         )
         innerQueryCtx.registerAssocsTypesHints(innerPredicate)
+
+        // A path condition becomes EXISTS(SELECT 1 FROM target WHERE <linked> AND <inner>), which
+        // asks "is there a linked record for which the inner condition holds". For `empty` that is
+        // the wrong question: a path that leads nowhere holds no value either, so a record with no
+        // association at all must satisfy it, and EXISTS can never say so - it needs a row to
+        // report on.
+        //
+        // So `empty` is asked the other way round: there is no linked record holding a value.
+        // `not-empty` arrives as NOT(empty), and mapping a NotPredicate whose body maps to another
+        // NotPredicate drops both, leaving the plain EXISTS - "some linked record holds a value",
+        // which is what it means. Left as it was, the negation stayed outside the EXISTS and
+        // `not-empty` came out as "no linked record has an empty value", true of every record with
+        // no association, so the filter returned everything (COREDEV-527).
+        //
+        // An emptiness question - `empty(att)` or the `eq(att, null)` spelling of it. Left out, it
+        // reaches the join as a positive condition and drops every record with no association at
+        // all: the same asymmetry this fix is about, reached through another spelling.
+        val isEmptyPredicate = DbPredicateUtils.isEmptinessCheck(predicate)
         val innerPredData = processPredicate(
             innerQueryCtx,
             innerQueryCtx.getMainTypeInfo(),
-            innerPredicate
+            if (isEmptyPredicate) {
+                Predicates.not(innerPredicate)
+            } else {
+                innerPredicate
+            }
         )
         val assocJoinAttName = "$attribute-${queryCtx.assocJoinsCounter.incrementAndGet()}"
         val srcAttId = if (srcAttDef.multiple) {
@@ -724,11 +749,34 @@ class DbRecordsQueryDao(private val daoCtx: DbRecordsDaoCtx) {
                 innerPredData.assocJoinWithPredicates
             )
         )
-        return ValuePredicate(
+        val joinCondition = ValuePredicate(
             assocJoinAttName,
             ValuePredicate.Type.EQ,
             ""
         )
+        return if (isEmptyPredicate) {
+            Predicates.not(joinCondition)
+        } else {
+            joinCondition
+        }
+    }
+
+    /**
+     * The answer when nothing can be linked at all - the target table is not there, or the column
+     * that would join it has drifted to a type that cannot.
+     *
+     * An emptiness question is then true of every record, and every other question is true of none.
+     * Classified by what the predicate asks rather than by its class, so `eq(att, null)` is answered
+     * like `empty(att)` here as well.
+     */
+    private fun degradeToNothingLinked(predicate: AttributePredicate): Predicate? {
+        return PredicateUtils.mapAttributePredicates(predicate, { pred ->
+            if (DbPredicateUtils.isEmptinessCheck(pred)) {
+                Predicates.alwaysTrue()
+            } else {
+                Predicates.alwaysFalse()
+            }
+        }, onlyAnd = false, optimize = true, filterEmptyComposite = false)
     }
 
     private fun replaceComplexTypePredicate(predicate: Predicate, queryCtx: DbFindQueryContext): Predicate {

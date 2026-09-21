@@ -20,6 +20,7 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
+import ru.citeck.ecos.records3.record.atts.schema.utils.AttStrUtils
 import ru.citeck.ecos.records3.record.dao.impl.proxy.RecordsDaoProxy
 import ru.citeck.ecos.webapp.api.entity.EntityRef
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
@@ -48,9 +49,10 @@ class DbFindQueryContext(
     private val mainTypeInfo = getTypeInfoData(typeId)
 
     val assocRecordsCtxByAttribute = HashMap<String, Optional<DbRecordsDaoCtx>>()
-    val assocSelectJoins = HashMap<String, DbTableContext>()
+    val assocSelectJoins = LinkedHashMap<String, DbTableContext>()
     val assocSelectJoinsInvMapping = HashMap<String, String>()
     val assocSelectJoinsValueTypes = HashMap<String, KClass<*>>()
+    private val assocSelectJoinSteps = HashMap<String, AssocSelectJoinStep>()
     val expressionsCtx = DbExpressionAttsContext(this, withGrouping)
 
     val assocJoinsCounter = AtomicInteger(0)
@@ -232,9 +234,21 @@ class DbFindQueryContext(
         return recordsDaoCtx
     }
 
+    /**
+     * Turns a dotted select attribute into the name the backends understand, registering a join per
+     * step of the path on the way.
+     *
+     * A path of any length is a chain: each step joins the table the previous one landed on, keyed
+     * by the path walked so far, and the last segment is not a step but the column to read from the
+     * table the chain ends on - `a.b.c` joins `a` and `a.b`, then reads `c`. The registration order
+     * is the join order and [assocSelectJoins] keeps it - a step cannot be joined before the one it
+     * hangs off.
+     */
     fun prepareAssocSelectJoin(att: String, strict: Boolean): String? {
-        val dotIdx = att.indexOf('.')
-        if (dotIdx == -1) {
+        // quote-aware, because an attribute may carry a dot inside quotes and the unquoting three
+        // lines down says as much - the rest of the pipeline walks these keys with the same split
+        val segments = AttStrUtils.split(att, '.')
+        if (segments.size < 2) {
             return DbRecord.ATTS_MAPPING.getOrDefault(att, att)
         }
         fun printError(msg: () -> String) {
@@ -245,18 +259,8 @@ class DbFindQueryContext(
             }
         }
 
-        val srcAttName = att.substring(0, dotIdx)
-        val targetAttName = att.substring(dotIdx + 1)
-        if (targetAttName.contains('.')) {
-            printError { "Assoc select can't be executed for multiple joins. Attribute: '$att'" }
-            return null
-        }
-        val recordsCtx = getAssocRecordsCtxToJoin(srcAttName)
-        if (recordsCtx == null) {
-            printError { "Assoc select can't be executed for attribute: '$srcAttName'" }
-            return null
-        }
-        val tableCtx: DbTableContext = recordsCtx.dataService.getTableContext()
+        val targetAttName = segments.last()
+        val step = registerAssocSelectJoinStep(segments.dropLast(1), att, ::printError) ?: return null
 
         val unquotedAttName = if (targetAttName.startsWith("\"") && targetAttName.length > 1) {
             targetAttName.substring(1, targetAttName.length - 1)
@@ -264,13 +268,96 @@ class DbFindQueryContext(
             targetAttName
         }
         val mappedTargetColumnName = DbRecord.ATTS_MAPPING.getOrDefault(unquotedAttName, unquotedAttName)
-        if (!tableCtx.hasColumn(mappedTargetColumnName)) {
+        if (!step.tableCtx.hasColumn(mappedTargetColumnName)) {
             printError {
                 "Assoc select can't be executed for nonexistent inner " +
                     "attribute '$unquotedAttName'. Full attribute: '$att'"
             }
             return null
         }
+
+        registerJoinsOfStep(step)
+
+        val result = "${step.joinKey}.$mappedTargetColumnName"
+        if (result != att) {
+            assocSelectJoinsInvMapping[result] = att
+        }
+        val valueType = step.tableCtx.getEntityValueTypeForColumn(mappedTargetColumnName)
+        if (valueType != Any::class) {
+            assocSelectJoinsValueTypes[result] = valueType
+        }
+
+        return result
+    }
+
+    /**
+     * Puts the joins of a walked path into [assocSelectJoins], the one it hangs off first, so that
+     * the map keeps them in join order.
+     *
+     * Called once the attribute at the end of the path has answered, and not before: a path walked
+     * for an attribute the target does not have is refused, and a join left behind by that refusal
+     * is emitted all the same. When the target table has not been created yet - a type that has
+     * never held a record - PostgreSQL then fails the query with "relation ... does not exist"
+     * instead of quietly dropping an unresolvable sort. Only what this path added is added: a join
+     * another attribute already registered keeps the position it got then.
+     */
+    private fun registerJoinsOfStep(step: AssocSelectJoinStep) {
+        step.parent?.let { registerJoinsOfStep(it) }
+        assocSelectJoins.putIfAbsent(step.joinKey, step.tableCtx)
+    }
+
+    /**
+     * The join for [path] - every step of it - or null when some step cannot be joined. Kept per
+     * path, so a query naming several attributes behind the same path walks it once.
+     */
+    private fun registerAssocSelectJoinStep(
+        pathSegments: List<String>,
+        fullAtt: String,
+        printError: (() -> String) -> Unit
+    ): AssocSelectJoinStep? {
+        val path = pathSegments.joinToString(".")
+        // Not computeIfAbsent: evaluating a step walks the step before it, which reads and writes
+        // this same map, and a nested computeIfAbsent on a HashMap raises
+        // ConcurrentModificationException.
+        val cached = assocSelectJoinSteps[path]
+        if (cached != null) {
+            return cached
+        }
+        // Only a successful step is kept. Whether a failure throws or stays quiet belongs to the
+        // caller that asked - remembering the failure would hand a later strict caller the silent
+        // answer a non-strict one settled for, and a strict caller that gets null instead of an
+        // exception goes on to register an empty column name.
+        val step = evalAssocSelectJoinStep(pathSegments, fullAtt, printError)
+        if (step != null) {
+            assocSelectJoinSteps[path] = step
+        }
+        return step
+    }
+
+    private fun evalAssocSelectJoinStep(
+        pathSegments: List<String>,
+        fullAtt: String,
+        printError: (() -> String) -> Unit
+    ): AssocSelectJoinStep? {
+
+        val parentStep = if (pathSegments.size == 1) {
+            null
+        } else {
+            registerAssocSelectJoinStep(pathSegments.dropLast(1), fullAtt, printError) ?: return null
+        }
+        val srcAttName = pathSegments.last()
+
+        // the context that knows the model of the table this step starts from, and that table
+        val srcQueryCtx = parentStep?.queryCtx ?: this
+        val srcTableCtx = parentStep?.tableCtx ?: ctx.dataService.getTableContext()
+
+        val targetTypeId = srcQueryCtx.getAssocTargetTypeId(srcAttName)
+        val recordsCtx = srcQueryCtx.getAssocRecordsCtxToJoin(srcAttName)
+        if (recordsCtx == null) {
+            printError { "Assoc select can't be executed for attribute: '$srcAttName'" }
+            return null
+        }
+        val tableCtx: DbTableContext = recordsCtx.dataService.getTableContext()
 
         val mappedSrcAtt = DbRecord.ATTS_MAPPING.getOrDefault(srcAttName, srcAttName)
 
@@ -281,7 +368,7 @@ class DbFindQueryContext(
         // not exist: bigint = ...", failing the entire query. Skipping the registration here,
         // rather than skipping the JOIN when building SQL, also keeps the "asj__" alias out of
         // the select list and out of expressions.
-        val srcColumn = ctx.dataService.getTableContext().getColumnByName(mappedSrcAtt)
+        val srcColumn = srcTableCtx.getColumnByName(mappedSrcAtt)
         if (srcColumn != null && (srcColumn.type != DbColumnType.LONG || srcColumn.multiple)) {
             val describeColumnType = {
                 "${srcColumn.type}" + if (srcColumn.multiple) "[] (multiple)" else ""
@@ -291,34 +378,41 @@ class DbFindQueryContext(
             // still has to see - once - why a journal column silently went empty.
             DbReadToleranceLog.warnOnce(
                 log,
-                "assoc-select-join-skipped-${ctx.dataService.getTableContext().getTableRef()}-$mappedSrcAtt"
+                "assoc-select-join-skipped-${srcTableCtx.getTableRef()}-$mappedSrcAtt"
             ) {
                 "Assoc select is skipped for attribute '$srcAttName' in table " +
-                    "${ctx.dataService.getTableContext().getTableRef()}: column type is " +
+                    "${srcTableCtx.getTableRef()}: column type is " +
                     "${describeColumnType()}, expected ${DbColumnType.LONG}. The type model and " +
                     "the database schema are out of sync. Attribute value will be empty"
             }
             printError {
                 "Assoc select can't be executed for attribute '$srcAttName': column type is " +
                     "${describeColumnType()}, expected ${DbColumnType.LONG}. The type model and " +
-                    "the database schema are out of sync. Full attribute: '$att'"
+                    "the database schema are out of sync. Full attribute: '$fullAtt'"
             }
             return null
         }
 
-        assocSelectJoins[mappedSrcAtt] = tableCtx
+        val joinKey = if (parentStep == null) mappedSrcAtt else "${parentStep.joinKey}.$mappedSrcAtt"
 
-        val result = "$mappedSrcAtt.$mappedTargetColumnName"
-        if (result != att) {
-            assocSelectJoinsInvMapping[result] = att
-        }
-        val valueType = tableCtx.getEntityValueTypeForColumn(mappedTargetColumnName)
-        if (valueType != Any::class) {
-            assocSelectJoinsValueTypes[result] = valueType
-        }
-
-        return result
+        return AssocSelectJoinStep(
+            joinKey,
+            tableCtx,
+            DbFindQueryContext(recordsCtx, targetTypeId, false, srcQueryCtx),
+            parentStep
+        )
     }
+
+    /**
+     * One walked step of a select path: the join registered for it, the table it lands on, and the
+     * context that knows that table's model - the next step is resolved against it.
+     */
+    private class AssocSelectJoinStep(
+        val joinKey: String,
+        val tableCtx: DbTableContext,
+        val queryCtx: DbFindQueryContext,
+        val parent: AssocSelectJoinStep?
+    )
 
     fun getTypeInfoData(typeId: String): DbQueryTypeInfoData {
         if (parent != null) {
@@ -396,9 +490,6 @@ class DbFindQueryContext(
         override fun getAttribute(attId: String): AttributeDef? {
             return attributesById.computeIfAbsent(attId) {
                 var attDef = evalAttDefFromAspects(it)
-                if (attDef == null) {
-                    attDef = evalAttDefFromAspects(it)
-                }
                 if (attDef == null) {
                     attDef = typeService.getAttDefFromChildrenTypes(typeId, it)
                 }

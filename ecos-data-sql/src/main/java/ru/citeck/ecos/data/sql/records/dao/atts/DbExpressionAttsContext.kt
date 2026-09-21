@@ -112,6 +112,39 @@ class DbExpressionAttsContext(
                 expression = ExpressionTools.resolveAggregateFunctionsForNonGroupedQuery(expression)
             }
         }
+        // Before the columns below are looked up, because after that a column which is not there
+        // and a `null` the caller wrote are the same token: `max(null)` is a question with an
+        // answer and that answer is NULL, while an aggregate over an attribute that does not exist
+        // has nothing to compute. Told apart here, where the argument is still a column.
+        //
+        // Untyped NULL is what forced this: PostgreSQL refuses `sum(null)` with "function
+        // sum(unknown) is not unique" and fails the whole grouped query, where the in-memory
+        // backend quietly answered null. Only grouped queries reach it - without grouping the
+        // aggregates are resolved away above, before their argument is looked up at all.
+        //
+        // The argument is replaced and the function kept: `groupBy = ["*"]` emits no GROUP BY and
+        // leans on the select list still holding an aggregate to fold the rows into one group, so
+        // a constant in place of the aggregate turns that one row back into a row per record.
+        // Putting the answer inside works because it is a constant: max(0), sum(0), avg(0),
+        // bit_and(0), bool_and(true) all come out as that constant over any group. `count` is the
+        // exception and is left alone - its argument becomes NULL below and `count(null)` already
+        // answers 0, while `count(0)` would count the rows.
+        expression = ExpressionTools.mapTokens(expression, FunctionToken::class.java) { token ->
+            val arg = token.args.singleOrNull()
+            if (arg is ColumnToken &&
+                token.name != "count" &&
+                ExpressionTools.AGGREGATE_FUNCTIONS.contains(token.name) &&
+                !isColumnReadable(arg.name)
+            ) {
+                FunctionToken(
+                    token.name,
+                    listOf(ExpressionTools.resolveAggregateFunctionForNonExistentColumn(token))
+                )
+            } else {
+                token
+            }
+        }
+
         expression = ExpressionTools.mapTokens(expression, ExpressionToken::class.java) { token ->
             if (token is ColumnToken) {
                 val newColumnName = DbRecord.ATTS_MAPPING.getOrDefault(token.name, token.name)
@@ -207,6 +240,20 @@ class DbExpressionAttsContext(
         }
         expressionAliasesByAttribute[attribute] = alias
         return alias
+    }
+
+    /**
+     * Whether a column an expression names can be read at all - a column of this table, or an
+     * attribute behind an association this query can join. Asked the same way the mapping in
+     * [register] resolves it, so the two cannot disagree about which name has no value.
+     */
+    private fun isColumnReadable(name: String): Boolean {
+        val mappedName = DbRecord.ATTS_MAPPING.getOrDefault(name, name)
+        return if (mappedName.contains('.')) {
+            !queryContext.prepareAssocSelectJoin(mappedName, false).isNullOrBlank()
+        } else {
+            queryContext.getTableContext().hasColumn(mappedName)
+        }
     }
 
     fun getExpressions(): Map<String, ExpressionToken> {

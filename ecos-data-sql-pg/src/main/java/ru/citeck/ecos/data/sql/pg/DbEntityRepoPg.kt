@@ -19,8 +19,10 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
 import ru.citeck.ecos.data.sql.repo.find.DbFindSort
+import ru.citeck.ecos.data.sql.service.DbQueryColumns
 import ru.citeck.ecos.data.sql.service.RawTableJoin
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
+import ru.citeck.ecos.data.sql.service.assocs.AssocSelectJoins
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
 import ru.citeck.ecos.data.sql.service.expression.token.*
 import ru.citeck.ecos.data.sql.type.DbTypeUtils
@@ -55,6 +57,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         private const val IS_NULL = "IS NULL"
 
         private const val COUNT_COLUMN = "COUNT(*)"
+
+        // one group either exists or does not - see getCountImpl
+        private const val COUNT_COLUMN_CAPPED_AT_ONE = "LEAST(COUNT(*), 1)"
+
+        private const val GROUPED_COUNT_ALIAS = "grouped"
 
         private const val SEARCH_DISABLED_COLUMN = "__search__disabled__"
 
@@ -211,18 +218,22 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         asjAliases: Map<String, String>
     ): Map<String, Any?> {
         val result = LinkedHashMap<String, Any?>()
+
+        // The type a column's value is read back as. A multiple column holds an array and has to be
+        // asked for one - grouping by such a column used to ask for the scalar type and failed the
+        // whole query with "Can't convert class kotlin.Array to class kotlin.Long".
+        fun readAndConvert(column: DbColumnDef): Any? {
+            val value = readColumnValue(row, column.name, prolepticDateColumns) ?: return null
+            var expectedType = column.type.type
+            if (column.multiple && column.type != DbColumnType.JSON) {
+                expectedType = DbTypeUtils.getArrayType(expectedType)
+            }
+            return typesConverter.convert(value, expectedType)
+        }
+
         if (groupBy.isEmpty()) {
             columns.forEach { column ->
-                val value = readColumnValue(row, column.name, prolepticDateColumns)
-                result[column.name] = if (value != null) {
-                    var expectedType = column.type.type
-                    if (column.multiple && column.type != DbColumnType.JSON) {
-                        expectedType = DbTypeUtils.getArrayType(expectedType)
-                    }
-                    typesConverter.convert(value, expectedType)
-                } else {
-                    null
-                }
+                result[column.name] = readAndConvert(column)
             }
             selectExpressions.forEach {
                 result[it] = row.getObject(it)
@@ -235,13 +246,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                     if (alias != null) {
                         result[it] = row.getObject(alias)
                     } else {
-                        val value = readColumnValue(row, it, prolepticDateColumns)
-                        result[it] = if (value != null) {
-                            val column = columnByName[it]!!
-                            typesConverter.convert(value, column.type.type)
-                        } else {
-                            null
-                        }
+                        result[it] = columnByName[it]?.let { column -> readAndConvert(column) }
                     }
                 }
             }
@@ -702,7 +707,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val sqlExpressionsByAlias = getSqlExpressionsByAliases(
             RECORD_TABLE_ALIAS,
             query.expressions,
-            query.rawTableJoins
+            query.rawTableJoins,
+            query.assocSelectJoins
         )
 
         val params = mutableListOf<Any?>()
@@ -725,6 +731,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             params,
             permsColumn,
             query.groupBy,
+            query.expressions,
+            sqlExpressionsByAlias,
             query.assocSelectJoins,
             query.rawTableJoins,
             query.userAuthorities,
@@ -735,7 +743,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
     private fun getSqlExpressionsByAliases(
         table: String,
         expressions: Map<String, ExpressionToken>,
-        rawTableJoins: Map<String, RawTableJoin>
+        rawTableJoins: Map<String, RawTableJoin>,
+        assocSelectJoins: Map<String, DbTableContext>
     ): Map<String, String> {
 
         if (expressions.isEmpty()) {
@@ -765,8 +774,13 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                         if (dotIdx > 0) {
                             val joinSrcAtt = token.name.substring(0, dotIdx)
                             if (!rawTableJoins.containsKey(joinSrcAtt)) {
-                                val joinTgtAtt = token.name.substring(dotIdx + 1)
-                                "\"asj__$joinSrcAtt\".\"$joinTgtAtt\""
+                                val split = AssocSelectJoins.splitColumn(token.name, assocSelectJoins.keys)
+                                    ?: error(
+                                        "Assoc select join is not registered for expression " +
+                                            "column '${token.name}'"
+                                    )
+                                val joinAlias = assocSelectJoinAlias(split.first, assocSelectJoins.keys)
+                                "\"$joinAlias\".\"${split.second}\""
                             } else {
                                 token.name.split(".").joinToString(".") { "\"$it\"" }
                             }
@@ -783,6 +797,31 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         return sqlExpressionsByAlias
     }
 
+    /**
+     * Refuses a query naming something it cannot read - loudly, because a caller building a query
+     * by hand has made a mistake rather than asked an unanswerable question. The records DAO above
+     * answers the same situation with an empty result, having caught it before it gets here.
+     */
+    private fun checkQueryColumnsAreReadable(columnNames: Set<String>, query: DbFindQuery) {
+        if (query.expressions.isNotEmpty()) {
+            val invalidColumns = LinkedHashSet<String>()
+            query.expressions.values.forEach {
+                it.visitColumns { token ->
+                    if (!DbQueryColumns.isReadable(token.name, columnNames, query)) {
+                        invalidColumns.add(token.name)
+                    }
+                }
+            }
+            if (invalidColumns.isNotEmpty()) {
+                error("Invalid columns used in expressions: $invalidColumns")
+            }
+        }
+        val invalidGroupBy = DbQueryColumns.getUnreadableGroupBy(query, columnNames)
+        if (invalidGroupBy.isNotEmpty()) {
+            error("Grouping by columns $invalidGroupBy is not allowed")
+        }
+    }
+
     private fun getPermsColumn(context: DbTableContext): String {
         if (disableQueryPermsCheck.get()) {
             return ""
@@ -796,6 +835,22 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
     }
 
+    /**
+     * How many records - or, when the query groups, how many groups - answer the condition.
+     *
+     * A grouped query returns a row per group, so counting its rows is the only reading of "how
+     * many" that matches what the caller then pages through. `SELECT COUNT(*) ... GROUP BY x` does
+     * not answer that: it returns one row per group, each holding the size of that group, and
+     * reading the first of them - with no ORDER BY to say which one that is - reported the size of
+     * an arbitrary group as the total. The grouped select is therefore counted as a whole.
+     *
+     * `groupBy = ["*"]` collapses everything into one group, and the count answers 0 for it when
+     * nothing matches - hence capped at one rather than a subquery. That is what this count says,
+     * not a contract the select above follows: `groupBy = ["*"]` emits no GROUP BY, so on an empty
+     * match PostgreSQL still returns the one row its implicit aggregation produces while the count
+     * says there are no groups. The two have disagreed there since before this, and the in-memory
+     * backend sides with the count.
+     */
     private fun getCountImpl(
         context: DbTableContext,
         table: String,
@@ -803,27 +858,55 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         params: List<Any?>,
         permsColumn: String,
         groupBy: List<String>,
+        expressions: Map<String, ExpressionToken>,
+        sqlExpressionsByAlias: Map<String, String>,
         assocSelectJoins: Map<String, DbTableContext>,
         rawTableJoins: Map<String, RawTableJoin>,
         userAuthorities: Set<String>,
         delegatedAuthorities: List<Pair<Set<Long>, Set<String>>>
     ): Long {
 
-        val selectQuery = createSelectQuery(
-            context,
-            table,
-            COUNT_COLUMN,
-            permsColumn,
-            sqlCondition,
-            emptyList(),
-            DbFindPage.ALL,
-            emptyMap(),
-            groupBy,
-            assocSelectJoins,
-            rawTableJoins,
-            userAuthorities,
-            delegatedAuthorities
-        )
+        val isGroupAll = groupBy.size == 1 && groupBy[0] == "*"
+
+        val selectQuery = if (groupBy.isEmpty() || isGroupAll) {
+            createSelectQuery(
+                context,
+                table,
+                if (isGroupAll) COUNT_COLUMN_CAPPED_AT_ONE else COUNT_COLUMN,
+                permsColumn,
+                sqlCondition,
+                emptyList(),
+                DbFindPage.ALL,
+                expressions,
+                emptyList(),
+                assocSelectJoins,
+                rawTableJoins,
+                userAuthorities,
+                delegatedAuthorities
+            )
+        } else {
+            // built by the same call the query itself uses, so a name behind an association is
+            // registered as a join here exactly as it is there
+            val groupedQuery = createSelectQuery(
+                context,
+                table,
+                context.getColumns(),
+                permsColumn,
+                sqlCondition,
+                emptyList(),
+                DbFindPage.ALL,
+                groupBy,
+                expressions,
+                sqlExpressionsByAlias,
+                assocSelectJoins,
+                rawTableJoins,
+                HashMap(),
+                getSelectExpressionsForGrouping(groupBy, expressions, sqlExpressionsByAlias),
+                userAuthorities,
+                delegatedAuthorities
+            )
+            "SELECT $COUNT_COLUMN FROM ($groupedQuery) \"$GROUPED_COUNT_ALIAS\""
+        }
         if (selectQuery.contains(WHERE_ALWAYS_FALSE)) {
             return 0
         }
@@ -835,6 +918,30 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 0
             }
         }
+    }
+
+    /**
+     * The expression aliases a grouped select may carry: every one of them unless grouping leaves
+     * it undefined, which is what PostgreSQL would refuse to run.
+     */
+    private fun getSelectExpressionsForGrouping(
+        groupBy: List<String>,
+        expressions: Map<String, ExpressionToken>,
+        sqlExpressionsByAlias: Map<String, String>
+    ): Set<String> {
+        val selectExpressions = HashSet(sqlExpressionsByAlias.keys)
+        if (groupBy.isEmpty()) {
+            return selectExpressions
+        }
+        val groupByExpressions = groupBy.mapTo(HashSet()) { expressions[it] ?: ColumnToken(it) }
+        expressions.forEach {
+            if (!groupBy.contains(it.key) &&
+                !isValidExpressionForQuerySelectAttWithGrouping(groupByExpressions, it.value)
+            ) {
+                selectExpressions.remove(it.key)
+            }
+        }
+        return selectExpressions
     }
 
     override fun find(
@@ -849,8 +956,14 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         if (columns.isEmpty()) {
             return DbFindRes(emptyList(), 0)
         }
+        // before the count leaves through the branch below: it builds its own query from the same
+        // names, and without this it reached the database with a column that is not there
+        checkQueryColumnsAreReadable(columns.mapTo(HashSet()) { it.name }, query)
         if (page.maxItems == 0) {
-            return DbFindRes(emptyList(), getCount(context, query))
+            // asked for no items, so the count is the whole answer - but still only when it was
+            // asked for. The in-memory backend has always read the flag here, and a caller that
+            // says it does not need the total should not pay for one.
+            return DbFindRes(emptyList(), if (withTotalCount) getCount(context, query) else 0)
         }
         val typesConverter = context.getTypesConverter()
 
@@ -867,45 +980,7 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         }
 
         val columnsByName = columns.associateBy { it.name }
-
-        fun isColumnValid(name: String): Boolean {
-            if (columnsByName.containsKey(name) || query.expressions.containsKey(name)) {
-                return true
-            }
-            val dotIdx = name.indexOf('.')
-            if (dotIdx == -1) {
-                return false
-            }
-            val nameBeforeDot = name.substring(0, dotIdx)
-            if (query.assocSelectJoins.containsKey(nameBeforeDot)) {
-                return true
-            }
-            if (query.rawTableJoins.containsKey(nameBeforeDot)) {
-                return true
-            }
-            return false
-        }
-
-        if (query.expressions.isNotEmpty()) {
-            val invalidColumns = LinkedHashSet<String>()
-            query.expressions.values.forEach {
-                it.visitColumns { token ->
-                    if (!isColumnValid(token.name)) {
-                        invalidColumns.add(token.name)
-                    }
-                }
-            }
-            if (invalidColumns.isNotEmpty()) {
-                error("Invalid columns used in expressions: $invalidColumns")
-            }
-        }
         val queryGroupBy = ArrayList(query.groupBy)
-        if (queryGroupBy.isNotEmpty()) {
-            val invalidColumns = queryGroupBy.filter { it != "*" && !isColumnValid(it) }
-            if (invalidColumns.isNotEmpty()) {
-                error("Grouping by columns $invalidColumns is not allowed")
-            }
-        }
 
         val repoAssocJoins = query.assocTableJoins.associateBy { it.attribute }
         val repoAssocTableJoins = query.assocJoinsWithPredicate.associateBy { it.attribute }
@@ -914,7 +989,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         val sqlExpressionsByAlias = getSqlExpressionsByAliases(
             RECORD_TABLE_ALIAS,
             query.expressions,
-            rawTableJoins
+            rawTableJoins,
+            query.assocSelectJoins
         )
 
         val params = mutableListOf<Any?>()
@@ -931,19 +1007,11 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 params
             )
 
-        val selectExpressions = HashSet<String>(sqlExpressionsByAlias.keys)
-        if (queryGroupBy.isNotEmpty()) {
-            val groupByExpressions = queryGroupBy.mapTo(HashSet()) {
-                query.expressions[it] ?: ColumnToken(it)
-            }
-            query.expressions.forEach {
-                if (!queryGroupBy.contains(it.key) &&
-                    !isValidExpressionForQuerySelectAttWithGrouping(groupByExpressions, it.value)
-                ) {
-                    selectExpressions.remove(it.key)
-                }
-            }
-        }
+        val selectExpressions = getSelectExpressionsForGrouping(
+            queryGroupBy,
+            query.expressions,
+            sqlExpressionsByAlias
+        )
 
         val asjAliases = HashMap<String, String>()
         val selectQuery = createSelectQuery(
@@ -996,6 +1064,8 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 params,
                 permsColumn,
                 query.groupBy,
+                query.expressions,
+                sqlExpressionsByAlias,
                 query.assocSelectJoins,
                 query.rawTableJoins,
                 query.userAuthorities,
@@ -1028,18 +1098,14 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
 
         val asjAliasesCounter = AtomicInteger()
         fun registerAsjColumn(name: String): String {
-            val dotIdx = name.indexOf('.')
-            if (dotIdx == -1) {
-                return name
-            }
+            val split = AssocSelectJoins.splitColumn(name, assocSelectJoins.keys) ?: return name
             return asjAliases.computeIfAbsent(name) {
-                val joinSrcAtt = name.substring(0, dotIdx)
-                val joinTgtAtt = name.substring(dotIdx + 1)
+                val joinSrcAtt = split.first
+                val joinTgtAtt = split.second
                 val alias = "$VIRTUAL_COLUMN_PREFIX${asjAliasesCounter.getAndIncrement()}"
                 selectColumnsStr.append(' ')
                     .append('"')
-                    .append("asj__")
-                    .append(joinSrcAtt)
+                    .append(assocSelectJoinAlias(joinSrcAtt, assocSelectJoins.keys))
                     .append("\".\"")
                     .append(joinTgtAtt)
                     .append('"')
@@ -1157,10 +1223,19 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             .append(selectColumns)
             .append(" FROM ${context.getTableRef().fullName} \"$table\"")
 
-        for ((srcColumn, targetCtx) in assocSelectJoins) {
-            val alias = "\"asj__$srcColumn\""
+        // A join key is the path walked so far, so a step whose key still has a dot hangs off the
+        // join named by everything before the last one rather than off the main table. The map
+        // keeps registration order, and a step is always registered after the one it hangs off.
+        val joinKeys = assocSelectJoins.keys.toList()
+        for ((joinKey, targetCtx) in assocSelectJoins) {
+            val alias = "\"${assocSelectJoinAlias(joinKey, joinKeys)}\""
             query.append(" LEFT JOIN ${targetCtx.getTableRef().fullName} $alias ON $alias.${DbEntity.REF_ID} = ")
-            appendRecordColumnName(query, table, srcColumn)
+            val srcSplit = AssocSelectJoins.splitColumn(joinKey, assocSelectJoins.keys)
+            if (srcSplit == null) {
+                appendRecordColumnName(query, table, joinKey)
+            } else {
+                appendRecordColumnName(query, assocSelectJoinAlias(srcSplit.first, joinKeys), srcSplit.second)
+            }
         }
 
         for ((alias, join) in rawTableJoins) {
@@ -1201,28 +1276,28 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
         tableJoin: AssocJoinWithPredicate,
         queryParams: MutableList<Any?>
     ) {
+        // Nothing linked can satisfy a condition nothing satisfies, and the EXISTS below would
+        // otherwise be built around no condition at all, which reads as "has a link".
+        if (PredicateUtils.isAlwaysFalse(tableJoin.predicate)) {
+            query.append(ALWAYS_FALSE_CONDITION)
+            return
+        }
+
         val targetTableName = "$table$RECORD_TABLE_ALIAS"
         val targetTable = tableJoin.tableContext.getTableRef()
 
-        query.append("EXISTS(SELECT 1 FROM ")
-        if (tableJoin.multipleAssoc) {
-            query.append(targetTable.withTable(DbAssocEntity.MAIN_TABLE).fullName)
-                .append(" assoc INNER JOIN ")
-                .append(targetTable.fullName).append(" ").append(targetTableName)
-                .append(" ON assoc.\"${DbAssocEntity.SOURCE_ID}\"=\"$table\".\"${DbEntity.REF_ID}\" ")
-                .append("AND assoc.\"${DbAssocEntity.ATTRIBUTE}\"=${tableJoin.srcAttributeId} ")
-                .append("AND assoc.\"${DbAssocEntity.TARGET_ID}\"=\"${targetTableName}\".\"${DbEntity.REF_ID}\"")
-                .append(" WHERE ")
-        } else {
-            query.append("${targetTable.fullName} $targetTableName WHERE ")
-                .append("\"$table\".\"${tableJoin.srcColumn}\"=\"${targetTableName}\".\"${DbEntity.REF_ID}\" AND ")
-        }
         val assocJoins = tableJoin.assocTableJoins.associateBy { it.attribute }
         val assocTableJoins = tableJoin.assocJoinsWithPredicate.associateBy { it.attribute }
 
-        toSqlCondition(
+        // Rendered before the rest is written, because a condition may produce nothing - an
+        // always-true one, or one the renderer cannot express - and then there is no condition to
+        // introduce. Left to be appended after a `WHERE`/`AND` already written, that produced
+        // `... AND )` and PostgreSQL refused the whole query. Safe to render out of order: the
+        // fragments written below take no query parameters, so this adds none out of turn.
+        val condition = StringBuilder()
+        val hasCondition = toSqlCondition(
             tableJoin.tableContext,
-            query,
+            condition,
             targetTableName,
             tableJoin.predicate,
             assocJoins,
@@ -1232,6 +1307,25 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
             emptyMap(),
             queryParams
         )
+
+        query.append("EXISTS(SELECT 1 FROM ")
+        if (tableJoin.multipleAssoc) {
+            query.append(targetTable.withTable(DbAssocEntity.MAIN_TABLE).fullName)
+                .append(" assoc INNER JOIN ")
+                .append(targetTable.fullName).append(" ").append(targetTableName)
+                .append(" ON assoc.\"${DbAssocEntity.SOURCE_ID}\"=\"$table\".\"${DbEntity.REF_ID}\" ")
+                .append("AND assoc.\"${DbAssocEntity.ATTRIBUTE}\"=${tableJoin.srcAttributeId} ")
+                .append("AND assoc.\"${DbAssocEntity.TARGET_ID}\"=\"${targetTableName}\".\"${DbEntity.REF_ID}\"")
+            if (hasCondition) {
+                query.append(" WHERE ").append(condition)
+            }
+        } else {
+            query.append("${targetTable.fullName} $targetTableName WHERE ")
+                .append("\"$table\".\"${tableJoin.srcColumn}\"=\"${targetTableName}\".\"${DbEntity.REF_ID}\"")
+            if (hasCondition) {
+                query.append(" AND ").append(condition)
+            }
+        }
         query.append(")")
     }
 
@@ -1950,6 +2044,21 @@ open class DbEntityRepoPg internal constructor() : DbEntityRepo {
                 return false
             }
         }
+    }
+
+    /**
+     * The table alias of an assoc-select join.
+     *
+     * Its position in the (ordered) join map rather than the path it stands for: a path is as long
+     * as the attributes it names, and PostgreSQL truncates an identifier at 63 bytes without
+     * complaint - two joins whose paths share a long enough prefix would end up as the same alias.
+     */
+    private fun assocSelectJoinAlias(joinKey: String, joinKeys: Collection<String>): String {
+        val index = joinKeys.indexOf(joinKey)
+        if (index == -1) {
+            error("Assoc select join is not registered: '$joinKey'")
+        }
+        return "asj__$index"
     }
 
     private fun appendRecordColumnName(query: StringBuilder, table: String, name: String) {

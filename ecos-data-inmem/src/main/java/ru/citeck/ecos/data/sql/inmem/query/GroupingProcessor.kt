@@ -38,12 +38,38 @@ class GroupingProcessor(
         }
 
         val buckets = LinkedHashMap<List<Any?>, MutableList<RowEvalContext>>()
+        // What a bucket is keyed by is not what it reports: a multiple column holds an array, and
+        // an array compares by identity, so two rows holding equal arrays would never meet in the
+        // same bucket. PostgreSQL groups such rows together - it compares arrays by their contents
+        // and in order - so the key is taken as nested lists, while the values the group reports
+        // stay as they were read.
+        val valuesByKey = LinkedHashMap<List<Any?>, List<Any?>>()
         for (row in rows) {
-            val key = groupBy.map { row.resolveValue(it) }
-            buckets.getOrPut(key) { ArrayList() }.add(row)
+            val values = groupBy.map { row.resolveValue(it) }
+            val key = values.map { asComparableGroupKey(it) }
+            buckets.getOrPut(key) {
+                valuesByKey[key] = values
+                ArrayList()
+            }.add(row)
         }
         return buckets.map { (key, bucketRows) ->
-            GroupResultRow(key, bucketRows, query, queryCtx, selectExpressions, groupBy)
+            GroupResultRow(valuesByKey.getValue(key), bucketRows, query, queryCtx, selectExpressions, groupBy)
+        }
+    }
+
+    /** An array turned into nested lists, so that equal contents compare equal. */
+    private fun asComparableGroupKey(value: Any?): Any? {
+        return when (value) {
+            is Array<*> -> value.map { asComparableGroupKey(it) }
+            is LongArray -> value.toList()
+            is IntArray -> value.toList()
+            is ShortArray -> value.toList()
+            is ByteArray -> value.toList()
+            is DoubleArray -> value.toList()
+            is FloatArray -> value.toList()
+            is BooleanArray -> value.toList()
+            is CharArray -> value.toList()
+            else -> value
         }
     }
 

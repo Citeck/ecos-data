@@ -9,8 +9,11 @@ import ru.citeck.ecos.data.sql.repo.entity.DbEntity
 import ru.citeck.ecos.data.sql.repo.find.DbFindPage
 import ru.citeck.ecos.data.sql.repo.find.DbFindQuery
 import ru.citeck.ecos.data.sql.repo.find.DbFindRes
+import ru.citeck.ecos.data.sql.service.DbQueryColumns
 import ru.citeck.ecos.data.sql.service.assocs.AssocJoinWithPredicate
+import ru.citeck.ecos.data.sql.service.assocs.AssocSelectJoins
 import ru.citeck.ecos.data.sql.service.assocs.AssocTableJoin
+import ru.citeck.ecos.records2.predicate.PredicateUtils
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
 
 /**
@@ -41,6 +44,13 @@ class InMemQueryEngine {
         val columns = context.getColumns()
         if (columns.isEmpty()) {
             return DbFindRes(emptyList(), 0)
+        }
+        // the SQL backend refuses such a query rather than answering it, and this one models that
+        // backend - left out, grouping by a name that is not there quietly put every record into
+        // one group here while PostgreSQL raised
+        val invalidGroupBy = DbQueryColumns.getUnreadableGroupBy(query, columns.mapTo(HashSet()) { it.name })
+        if (invalidGroupBy.isNotEmpty()) {
+            error("Grouping by columns $invalidGroupBy is not allowed")
         }
 
         val ds = dataSource(context)
@@ -173,8 +183,9 @@ class RowEvalContext(
             if (queryCtx.rawTableJoins.containsKey(srcAtt)) {
                 return resolveRawJoinTarget(srcAtt)?.get(tgtAtt)
             }
-            val targetRow = resolveAssocSelectJoinTarget(srcAtt) ?: return null
-            return targetRow[tgtAtt]
+            val split = AssocSelectJoins.splitColumn(name, queryCtx.assocSelectJoins.keys) ?: return null
+            val targetRow = resolveAssocSelectJoinTarget(split.first) ?: return null
+            return targetRow[split.second]
         }
         return row[name]
     }
@@ -211,11 +222,24 @@ class RowEvalContext(
         return a == b
     }
 
-    /** The single-valued assoc-select-join target row referenced by [srcAtt]. */
-    private fun resolveAssocSelectJoinTarget(srcAtt: String): Map<String, Any?>? {
-        return resolvedJoinTargets.getOrPut(srcAtt) {
-            val targetCtx = queryCtx.assocSelectJoins[srcAtt] ?: return@getOrPut null
-            val srcRefId = (row[srcAtt] as? Number)?.toLong() ?: return@getOrPut null
+    /**
+     * The single-valued assoc-select-join target row for the join named [joinKey].
+     *
+     * A join key is the path walked so far, so a key that still has a dot hangs off the join named
+     * by everything before the last one: the ref-id to follow is read from that join's row rather
+     * than from this one. Mirrors the chain of LEFT JOINs the SQL backend builds.
+     */
+    private fun resolveAssocSelectJoinTarget(joinKey: String): Map<String, Any?>? {
+        return resolvedJoinTargets.getOrPut(joinKey) {
+            val targetCtx = queryCtx.assocSelectJoins[joinKey] ?: return@getOrPut null
+            val srcSplit = AssocSelectJoins.splitColumn(joinKey, queryCtx.assocSelectJoins.keys)
+            val srcRow = if (srcSplit == null) {
+                row
+            } else {
+                resolveAssocSelectJoinTarget(srcSplit.first) ?: return@getOrPut null
+            }
+            val srcColumn = srcSplit?.second ?: joinKey
+            val srcRefId = (srcRow[srcColumn] as? Number)?.toLong() ?: return@getOrPut null
             val targetTable = queryCtx.getTable(targetCtx) ?: return@getOrPut null
             targetTable.getRows().firstOrNull { (it[DbEntity.REF_ID] as? Number)?.toLong() == srcRefId }
         }
@@ -226,11 +250,9 @@ class RowEvalContext(
         if (queryCtx.expressions.containsKey(name)) {
             return null
         }
-        val dotIdx = name.indexOf('.')
-        if (dotIdx > 0) {
-            val srcAtt = name.substring(0, dotIdx)
-            val tgtAtt = name.substring(dotIdx + 1)
-            return queryCtx.assocSelectJoins[srcAtt]?.getColumnByName(tgtAtt)
+        if (name.contains('.')) {
+            val split = AssocSelectJoins.splitColumn(name, queryCtx.assocSelectJoins.keys) ?: return null
+            return queryCtx.assocSelectJoins[split.first]?.getColumnByName(split.second)
         }
         return tableContext.getColumnByName(name)
     }
@@ -270,6 +292,13 @@ class RowEvalContext(
      * the join's inner predicate.
      */
     fun existsAssocJoinWithPredicate(join: AssocJoinWithPredicate): Boolean {
+        // Nothing linked can satisfy a condition nothing satisfies. Said here rather than left to
+        // the evaluator, which models a condition that produces no SQL as one that was dropped -
+        // true - and would answer "has a link". The SQL backend says the same thing in the same
+        // place, in addAssocTableCondition.
+        if (PredicateUtils.isAlwaysFalse(join.predicate)) {
+            return false
+        }
         val targetTable = queryCtx.getTable(join.tableContext) ?: return false
         val targetRefIds: Set<Long> = if (join.multipleAssoc) {
             val myRefId = refId ?: return false

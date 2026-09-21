@@ -12,8 +12,11 @@ import ru.citeck.ecos.model.lib.type.dto.TypeModelDef
 import ru.citeck.ecos.model.lib.utils.ModelUtils
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicates
+import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.annotation.AttName
+import ru.citeck.ecos.records3.record.dao.query.dto.query.RecordsQuery
 import ru.citeck.ecos.records3.record.dao.query.dto.query.SortBy
+import ru.citeck.ecos.records3.record.dao.query.dto.res.RecsQueryRes
 import ru.citeck.ecos.webapp.api.entity.toEntityRef
 import java.util.TreeMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -589,6 +592,402 @@ class DbRecordsGroupingTest : DbRecordsTestBase() {
         assertThat(recs1).hasSize(2)
         assertThat(recs1[""]).isEqualTo(3)
         assertThat(recs1[rec1.getLocalId()]).isEqualTo(3)
+    }
+
+    /**
+     * The total count of a grouped query.
+     *
+     * A grouped query answers with a row per group, so "how many" has to mean how many groups -
+     * that is what the caller pages through. It used to mean something else on PostgreSQL:
+     * `SELECT COUNT(*) ... GROUP BY x` returns a row per group holding that group's size, and the
+     * first of them was read as the total, with no ORDER BY to say which group that was. The
+     * in-memory backend has always answered with the number of groups, so the two disagreed on
+     * every grouped count.
+     */
+    @Test
+    fun theTotalCountOfAGroupedQueryIsTheNumberOfGroupsTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create { withId("text0") },
+                AttributeDef.create {
+                    withId("num0")
+                    withType(AttributeType.NUMBER)
+                }
+            )
+        )
+
+        createRecord("text0" to "abc", "num0" to 1)
+        createRecord("text0" to "abc", "num0" to 2)
+        createRecord("text0" to "def", "num0" to 3)
+        createRecord("text0" to "ghi", "num0" to 4)
+
+        fun countOf(action: RecordsQuery.Builder.() -> Unit): Long {
+            return records.query(
+                baseQuery.copy {
+                    withSortBy(emptyList())
+                    withMaxItems(0)
+                    action()
+                }
+            ).getTotalCount()
+        }
+
+        // three groups of sizes 2, 1 and 1 - the old answer was the size of one of them
+        assertThat(countOf { withGroupBy(listOf("text0")) }).isEqualTo(3)
+        // grouping by something every record differs in makes group count and record count agree,
+        // which is why a test that only ever grouped by a unique column could not tell them apart
+        assertThat(countOf { withGroupBy(listOf("num0")) }).isEqualTo(4)
+        assertThat(countOf { withGroupBy(listOf("text0", "num0")) }).isEqualTo(4)
+
+        // no grouping at all still counts records
+        assertThat(countOf { }).isEqualTo(4)
+
+        // "*" is one group over everything, and it exists only if anything matches
+        assertThat(countOf { withGroupBy(listOf("*")) }).isEqualTo(1)
+        assertThat(
+            countOf {
+                withGroupBy(listOf("*"))
+                withQuery(Predicates.eq("text0", "nothing"))
+            }
+        ).isEqualTo(0)
+        assertThat(
+            countOf {
+                withGroupBy(listOf("text0"))
+                withQuery(Predicates.eq("text0", "nothing"))
+            }
+        ).isEqualTo(0)
+
+        // a condition narrows the groups, not only the records in them
+        assertThat(
+            countOf {
+                withGroupBy(listOf("text0"))
+                withQuery(Predicates.eq("text0", "abc"))
+            }
+        ).isEqualTo(1)
+
+        // an aggregate in the select does not change what is counted
+        assertThat(
+            countOf {
+                withGroupBy(listOf("text0"))
+                withSortBy(listOf(SortBy("sum(num0)", true)))
+            }
+        ).isEqualTo(3)
+
+        // and the count agrees with what the query actually returns
+        val groups = records.query(
+            baseQuery.copy {
+                withSortBy(emptyList())
+                withGroupBy(listOf("text0"))
+            },
+            mapOf("value" to "text0", "count" to "count(*)")
+        ).getRecords()
+        assertThat(groups).hasSize(3)
+    }
+
+    /**
+     * Grouping by a column that holds many values.
+     *
+     * Such a column is an array, and the whole array is the group: two records carrying the same
+     * values in the same order belong together, a record carrying a subset does not, and a record
+     * carrying nothing has a group of its own. That is what PostgreSQL does with `GROUP BY` over an
+     * array column, and the in-memory backend has to say the same.
+     *
+     * Both backends got it wrong, in different ways, and both had shipped:
+     *  - PostgreSQL read the grouped value back as the column's scalar type, ignoring that the
+     *    column is multiple, and failed the whole query with `Can't convert class kotlin.Array to
+     *    class kotlin.Long` - an error reaching the caller, not an empty result;
+     *  - the in-memory backend keyed its buckets by a list holding the array itself, and an array
+     *    compares by identity, so equal arrays never met and every record became its own group.
+     */
+    @Test
+    fun groupingByAMultipleColumnTest() {
+
+        val targetTypeRef = ModelUtils.getTypeRef("group-target-type")
+        val targetDao = createRecordsDao(
+            DEFAULT_TABLE_REF.withTable(targetTypeRef.getLocalId()),
+            targetTypeRef,
+            targetTypeRef.getLocalId()
+        )
+        registerType(
+            TypeInfo.create {
+                withId(targetTypeRef.getLocalId())
+                withSourceId(targetTypeRef.getLocalId())
+                withModel(
+                    TypeModelDef.create()
+                        .withAttributes(listOf(AttributeDef.create().withId("targetText").build()))
+                        .build()
+                )
+            }
+        )
+
+        registerAtts(
+            listOf(
+                AttributeDef.create {
+                    withId("multiText")
+                    withMultiple(true)
+                },
+                AttributeDef.create {
+                    withId("multiAssoc")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                    withConfig(ObjectData.create().set("typeRef", targetTypeRef.toString()))
+                }
+            )
+        )
+
+        val tgtA = targetDao.createRecord("targetText" to "AAA")
+        val tgtB = targetDao.createRecord("targetText" to "BBB")
+
+        createRecord("multiText" to listOf("a", "b"), "multiAssoc" to listOf(tgtA, tgtB))
+        createRecord("multiText" to listOf("a", "b"), "multiAssoc" to listOf(tgtA, tgtB))
+        createRecord("multiText" to listOf("b", "a"), "multiAssoc" to listOf(tgtB, tgtA))
+        createRecord("multiText" to listOf("a"), "multiAssoc" to listOf(tgtA))
+        createRecord()
+
+        fun groupSizes(att: String): List<Int> {
+            return records.query(
+                baseQuery.copy {
+                    withSortBy(emptyList())
+                    withGroupBy(listOf(att))
+                },
+                mapOf("count" to "count(*)")
+            ).getRecords().map { it["count"].asInt() }.sorted()
+        }
+
+        fun groupCount(att: String): Long {
+            return records.query(
+                baseQuery.copy {
+                    withSortBy(emptyList())
+                    withGroupBy(listOf(att))
+                    withMaxItems(0)
+                }
+            ).getTotalCount()
+        }
+
+        // ["a","b"] twice, ["b","a"] once - order is part of the value, so they are not the same
+        // group - ["a"] once, and nothing once
+        assertThat(groupSizes("multiText")).containsExactly(1, 1, 1, 2)
+        assertThat(groupCount("multiText")).isEqualTo(4)
+
+        assertThat(groupSizes("multiAssoc")).containsExactly(1, 1, 1, 2)
+        assertThat(groupCount("multiAssoc")).isEqualTo(4)
+
+        // the values a group reports are still the whole array, not a key built for comparing
+        val grouped = records.query(
+            baseQuery.copy {
+                withSortBy(emptyList())
+                withGroupBy(listOf("multiText"))
+            },
+            mapOf("value" to "multiText[]", "count" to "count(*)")
+        ).getRecords()
+        val byValue = grouped.associate { it["value"].toString() to it["count"].asInt() }
+        assertThat(byValue).isEqualTo(
+            mapOf(
+                """["a","b"]""" to 2,
+                """["b","a"]""" to 1,
+                """["a"]""" to 1,
+                "[]" to 1
+            )
+        )
+    }
+
+    /**
+     * An aggregate over an attribute the table does not have, in a grouped query.
+     *
+     * An unresolvable argument becomes a bare `NULL` in SQL, and an aggregate cannot be typed by
+     * one: PostgreSQL refused `sum(null)` with `function sum(unknown) is not unique` and failed the
+     * whole query - a journal grouped by one field and totalling another would stop working the
+     * moment that other field was renamed away. The in-memory backend answered `null` instead, so
+     * nothing here noticed.
+     *
+     * A query without grouping never reached this: its aggregates are resolved away before the
+     * argument is looked up at all, which is why only the grouped form broke.
+     *
+     * The answer is the one this codebase already gives for an aggregate over an attribute that is
+     * not there - zero for the numeric ones - and both backends give it now.
+     */
+    @Test
+    fun anAggregateOverAnAttributeThatIsNotThereInAGroupedQueryTest() {
+
+        val targetTypeRef = ModelUtils.getTypeRef("agg-target-type")
+        val targetDao = createRecordsDao(
+            DEFAULT_TABLE_REF.withTable(targetTypeRef.getLocalId()),
+            targetTypeRef,
+            targetTypeRef.getLocalId()
+        )
+        registerType(
+            TypeInfo.create {
+                withId(targetTypeRef.getLocalId())
+                withSourceId(targetTypeRef.getLocalId())
+                withModel(
+                    TypeModelDef.create().withAttributes(
+                        listOf(
+                            AttributeDef.create()
+                                .withId("targetNum")
+                                .withType(AttributeType.NUMBER)
+                                .build()
+                        )
+                    ).build()
+                )
+            }
+        )
+
+        registerAtts(
+            listOf(
+                AttributeDef.create { withId("text0") },
+                AttributeDef.create {
+                    withId("num0")
+                    withType(AttributeType.NUMBER)
+                },
+                AttributeDef.create {
+                    withId("assoc")
+                    withType(AttributeType.ASSOC)
+                    withConfig(ObjectData.create().set("typeRef", targetTypeRef.toString()))
+                },
+                AttributeDef.create {
+                    withId("multiAssoc")
+                    withType(AttributeType.ASSOC)
+                    withMultiple(true)
+                    withConfig(ObjectData.create().set("typeRef", targetTypeRef.toString()))
+                }
+            )
+        )
+
+        val target = targetDao.createRecord("targetNum" to 5)
+
+        createRecord("text0" to "abc", "num0" to 1)
+        createRecord("text0" to "abc", "num0" to 2)
+        createRecord("text0" to "def", "num0" to 4)
+        createRecord("text0" to "ghi", "assoc" to target, "multiAssoc" to listOf(target))
+
+        val res = records.query(
+            baseQuery.copy {
+                withSortBy(emptyList())
+                withQuery(Predicates.inVals("text0", listOf("abc", "def")))
+                withGroupBy(listOf("text0"))
+                withSortBy(listOf(SortBy("text0", true)))
+            },
+            mapOf(
+                "text" to "text0",
+                "validSum" to "sum(num0)",
+                "missingSum" to "sum(noSuchColumn)",
+                "missingAvg" to "avg(noSuchColumn)",
+                "missingMax" to "max(noSuchColumn)",
+                "missingCount" to "count(noSuchColumn)"
+            )
+        ).getRecords()
+
+        assertThat(res).hasSize(2)
+
+        assertThat(res[0]["text"].asText()).isEqualTo("abc")
+        assertThat(res[0]["validSum"].asInt())
+            .describedAs("an aggregate over an attribute that is there still works")
+            .isEqualTo(3)
+        // compared as text on purpose: `asInt()` turns a null into 0 as well, and "answered zero"
+        // is exactly what has to be told apart from "answered nothing" here
+        assertThat(res[0]["missingSum"].asText()).isEqualTo("0")
+        assertThat(res[0]["missingMax"].asText()).isEqualTo("0")
+        assertThat(res[0]["missingCount"].asText()).isEqualTo("0")
+        // `avg` is asked numerically instead: PostgreSQL answers it with a scaled numeric - `0E-20`
+        // here, as it scales the average of any real column - while the in-memory backend answers
+        // a plain `0`. The two agree on the number, which is what this is about; the scale is how
+        // PostgreSQL renders every average, not something this fix introduced
+        assertThat(res[0]["missingAvg"].isNull()).isFalse()
+        assertThat(res[0]["missingAvg"].asDouble()).isEqualTo(0.0)
+
+        assertThat(res[1]["text"].asText()).isEqualTo("def")
+        assertThat(res[1]["validSum"].asInt()).isEqualTo(4)
+        assertThat(res[1]["missingSum"].asText()).isEqualTo("0")
+
+        // the same when the attribute is missing at the end of a path, and when the path itself
+        // cannot be walked for selecting at all - a multiple association
+        val res2 = records.query(
+            baseQuery.copy {
+                withSortBy(emptyList())
+                withQuery(Predicates.eq("text0", "ghi"))
+                withGroupBy(listOf("text0"))
+            },
+            mapOf(
+                "onTarget" to """sum("assoc.targetNum")""",
+                "missingOnTarget" to """sum("assoc.noSuchColumn")""",
+                "throughMultiple" to """sum("multiAssoc.targetNum")"""
+            )
+        ).getRecords()
+
+        assertThat(res2).hasSize(1)
+        assertThat(res2[0]["onTarget"].asInt())
+            .describedAs("a path that can be walked still reaches the value")
+            .isEqualTo(5)
+        assertThat(res2[0]["missingOnTarget"].asText()).isEqualTo("0")
+        assertThat(res2[0]["throughMultiple"].asText())
+            .describedAs("a multiple association cannot be walked for selecting, so there is no value")
+            .isEqualTo("0")
+    }
+
+    /**
+     * Grouping by a name the query cannot read.
+     *
+     * An attribute renamed away leaves such a group-by behind in every saved view that used it, so
+     * this is a question with no answer rather than a mistake worth raising at whoever opened the
+     * journal: the records DAO refuses it the way it refuses the other preparing failures - an
+     * empty result and a line in the debug log. PostgreSQL used to raise from underneath, which
+     * reached the caller as a failure, while the in-memory backend quietly put every record into a
+     * single group and answered that.
+     *
+     * The repository below still refuses loudly, because a query built by hand there has a mistake
+     * in it rather than an unanswerable question - see [DbDataServiceCountContractTest].
+     */
+    @Test
+    fun groupingByANameTheQueryCannotReadTest() {
+
+        registerAtts(
+            listOf(
+                AttributeDef.create { withId("text0") },
+                AttributeDef.create {
+                    withId("num0")
+                    withType(AttributeType.NUMBER)
+                }
+            )
+        )
+
+        createRecord("text0" to "abc", "num0" to 1)
+        createRecord("text0" to "abc", "num0" to 2)
+        createRecord("text0" to "def", "num0" to 3)
+
+        fun queryGroupedBy(vararg atts: String): RecsQueryRes<RecordAtts> {
+            return records.query(
+                baseQuery.copy {
+                    withSortBy(emptyList())
+                    withGroupBy(atts.toList())
+                },
+                mapOf("count" to "count(*)")
+            )
+        }
+
+        val absent = queryGroupedBy("noSuchColumn")
+        assertThat(absent.getRecords()).isEmpty()
+        assertThat(absent.getTotalCount()).isEqualTo(0)
+
+        // one unreadable name is enough to leave the whole grouping unanswerable
+        assertThat(queryGroupedBy("text0", "noSuchColumn").getRecords()).isEmpty()
+        assertThat(queryGroupedBy("noSuchAssoc.someAtt").getRecords()).isEmpty()
+
+        // asking for the total alone takes another route through the repository, and gets the
+        // same answer
+        assertThat(
+            records.query(
+                baseQuery.copy {
+                    withSortBy(emptyList())
+                    withGroupBy(listOf("noSuchColumn"))
+                    withMaxItems(0)
+                }
+            ).getTotalCount()
+        ).isEqualTo(0)
+
+        // and a grouping that can be read is untouched
+        val valid = queryGroupedBy("text0")
+        assertThat(valid.getRecords()).hasSize(2)
+        assertThat(valid.getRecords().map { it["count"].asInt() }.sorted()).containsExactly(1, 2)
     }
 
     open class TaskIdWithCount(
