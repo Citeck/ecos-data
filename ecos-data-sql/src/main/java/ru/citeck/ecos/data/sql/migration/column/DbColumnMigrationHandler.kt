@@ -136,7 +136,7 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
             }
             return null
         }
-        if (!DbColumnConversions.isTransferable(params.conversionClass)) {
+        if (!params.hasTransferableSource()) {
             // Nothing will be transferred, so there is no total worth estimating. The task still
             // runs to completion, because `onFinish` is where the deferred index is built.
             return null
@@ -273,7 +273,7 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
             // that belongs to a later transition.
             return
         }
-        val transfersValues = DbColumnConversions.isTransferable(params.conversionClass)
+        val transfersValues = params.hasTransferableSource()
         val restoresAssocs = isAssocRestore(params)
         if (!transfersValues && !restoresAssocs) {
             // Nothing transferable in this pair; the task exists only so that `onFinish` rebuilds
@@ -317,26 +317,11 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
             return
         }
 
-        // One query for the whole window rather than one per record - see [isAssocSourced] for why
-        // the links and not the column are the source at all.
-        val parkedLinks = if (assocSourced) {
-            tableCtx.getSchemaCtx().assocBackupService.findByColumnMeta(
-                params.backupColumnMetaId,
-                rows.mapNotNullTo(LinkedHashSet()) { it[DbEntity.REF_ID] as? Long }
-            )
-        } else {
-            emptyMap()
-        }
-
+        val sources = DbColumnMigrationSources(params, tableCtx, rows)
         for (row in rows) {
             val id = row[DbEntity.ID] as? Long ?: continue
-            val source = if (assocSourced) {
-                (row[DbEntity.REF_ID] as? Long)?.let { refId ->
-                    parkedLinks[refId]?.map { it.targetId }
-                }
-            } else {
-                row[params.backupColumn]
-            }
+            val selected = sources.select(row)
+            val source = selected?.second
             if (source == null) {
                 // Nothing was ever stored here - no value in the backup column, or, for an
                 // assoc-sourced transfer, no link of this record in the backup the departure
@@ -353,8 +338,12 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
                 ctx.skipped++
                 continue
             }
+            if (!DbColumnConversions.isTransferable(selected!!.first.conversionClass)) {
+                ctx.skipped++
+                continue
+            }
             val converted = try {
-                DbColumnValueConverter.convert(source, params, tableCtx)
+                DbColumnValueConverter.convert(source, selected.first, tableCtx)
             } catch (e: Throwable) {
                 if (e is InterruptedException) {
                     Thread.currentThread().interrupt()
@@ -463,7 +452,7 @@ class DbColumnMigrationHandler(private val dataSourceCtx: DbDataSourceContext) :
         }
         val params = DbColumnMigrationParams.from(ctx.getParams())
         buildDeferredIndex(ctx, params)
-        if (!DbColumnConversions.isTransferable(params.conversionClass)) {
+        if (!params.hasTransferableSource()) {
             log.info {
                 "Column migration of '${params.attId}' in ${ctx.getTableRef().fullName} carried no " +
                     "value across: ${params.sourceType.asString()} -> ${params.targetType.name} has " +

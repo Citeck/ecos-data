@@ -305,99 +305,45 @@ class DbShadowColumnTransition(
         // Its `targetColumn` is by now a different physical column of a different type - it would
         // either fail row by row or, where the two types share a physical type, write values the
         // second transition deliberately left out. The partially transferred values it did write
-        // are not lost by this: they went into the column that has just become this transition's
-        // backup.
-        cancelActiveTasksFor(params)
+        // are in the new backup. Carry its earlier sources forward as well: rows the old task
+        // had not reached still live there. Per-row selection gives newer values priority.
+        val previous = DbColumnMigrations.findUnfinished(schemaCtx, tableRef.table)
+            .firstOrNull { it.attId == params.attId }
+        val backups = schemaCtx.columnMetaService.getByTable(tableRef.table)
+            .filter { it.backup }.associateBy { it.id }
+        val inherited = previous?.sources().orEmpty().mapNotNull { source ->
+            val backup = backups[source.backupColumnMetaId] ?: return@mapNotNull null
+            if (backup.id == params.backupColumnMetaId) return@mapNotNull null
+            source.copy(backupColumn = backup.columnName)
+        }.distinctBy { it.backupColumnMetaId }
+        val nextParams = params.copy(fallbackSources = inherited)
+        cancelActiveTasksFor(params, previous)
         schemaCtx.batchTaskService.queue(
             DbColumnMigrationParams.HANDLER_TYPE,
             tableRef.table,
-            params.toObjectData()
+            nextParams.toObjectData()
         )
     }
 
     /**
-     * Cancels every still-runnable `column-migration` task of this table that was queued for
-     * [attId]: the column such a task was filling is no longer the column the model describes.
-     *
-     * Runs before the new task is queued, so this transition's own task is never a candidate.
-     *
-     * **A cancelled task's departure from the association group is performed here first** - unless
-     * this transition is putting the attribute **back** into the group. The removal normally lives
-     * in the handler's `prepare`, so cancelling before any drain tick reached it would leave the
-     * links of an attribute that is no longer assoc-like alive in `ed_associations`, and leave the
-     * backup registry row owning nothing for a later restore to find. It runs *before* the cancel:
-     * should it throw, the task is still runnable and its own `prepare` is the second chance.
-     *
-     * **The exception.** When [newParams] restores the very row the cancelled task was going to park
-     * under, those links are the attribute's live value again the moment this commits - they were
-     * never removed, and nothing read them meanwhile. Parking them would make the task queued a line
-     * below put them straight back, and until it ran the attribute would read empty for no reason.
-     *
-     * **"The attribute is assoc-like again" would be too coarse a condition.** A transition into a
-     * *different* assoc-like type with no backup of its own - `ASSOC[] -> TEXT[]` undrained, then
-     * `PERSON[]` - is an ordinary [moveAside]: the `bigint[]` column that arrives is empty, and the
-     * old links are not its value in any sense. Skipping the departure there leaves `ed_associations`
-     * holding a set nothing reads and every predicate still finds, and strands it: the next departure
-     * parks it under whatever type the attribute wears by then, and a restore matches on
-     * `(attType, multiple)` exactly. Hence the equality below rather than a test on the target type.
-     *
-     * **Why the copy may not be deferred onto a later background task.** `ed_associations_backup`
-     * under a registry row has to hold the links *as they were when the attribute left the group*,
-     * because that is the set a restore gives back. Deferring would move that boundary to whenever
-     * the drain got round to it, and this sequence would corrupt it: `ASSOC -> TEXT` (queued, never
-     * drained) -> `TEXT -> ASSOC` (that task cancelled) -> the user edits the links -> `ASSOC -> TEXT`
-     * again. The deferred copy would write the second era's links into the first era's backup. The
-     * price is a walk of the attribute's associations inside a user's mutation, on this branch only.
-     *
-     * Two facts a reader cannot derive from the code:
-     *
-     *  - **the two callers are guarded by different distributed locks** - a drain tick holds the
-     *    batch task lock, a user's mutation the schema migration lock - so `prepare` and this
-     *    cancellation can run the departure for the same `backupColumnMetaId` at once. Neither sees
-     *    the other's uncommitted inserts, so the unique index aborts whichever commits second.
-     *    Nothing is lost, but it is a constraint violation someone will see in a log.
-     *  - **an administrator can cancel a task instead**, through `DbBatchTaskCancelAction`, and that
-     *    path does *not* run the departure: a task cancelled before it was drained leaves its links
-     *    live. The way back is `DbBatchTaskService.restart`, which revives the task so that `prepare`
-     *    runs the departure with the original params.
-     *
-     * A task whose params cannot be read is left alone rather than guessed at: cancelling on a failed
-     * parse would silently stop an unrelated transfer.
+     * Park the latest unfinished departure (including FAILED) before cancelling runnable tasks.
+     * A restore of that same source keeps its live links. Manually cancelled and older failed
+     * tasks cannot claim the current attribute's links.
      */
-    private fun cancelActiveTasksFor(newParams: DbColumnMigrationParams) {
+    private fun cancelActiveTasksFor(newParams: DbColumnMigrationParams, previous: DbColumnMigrationParams?) {
         val attId = newParams.attId
         val batchTaskService = schemaCtx.batchTaskService
+        if (previous != null && newParams.restoredColumnMetaId != previous.backupColumnMetaId) {
+            // FAILED may mean prepare never parked the links. Finish that departure before
+            // inheriting its source; historical failed tasks must not park a later era's links.
+            DbAssocGroupDeparture(tableDataService, dataSourceCtx.remoteActionsClient)
+                .runIfDeparture(previous)
+        }
         for (task in batchTaskService.findByTable(tableRef.table)) {
-            if (task.handler != DbColumnMigrationParams.HANDLER_TYPE || task.status.isFinal()) {
-                continue
-            }
-            val taskParams = try {
-                DbColumnMigrationParams.from(task.params)
-            } catch (e: Exception) {
-                log.error(e) {
-                    "Batch task ${task.id} of ${tableRef.fullName} has unreadable column-migration " +
-                        "params and was left as it is while '$attId' moved aside"
-                }
-                continue
-            }
-            if (taskParams.attId != attId) {
-                continue
-            }
-            // the one case in which the links this task would have parked are the live value of
-            // the column this transition is putting back - see the KDoc
-            val restoringTheRowThisTaskWouldParkUnder =
-                newParams.restoredColumnMetaId != DbColumnMigrationParams.NO_RESTORED_COLUMN &&
-                    newParams.restoredColumnMetaId == taskParams.backupColumnMetaId
-            if (!restoringTheRowThisTaskWouldParkUnder) {
-                DbAssocGroupDeparture(tableDataService, dataSourceCtx.remoteActionsClient)
-                    .runIfDeparture(taskParams)
-            }
-            if (batchTaskService.cancel(task.id)) {
-                log.info {
-                    "Batch task ${task.id} was cancelled: attribute '$attId' of ${tableRef.fullName} " +
-                        "changed type again before its transfer finished. The values it " +
-                        "had already written are in the backup this transition just created"
-                }
+            if (task.handler != DbColumnMigrationParams.HANDLER_TYPE || task.status.isFinal()) continue
+            val taskParams = DbColumnMigrations.parse(task) ?: continue
+            if (taskParams.attId == attId && batchTaskService.cancel(task.id)) {
+                log.info { "Batch task ${task.id} was cancelled: '$attId' of ${tableRef.fullName} changed type again" }
             }
         }
     }

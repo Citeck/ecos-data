@@ -5,6 +5,7 @@ import ru.citeck.ecos.commons.data.DataValue
 import ru.citeck.ecos.data.sql.context.DbTableContext
 import ru.citeck.ecos.data.sql.dto.DbColumnType
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
+import ru.citeck.ecos.data.sql.migration.column.DbColumnMigrationRead
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
@@ -53,6 +54,8 @@ class DbFindQueryContext(
     val assocSelectJoinsInvMapping = HashMap<String, String>()
     val assocSelectJoinsValueTypes = HashMap<String, KClass<*>>()
     private val assocSelectJoinSteps = HashMap<String, AssocSelectJoinStep>()
+    val migrationValues by lazy { DbColumnMigrationRead(ctx.dataService.getTableContext()) }
+    private val grouped = withGrouping
     val expressionsCtx = DbExpressionAttsContext(this, withGrouping)
 
     val assocJoinsCounter = AtomicInteger(0)
@@ -128,6 +131,7 @@ class DbFindQueryContext(
     }
 
     fun mapResultEntitiesAtts(entities: List<DbEntity>): List<DbEntity> {
+        if (!grouped) migrationValues.prepare(entities)
         var result = expressionsCtx.mapEntitiesAtts(entities)
         if (assocSelectJoinsValueTypes.isNotEmpty() || assocSelectJoinsInvMapping.isNotEmpty()) {
             result = result.map {

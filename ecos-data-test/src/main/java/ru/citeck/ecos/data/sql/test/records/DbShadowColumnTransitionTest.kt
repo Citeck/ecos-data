@@ -324,8 +324,11 @@ class DbShadowColumnTransitionTest : DbRecordsTestBase() {
             .isTrue()
         assertThat(backupMeta.attType.asString()).isEqualTo("text")
         assertThat(records.getAtt(rec, "someAtt[]").asStrList())
-            .describedAs("the new column starts empty - taking the first element is the transfer's job")
-            .isEmpty()
+            .describedAs("the pending transfer is visible through the converted backup value")
+            .containsExactly("a")
+        assertThat(TxnContext.doInTxn { mainCtx.dataService.findByExtId(rec.getLocalId())!!.attributes["someAtt"] })
+            .describedAs("reading the backup does not fill the physical target before the transfer")
+            .isNull()
     }
 
     @Test
@@ -373,8 +376,11 @@ class DbShadowColumnTransitionTest : DbRecordsTestBase() {
             .describedAs("the type never changed; only the multiplicity did, and the registry says so")
             .isEqualTo("text")
         assertThat(records.getAtt(rec, "someAtt[]").asStrList())
-            .describedAs("the new column starts empty - taking the first element is the transfer's job")
-            .isEmpty()
+            .describedAs("the pending transfer is visible through the converted backup value")
+            .containsExactly("a")
+        assertThat(TxnContext.doInTxn { mainCtx.dataService.findByExtId(rec.getLocalId())!!.attributes["someAtt"] })
+            .describedAs("reading the backup does not fill the physical target before the transfer")
+            .isNull()
     }
 
     @Test

@@ -25,6 +25,7 @@ import ru.citeck.ecos.data.sql.meta.table.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableChangeSet
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaConfig
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
+import ru.citeck.ecos.data.sql.migration.column.DbColumnMigrations
 import ru.citeck.ecos.data.sql.migration.column.DbShadowColumnTransition
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
 import ru.citeck.ecos.data.sql.props.DbEcosDataProps
@@ -690,6 +691,12 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
         schemaCacheUpdateRequired.set(true)
     }
 
+    override fun prepareForMutation(expectedColumns: List<DbColumnDef>, attTypes: DbExpectedAttTypes) {
+        dataSource.withTransaction(false) {
+            runMigrationsInTxn(expectedColumns, attTypes, mock = false, diff = true)
+        }
+    }
+
     override fun runMigrations(
         mock: Boolean,
         diff: Boolean
@@ -1084,6 +1091,15 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 // and queued the transfer that fills in the rest, so this column is done - and it
                 // deliberately does not join `convertedColumns`, whose registry write would undo
                 // half of that.
+                continue
+            }
+
+            // An unfinished transfer still targets the current physical column. Keep its
+            // sources in the new shadow transition instead of changing that target in place.
+            val hasPendingTransfer = DbColumnMigrations.findUnfinished(schemaCtx, tableRef.table)
+                .any { it.attId == expectedColumn.name }
+            if (hasPendingTransfer) {
+                moveColumnAside(currentColumn, expectedColumn, attTypes, columnMetaByName, mock)
                 continue
             }
 

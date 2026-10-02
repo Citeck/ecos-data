@@ -13,6 +13,9 @@ import ru.citeck.ecos.data.sql.repo.find.DbFindSort
 import ru.citeck.ecos.data.sql.service.DbDataService
 import ru.citeck.ecos.data.sql.service.DbDataServiceConfig
 import ru.citeck.ecos.data.sql.service.DbDataServiceImpl
+import ru.citeck.ecos.data.sql.service.expression.token.ColumnToken
+import ru.citeck.ecos.data.sql.service.expression.token.FunctionToken
+import ru.citeck.ecos.data.sql.service.expression.token.ScalarToken
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.Predicates
 import ru.citeck.ecos.txn.lib.TxnContext
@@ -112,6 +115,54 @@ open class DbBatchTaskService(schemaCtx: DbSchemaContext) {
                 ),
                 listOf(DbFindSort(DbBatchTaskEntity.ID, true))
             ).map { toDto(it) }
+        }
+    }
+
+    /**
+     * Latest generation for each params.attId, excluding DONE/CANCELLED only after grouping.
+     * Reads the existing JSON key, including tasks queued before this lookup existed. The database
+     * aggregates history; only one id per attribute and the surviving task payloads reach callers.
+     */
+    fun findLatestUnfinishedByAttribute(table: String, handler: String): List<DbBatchTaskDto> {
+        return TxnContext.doInTxn(readOnly = true) {
+            val latestIds = dataService.findRaw(
+                DbFindQuery.create {
+                    withPredicate(
+                        Predicates.and(
+                            Predicates.eq(DbBatchTaskEntity.TABLE_ID, table),
+                            Predicates.eq(DbBatchTaskEntity.HANDLER, handler)
+                        )
+                    )
+                    withExpressions(
+                        mapOf(
+                            "attribute" to FunctionToken(
+                                "jsonb_extract_path_text",
+                                listOf(ColumnToken(DbBatchTaskEntity.PARAMS), ScalarToken("attId"))
+                            ),
+                            "latestId" to FunctionToken("max", listOf(ColumnToken(DbBatchTaskEntity.ID)))
+                        )
+                    )
+                    withGroupBy(listOf("attribute"))
+                },
+                DbFindPage.ALL,
+                false
+            ).entities.map { (it.getValue("latestId") as Number).toLong() }
+            if (latestIds.isEmpty()) {
+                emptyList()
+            } else {
+                dataService.findAll(
+                    Predicates.and(
+                        Predicates.inVals(DbBatchTaskEntity.ID, latestIds),
+                        Predicates.not(
+                            Predicates.inVals(
+                                DbBatchTaskEntity.STATUS,
+                                listOf(DbBatchTaskStatus.DONE.name, DbBatchTaskStatus.CANCELLED.name)
+                            )
+                        )
+                    ),
+                    listOf(DbFindSort(DbBatchTaskEntity.ID, false))
+                ).map { toDto(it) }
+            }
         }
     }
 

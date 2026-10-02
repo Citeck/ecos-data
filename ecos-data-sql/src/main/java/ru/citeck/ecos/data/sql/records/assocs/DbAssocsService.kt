@@ -328,6 +328,21 @@ class DbAssocsService(
         }
     }
 
+    /** Complete, ordered links for a page of records, without one query per record. */
+    fun getTargetAssocs(sourceIds: Collection<Long>, attribute: String): Map<Long, List<DbAssocDto>> {
+        if (sourceIds.isEmpty()) return emptyMap()
+        val attributeId = getIdForAtt(attribute)
+        if (attributeId == -1L) return emptyMap()
+        val entities = dataService.findAll(
+            Predicates.and(
+                Predicates.inVals(DbAssocEntity.SOURCE_ID, sourceIds),
+                Predicates.eq(DbAssocEntity.ATTRIBUTE, attributeId)
+            ),
+            listOf(DbFindSort(DbAssocEntity.INDEX, true))
+        )
+        return mapToDto(entities).groupBy { it.sourceId }
+    }
+
     fun getTargetAssocs(sourceId: Long, attribute: String, page: DbFindPage): DbFindRes<DbAssocDto> {
 
         val result = dataService.find(

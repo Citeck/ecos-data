@@ -9,16 +9,16 @@ import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
 
 class DbColumnConversionsTest {
 
-    private val G_STR_MEMBERS = listOf(AttributeType.TEXT, AttributeType.MLTEXT, AttributeType.OPTIONS)
+    private val stringGroupMembers = listOf(AttributeType.TEXT, AttributeType.MLTEXT, AttributeType.OPTIONS)
 
-    private val G_ASSOC_MEMBERS = listOf(
+    private val associationGroupMembers = listOf(
         AttributeType.ASSOC,
         AttributeType.PERSON,
         AttributeType.AUTHORITY,
         AttributeType.AUTHORITY_GROUP
     )
 
-    private val SAFE_TO_STRING_MEMBERS = listOf(
+    private val safeToStringMembers = listOf(
         AttributeType.NUMBER,
         AttributeType.BOOLEAN,
         AttributeType.JSON,
@@ -26,7 +26,7 @@ class DbColumnConversionsTest {
         AttributeType.DATETIME
     )
 
-    private val PARSEABLE_FROM_STRING_MEMBERS = listOf(
+    private val parseableFromStringMembers = listOf(
         AttributeType.NUMBER,
         AttributeType.BOOLEAN,
         AttributeType.DATE,
@@ -58,8 +58,8 @@ class DbColumnConversionsTest {
         assertThat(sameForm(AttributeType.TEXT, AttributeType.OPTIONS)).isTrue()
         assertThat(sameForm(AttributeType.OPTIONS, AttributeType.TEXT)).isTrue()
         // every assoc-like type lives in ed_associations
-        for (from in G_ASSOC_MEMBERS) {
-            for (to in G_ASSOC_MEMBERS) {
+        for (from in associationGroupMembers) {
+            for (to in associationGroupMembers) {
                 assertThat(sameForm(from, to))
                     .describedAs("$from -> $to stays in ed_associations")
                     .isTrue()
@@ -110,8 +110,8 @@ class DbColumnConversionsTest {
         // all four live in ed_associations - every member against every member, not just
         // one representative pair, so a narrowing regression on any of the six off-diagonal pairs
         // cannot pass silently
-        for (from in G_ASSOC_MEMBERS) {
-            for (to in G_ASSOC_MEMBERS) {
+        for (from in associationGroupMembers) {
+            for (to in associationGroupMembers) {
                 assertThat(classify(from, to))
                     .describedAs("$from -> $to")
                     .isEqualTo(DbConversionClass.SAFE)
@@ -123,7 +123,7 @@ class DbColumnConversionsTest {
     fun crossingBetweenAssociationsAndEntityRefIsLossyTest() {
         // the source of truth moves; the column caches only the first 10 values - every
         // G_ASSOC member, not just ASSOC/PERSON, in both directions
-        for (from in G_ASSOC_MEMBERS) {
+        for (from in associationGroupMembers) {
             assertThat(classify(from, AttributeType.ENTITY_REF))
                 .describedAs("$from -> ENTITY_REF")
                 .isEqualTo(DbConversionClass.LOSSY)
@@ -159,8 +159,8 @@ class DbColumnConversionsTest {
     @Test
     fun referencesAndStringsConvertBothWaysWithLossTest() {
         // assoc-like <-> string-like, every member of both groups in both directions
-        for (assoc in G_ASSOC_MEMBERS) {
-            for (str in G_STR_MEMBERS) {
+        for (assoc in associationGroupMembers) {
+            for (str in stringGroupMembers) {
                 assertThat(classify(assoc, str))
                     .describedAs("$assoc -> $str")
                     .isEqualTo(DbConversionClass.LOSSY)
@@ -170,7 +170,7 @@ class DbColumnConversionsTest {
             }
         }
         // ENTITY_REF <-> string-like, every member
-        for (str in G_STR_MEMBERS) {
+        for (str in stringGroupMembers) {
             assertThat(classify(AttributeType.ENTITY_REF, str))
                 .describedAs("ENTITY_REF -> $str")
                 .isEqualTo(DbConversionClass.LOSSY)
@@ -184,8 +184,8 @@ class DbColumnConversionsTest {
     fun scalarsToStringsAreSafeAndStringsBackAreNotTest() {
         // DATE and DATETIME are the two genuinely new safe pairs of this work, and every
         // string-like member must receive them, not just TEXT
-        for (scalar in SAFE_TO_STRING_MEMBERS) {
-            for (str in G_STR_MEMBERS) {
+        for (scalar in safeToStringMembers) {
+            for (str in stringGroupMembers) {
                 if (scalar == AttributeType.JSON && str == AttributeType.MLTEXT) {
                     // claimed earlier as LOSSY - already asserted in
                     // mlTextLosesLocalesOnTheWayToAPlainStringTest
@@ -197,14 +197,14 @@ class DbColumnConversionsTest {
             }
         }
         // string-like -> JSON is done unconditionally today and blows up
-        for (str in G_STR_MEMBERS) {
+        for (str in stringGroupMembers) {
             assertThat(classify(str, AttributeType.JSON))
                 .describedAs("$str -> JSON")
                 .isEqualTo(DbConversionClass.LOSSY)
         }
         // every string-like member into every parseable scalar
-        for (str in G_STR_MEMBERS) {
-            for (scalar in PARSEABLE_FROM_STRING_MEMBERS) {
+        for (str in stringGroupMembers) {
+            for (scalar in parseableFromStringMembers) {
                 assertThat(classify(str, scalar))
                     .describedAs("$str -> $scalar")
                     .isEqualTo(DbConversionClass.LOSSY)
@@ -215,7 +215,7 @@ class DbColumnConversionsTest {
     @Test
     fun binaryAndDatesFollowTheirOwnRulesTest() {
         // every string-like member, not just TEXT, in both directions
-        for (str in G_STR_MEMBERS) {
+        for (str in stringGroupMembers) {
             assertThat(classify(str, AttributeType.BINARY))
                 .describedAs("$str -> BINARY")
                 .isEqualTo(DbConversionClass.SAFE)

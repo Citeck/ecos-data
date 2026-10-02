@@ -185,8 +185,16 @@ object AggregateEvaluator {
                 val sum = doubles.sum()
                 if (allIntegral) sum.toLong() else sum
             }
-            "max" -> rawValues.maxByOrNull { ExpressionEvaluator.toDouble(it) ?: Double.MIN_VALUE }
-            "min" -> rawValues.minByOrNull { ExpressionEvaluator.toDouble(it) ?: Double.MAX_VALUE }
+            "max" -> if (allIntegral) {
+                rawValues.maxByOrNull { (it as Number).toLong() }
+            } else {
+                rawValues.maxByOrNull { ExpressionEvaluator.toDouble(it) ?: Double.MIN_VALUE }
+            }
+            "min" -> if (allIntegral) {
+                rawValues.minByOrNull { (it as Number).toLong() }
+            } else {
+                rawValues.minByOrNull { ExpressionEvaluator.toDouble(it) ?: Double.MAX_VALUE }
+            }
             "avg" -> doubles.average()
             else -> null
         }

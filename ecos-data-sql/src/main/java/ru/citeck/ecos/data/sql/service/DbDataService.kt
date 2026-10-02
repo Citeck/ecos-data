@@ -187,6 +187,11 @@ interface DbDataService<T : Any> {
         diff: Boolean
     ): List<String>
 
+    /** Reconcile before loading mutation state, retaining the ordinary save path's schema cache. */
+    fun prepareForMutation(expectedColumns: List<DbColumnDef>, attTypes: DbExpectedAttTypes) {
+        runMigrations(expectedColumns, attTypes, mock = false, diff = true)
+    }
+
     fun getTableContext(): DbTableContext
 
     fun getEntityMapper(): DbEntityMapper<T>

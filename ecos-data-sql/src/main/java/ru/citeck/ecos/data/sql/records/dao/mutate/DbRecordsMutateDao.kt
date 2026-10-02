@@ -411,6 +411,17 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                     mutCtx.addTypeAttColumn(column)
                 }
             }
+            // Reconcile before mutation computations retain values read using the old schema.
+            // Otherwise save() can rename a TEXT column after this entity was loaded and then
+            // try to write its old String into the new DOUBLE column.
+            val columnsBeforeReconciliation = dataService.getTableContext().getAllPhysicalColumns()
+            dataService.prepareForMutation(mutCtx.typeColumns, mutCtx.getExpectedAttTypes())
+            if (columnsBeforeReconciliation != dataService.getTableContext().getAllPhysicalColumns()) {
+                val current = daoCtx.attsDao.findDbEntityByExtId(entityToMutate.extId, checkPerms = false)
+                    ?: error("Record disappeared during schema reconciliation: ${entityToMutate.extId}")
+                entityToMutate.attributes.clear()
+                entityToMutate.attributes.putAll(current.attributes)
+            }
             handleControlAtts(mutCtx)?.let { return it }
         }
 

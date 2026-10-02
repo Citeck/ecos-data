@@ -36,7 +36,8 @@ import ru.citeck.ecos.records2.predicate.model.Predicate
  */
 class DbStorageWriteBarrier(
     private val impl: DbDataServiceFactory,
-    private val barrier: () -> ((DbTableRef, List<Map<String, Any?>>) -> Unit)?
+    private val barrier: () -> ((DbTableRef, List<Map<String, Any?>>) -> Unit)?,
+    private val readObserver: () -> ((DbTableRef, DbFindQuery, List<Map<String, Any?>>) -> Unit)? = { null }
 ) : DbDataServiceFactory {
 
     override fun registerConverters(typesConverter: DbTypesConverter) {
@@ -59,7 +60,9 @@ class DbStorageWriteBarrier(
             page: DbFindPage,
             withTotalCount: Boolean
         ): DbFindRes<Map<String, Any?>> {
-            return repo.find(context, query, page, withTotalCount)
+            return repo.find(context, query, page, withTotalCount).also {
+                readObserver()?.invoke(context.getTableRef(), query, it.entities)
+            }
         }
 
         override fun save(context: DbTableContext, entities: List<Map<String, Any?>>): List<Map<String, Any?>> {

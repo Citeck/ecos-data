@@ -1,6 +1,7 @@
 package ru.citeck.ecos.data.sql.migration.column
 
 import ru.citeck.ecos.commons.data.ObjectData
+import ru.citeck.ecos.data.sql.columnmeta.DbColumnConversions
 import ru.citeck.ecos.data.sql.columnmeta.DbColumnSemanticType
 import ru.citeck.ecos.data.sql.columnmeta.DbConversionClass
 import ru.citeck.ecos.model.lib.attributes.dto.AttributeType
@@ -62,7 +63,9 @@ data class DbColumnMigrationParams(
      * the association links under the text backup - where no later restore of the assoc column
      * would ever look for them.
      */
-    val restoredColumnMetaId: Long = NO_RESTORED_COLUMN
+    val restoredColumnMetaId: Long = NO_RESTORED_COLUMN,
+    /** Older, unfinished sources, in descending value priority. */
+    val fallbackSources: List<DbColumnMigrationSource> = emptyList()
 ) {
 
     companion object {
@@ -110,9 +113,37 @@ data class DbColumnMigrationParams(
                 backupColumnMetaId = data.get(BACKUP_COLUMN_META_ID).asLong(),
                 // absent from every task queued before the restore existed, and absent from
                 // every ordinary transition since - both of which restored nothing
-                restoredColumnMetaId = data.get(RESTORED_COLUMN_META_ID).asLong(NO_RESTORED_COLUMN)
+                restoredColumnMetaId = data.get(RESTORED_COLUMN_META_ID).asLong(NO_RESTORED_COLUMN),
+                fallbackSources = data.get("fallbackSources").map { DbColumnMigrationSource.from(it.asObjectData()) }
             )
         }
+    }
+
+    fun sources(): List<DbColumnMigrationSource> = listOf(
+        DbColumnMigrationSource(
+            backupColumn,
+            backupColumnMetaId,
+            sourceType,
+            sourceMultiple,
+            DbAssocGroupDeparture.isDeparture(this) && sourceMultiple
+        )
+    ) + fallbackSources
+
+    fun forSource(source: DbColumnMigrationSource): DbColumnMigrationParams = copy(
+        backupColumn = source.backupColumn,
+        backupColumnMetaId = source.backupColumnMetaId,
+        sourceType = source.sourceType,
+        sourceMultiple = source.sourceMultiple,
+        conversionClass = if (source.backupColumnMetaId == backupColumnMetaId) {
+            conversionClass
+        } else {
+            DbColumnConversions.classify(source.sourceType, source.sourceMultiple, targetType, targetMultiple)
+        },
+        fallbackSources = emptyList()
+    )
+
+    fun hasTransferableSource(): Boolean = sources().any {
+        DbColumnConversions.isTransferable(forSource(it).conversionClass)
     }
 
     fun toObjectData(): ObjectData {
@@ -129,6 +160,7 @@ data class DbColumnMigrationParams(
         data.set(CONVERSION_CLASS, conversionClass.name)
         data.set(BACKUP_COLUMN_META_ID, backupColumnMetaId)
         data.set(RESTORED_COLUMN_META_ID, restoredColumnMetaId)
+        data.set("fallbackSources", fallbackSources.map { it.toObjectData() })
         return data
     }
 }

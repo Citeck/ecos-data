@@ -12,6 +12,7 @@ import ru.citeck.ecos.context.lib.i18n.I18nContext
 import ru.citeck.ecos.data.sql.dto.DbColumnDef
 import ru.citeck.ecos.data.sql.dto.DbColumnIndexDef
 import ru.citeck.ecos.data.sql.dto.DbColumnType
+import ru.citeck.ecos.data.sql.migration.column.DbColumnMigrationRead
 import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.atts.content.DbContentValue
@@ -213,6 +214,9 @@ class DbRecord(
 
     init {
         val recData = LinkedHashMap(entity.attributes)
+        if (!isGroupEntity) {
+            recData.putAll((queryCtx?.migrationValues ?: DbColumnMigrationRead(ctx.dataService.getTableContext())).getValues(entity))
+        }
 
         val meta = ctx.getEntityMeta(entity)
         typeInfo = meta.typeInfo

@@ -1,5 +1,6 @@
 package ru.citeck.ecos.data.sql.inmem.query
 
+import ru.citeck.ecos.commons.json.Json
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
 import ru.citeck.ecos.data.sql.records.dao.atts.DbExpressionAttsContext
 import ru.citeck.ecos.data.sql.repo.entity.DbEntity
@@ -265,11 +266,33 @@ object ExpressionEvaluator {
                 val haystack = args[0]?.toString() ?: return null
                 (haystack.indexOf(args[1]?.toString() ?: "") + 1)
             }
+            "jsonb_extract_path_text" -> extractJsonPathText(args)
             "coalesce" -> args.firstOrNull { it != null }
             "nullif" -> if (args[0] == args[1]) null else args[0]
             "greatest" -> args.filterNotNull().maxByOrNull { toDouble(it) ?: Double.MIN_VALUE }
             "least" -> args.filterNotNull().minByOrNull { toDouble(it) ?: Double.MAX_VALUE }
             else -> throw UnsupportedExpressionException("Unsupported function: $name")
+        }
+    }
+
+    private fun extractJsonPathText(args: List<Any?>): String? {
+        val json = args.firstOrNull() ?: return null
+        var node = Json.mapper.read(json.toString()) ?: return null
+        for (path in args.drop(1)) {
+            val key = path?.toString() ?: return null
+            node = when {
+                node.isObject -> node.get(key)
+                node.isArray -> {
+                    val index = key.toIntOrNull() ?: return null
+                    node.get(if (index < 0) node.size() + index else index)
+                }
+                else -> null
+            } ?: return null
+        }
+        return when {
+            node.isNull -> null
+            node.isTextual -> node.textValue()
+            else -> node.toString()
         }
     }
 

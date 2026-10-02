@@ -248,6 +248,9 @@ open class DataMockFactory : AutoCloseable {
     lateinit var assocsService: DbAssocsService
     lateinit var backend: DbRecordsTestBackend
 
+    /** Cross-backend observer for query counts and result volume; called after the actual read. */
+    var afterStorageRead: ((DbTableRef, ru.citeck.ecos.data.sql.repo.find.DbFindQuery, List<Map<String, Any?>>) -> Unit)? = null
+
     /**
      * A barrier the test can put **inside** a transaction the production code owns: called with the
      * table and the rows immediately before the storage writes them, on the same thread, so the test
@@ -300,6 +303,7 @@ open class DataMockFactory : AutoCloseable {
         numTemplates.clear()
         schemaContexts.clear()
         beforeStorageWrite = null
+        afterStorageRead = null
 
         DEFAULT_ASPECTS.forEach { aspectsInfo[it.id] = it }
         DEFAULT_TYPES.forEach { typesInfo[it.id] = it }
@@ -421,7 +425,7 @@ open class DataMockFactory : AutoCloseable {
 
             dataSourceCtx = DbDataSourceContext(
                 dbDataSource,
-                DbStorageWriteBarrier(backend.dataServiceFactory) { beforeStorageWrite },
+                DbStorageWriteBarrier(backend.dataServiceFactory, { beforeStorageWrite }, { afterStorageRead }),
                 DbMigrationService(),
                 webAppApi,
                 ecosContext,

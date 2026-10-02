@@ -158,8 +158,38 @@ object DbColumnValueConverter {
         AttributeType.ENTITY_REF
     )
 
+    /** Resolve a page's selected reference sources before converting individual cells. */
+    fun resolveSourceReferences(
+        sources: Collection<Pair<DbColumnMigrationParams, Any>>,
+        tableCtx: DbTableContext
+    ): Map<Long, EntityRef> {
+        val ids = LinkedHashSet<Long>()
+        for ((params, value) in sources) {
+            val type = (params.sourceType as? DbColumnSemanticType.Model)?.attType
+            if (type !in REFERENCE_TYPES) continue
+            val elements = asList(value)
+            val selected = if (params.sourceMultiple && !params.targetMultiple) elements.take(1) else elements
+            selected.mapNotNullTo(ids) { (it as? Number)?.toLong() }
+        }
+        val refs = LinkedHashMap<Long, EntityRef>()
+        // Bound query parameters even for pages containing very large association lists.
+        for (batch in ids.chunked(1000)) {
+            refs.putAll(tableCtx.getRecordRefsService().getEntityRefsByIdsMap(batch))
+        }
+        return refs
+    }
+
     @JvmStatic
-    fun convert(value: Any?, params: DbColumnMigrationParams, tableCtx: DbTableContext): Any? {
+    fun convert(value: Any?, params: DbColumnMigrationParams, tableCtx: DbTableContext): Any? = convert(value, params, tableCtx, null)
+
+    /** A supplied map is authoritative, including absent (dangling) IDs; it never triggers per-ID reads. */
+    @JvmStatic
+    fun convert(
+        value: Any?,
+        params: DbColumnMigrationParams,
+        tableCtx: DbTableContext,
+        refsById: Map<Long, EntityRef>?
+    ): Any? {
         if (value == null) {
             return null
         }
@@ -174,15 +204,15 @@ object DbColumnValueConverter {
             // keep the first element; the rest stay in the backup, which is why narrowing
             // is classified lossy rather than refused
             val first = asList(value).firstOrNull() ?: return null
-            return convertScalar(first, params, tableCtx)
+            return convertScalar(first, params, tableCtx, refsById)
         }
         if (!params.sourceMultiple && params.targetMultiple) {
-            return listOf(convertScalar(value, params, tableCtx))
+            return listOf(convertScalar(value, params, tableCtx, refsById))
         }
         if (params.targetMultiple) {
-            return asList(value).map { convertScalar(it, params, tableCtx) }
+            return asList(value).map { convertScalar(it, params, tableCtx, refsById) }
         }
-        return convertScalar(value, params, tableCtx)
+        return convertScalar(value, params, tableCtx, refsById)
     }
 
     /**
@@ -236,10 +266,15 @@ object DbColumnValueConverter {
         }
     }
 
-    private fun convertScalar(value: Any?, params: DbColumnMigrationParams, tableCtx: DbTableContext): Any? {
+    private fun convertScalar(
+        value: Any?,
+        params: DbColumnMigrationParams,
+        tableCtx: DbTableContext,
+        refsById: Map<Long, EntityRef>?
+    ): Any? {
         value ?: return null
         return when (params.targetType) {
-            AttributeType.TEXT, AttributeType.OPTIONS -> toTextColumnValue(userText(value, params, tableCtx))
+            AttributeType.TEXT, AttributeType.OPTIONS -> toTextColumnValue(userText(value, params, tableCtx, refsById))
             // an MLTEXT column is a TEXT column holding the serialized MLText, the same form
             // DbTypesConverter writes and DbRecord reads back - so a value that came out of an
             // MLTEXT column is already in it and is passed through. Wrapping it again produces
@@ -250,7 +285,7 @@ object DbColumnValueConverter {
             AttributeType.MLTEXT -> if (isMlTextSource(params)) {
                 toTextColumnValue(value)
             } else {
-                Json.mapper.toString(MLText(toTextColumnValue(userText(value, params, tableCtx))))
+                Json.mapper.toString(MLText(toTextColumnValue(userText(value, params, tableCtx, refsById))))
                     ?: error("MLText serialization failed for '${toText(value)}'")
             }
             AttributeType.JSON -> toJsonText(value)
@@ -753,13 +788,18 @@ object DbColumnValueConverter {
      * exactly the substitution this class refuses everywhere else, and the original id is still in the
      * backup.
      */
-    private fun userText(value: Any, params: DbColumnMigrationParams, tableCtx: DbTableContext): Any {
+    private fun userText(
+        value: Any,
+        params: DbColumnMigrationParams,
+        tableCtx: DbTableContext,
+        refsById: Map<Long, EntityRef>?
+    ): Any {
         val sourceType = (params.sourceType as? DbColumnSemanticType.Model)?.attType
         if (value !is Number || sourceType == null || sourceType !in REFERENCE_TYPES) {
             return value
         }
         val id = value.toLong()
-        val ref = tableCtx.getRecordRefsService().getEntityRefsByIdsMap(listOf(id))[id]
+        val ref = (if (refsById != null) refsById[id] else tableCtx.getRecordRefsService().getEntityRefsByIdsMap(listOf(id))[id])
             ?: error(
                 "Reference id $id has no row in ${DbRecordRefEntity.TABLE} any more, so there is no " +
                     "text form of it to write. The original id is kept in the backup column"
