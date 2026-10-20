@@ -37,6 +37,18 @@ The suite is the set of `DbRecordsTestBase` subclasses plus the shared base clas
 (`DbRecordsTestBase`) and the helpers `TypeRegistration` and `ContentUtils` — all in package
 `ru.citeck.ecos.data.sql.test.records`.
 
+`DbRecordsChildFlagChangeTest` covers deletion after an association's `child` flag changes.
+Live cascade queries retain the stored `child=true` filter. The deleted record's resolved attribute
+model can suppress cascade for those candidates, including overrides on record types sharing a
+DAO; an undefined attribute falls back to the stored association flag. Changing `false` to `true`
+does not retroactively cascade existing non-child links.
+Removing an existing link is permitted after `child` becomes false. For an existing parent, adding
+a child link still requires a child association, including mutations that combine addition and removal.
+The removal-only exception requires the direct attribute key to be absent, even when its value is null.
+Mutations to a missing parent are ignored when `MUTATION_FROM_CHILD_FLAG` is true, regardless of
+the other attributes. Missing-record errors without this flag and access-denied errors for existing
+parents still fail. Deletion does not pre-read the parent's existence.
+
 ### Global ecos-data props in tests
 
 Global library properties (`DbEcosDataProps`, in a webapp loaded from the `ecos.webapp.data`

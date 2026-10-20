@@ -455,12 +455,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
      * later return of the type restores from, and a link restored to a deleted record is a dangling
      * reference nobody asked for.
      *
-     * The parked copy is also what tells a legitimate notification from a mistaken one. An
-     * `att_remove` under [MUTATION_FROM_CHILD_FLAG] naming an attribute that is not a child
-     * association is an error - it always was - unless this record really does hold that
-     * attribute's links parked, and that question is the same query as the removal. So nothing is
-     * forgotten: either a row is dropped and the attribute is handled here, or the caller is left to
-     * refuse the mutation exactly as before.
+     * An ordinary ASSOC can accept the removal directly after its child flag changes. If the
+     * attribute no longer stores associations, a parked row is what makes the notification valid:
+     * either that row is dropped here, or validation refuses the mutation of the converted value.
      *
      * The operation is taken out of [recAttributes] rather than let through, because the parent's
      * value is no longer a set of links: applying it would quietly edit a user's text - and only
@@ -534,9 +531,12 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         val columnsById = columns.associateBy { it.attribute.id }
         changedByOperationsAtts.forEach {
             val column = columnsById[it]
+            val removalOnly = attributes.has(OperationType.ATT_REMOVE.prefix + it) &&
+                !attributes.has(OperationType.ATT_ADD.prefix + it) &&
+                !attributes.has(it)
             if (column == null ||
                 column.attribute.type != AttributeType.ASSOC ||
-                !column.attribute.config.get("child", false)
+                (!removalOnly && !column.attribute.config.get("child", false))
             ) {
                 error("'$it' is not a child association. RecordRef: '${ctx.getGlobalRef(recExtId)}'")
             }

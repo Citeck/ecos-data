@@ -308,6 +308,10 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         val entityToMutate: DbEntity = if (record.id.isNotEmpty()) {
             val entity = daoCtx.attsDao.findDbEntityByExtId(record.id, checkPerms = false)
             if (entity == null) {
+                if (isMutationFromChild) {
+                    // A retained child may still name a parent deleted after its child flag changed.
+                    return null
+                }
                 throwRecordNotFound(record.id)
             } else if (!isCurrentUserHasReadPermsForEntity(entity)) {
                 throwAccessDenied(record.id)

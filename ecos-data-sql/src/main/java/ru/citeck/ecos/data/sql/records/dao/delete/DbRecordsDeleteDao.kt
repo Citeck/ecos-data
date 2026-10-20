@@ -2,6 +2,7 @@ package ru.citeck.ecos.data.sql.records.dao.delete
 
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.ecostype.DbEcosModelService
+import ru.citeck.ecos.data.sql.records.DbRecordsUtils
 import ru.citeck.ecos.data.sql.records.assocs.DbAssocEntity
 import ru.citeck.ecos.data.sql.records.dao.DbRecordsDaoCtx
 import ru.citeck.ecos.data.sql.records.dao.mutate.RecMutAssocHandler
@@ -135,8 +136,14 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
                     Predicates.eq(DbAssocEntity.CHILD, true)
                 )
             ) { assocs ->
-                val refsToDelete = ctx.recordRefService.getEntityRefsByIds(assocs.map { it.targetId })
-                ctx.recordsService.delete(refsToDelete)
+                val childIds = assocs.filter { assoc ->
+                    val attribute = meta.allAttributes[assoc.attribute]
+                    // Stored flags can outlive a model change; an unknown attribute keeps legacy semantics.
+                    attribute?.let { DbRecordsUtils.isChildAssocAttribute(it) } ?: assoc.child
+                }.map { it.targetId }
+                if (childIds.isNotEmpty()) {
+                    ctx.recordsService.delete(ctx.recordRefService.getEntityRefsByIds(childIds))
+                }
                 false
             }
         }
