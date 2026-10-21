@@ -21,6 +21,7 @@ import ru.citeck.ecos.model.lib.type.dto.TypeInfo
 import ru.citeck.ecos.records2.RecordConstants
 import ru.citeck.ecos.records2.predicate.model.Predicate
 import ru.citeck.ecos.records2.predicate.model.ValuePredicate
+import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.records3.record.atts.schema.utils.AttStrUtils
 import ru.citeck.ecos.records3.record.dao.impl.proxy.RecordsDaoProxy
 import ru.citeck.ecos.webapp.api.entity.EntityRef
@@ -41,6 +42,16 @@ class DbFindQueryContext(
 
     companion object {
         private val log = KotlinLogging.logger {}
+
+        // Selection uses stored values. Predicates keep their existing reference/value conversion.
+        private val SELECT_ATTS_MAPPING = DbRecord.ATTS_MAPPING + mapOf(
+            RecordConstants.ATT_TYPE to DbEntity.TYPE,
+            RecordConstants.ATT_WORKSPACE to DbEntity.WORKSPACE,
+            ScalarType.ID.mirrorAtt to DbEntity.EXT_ID,
+            ScalarType.STR.mirrorAtt to DbEntity.EXT_ID,
+            "cm:created" to DbEntity.CREATED,
+            "cm:modified" to DbEntity.MODIFIED
+        )
     }
 
     private val typeService = ctx.ecosTypeService
@@ -120,7 +131,7 @@ class DbFindQueryContext(
         if (attribute.contains('.')) {
             return prepareAssocSelectJoin(attribute, strict) ?: ""
         }
-        return DbRecord.ATTS_MAPPING.getOrDefault(attribute, attribute)
+        return SELECT_ATTS_MAPPING.getOrDefault(attribute, attribute)
     }
 
     fun registerConditionAtt(attribute: String): String {
