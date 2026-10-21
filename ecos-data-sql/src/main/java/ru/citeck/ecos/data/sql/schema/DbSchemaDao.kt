@@ -6,6 +6,17 @@ import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
 
 interface DbSchemaDao {
 
+    /**
+     * Reserve an existing table for background DDL without waiting for active record transactions.
+     * Called inside the migration transaction and distributed lock, before metadata or DDL writes.
+     * A transactional SQL backend throws DbSchemaMigrationBusyException on contention; a backend
+     * without database table locks needs no additional reservation.
+     */
+    fun lockTableForBackgroundMigration(dataSource: DbDataSource, tableRef: DbTableRef) {}
+
+    /** Backend lock contention, including metadata row locks after a background table reservation. */
+    fun isBackgroundMigrationLockError(exception: Throwable): Boolean = false
+
     fun addSchemaListener(schema: String, listener: DbSchemaListener)
 
     fun isTableExists(dataSource: DbDataSource, tableRef: DbTableRef): Boolean

@@ -25,6 +25,8 @@ import ru.citeck.ecos.data.sql.meta.table.DbTableMetaEntity
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableChangeSet
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaConfig
 import ru.citeck.ecos.data.sql.meta.table.dto.DbTableMetaDto
+import ru.citeck.ecos.data.sql.migration.DbBackgroundSchemaMigration
+import ru.citeck.ecos.data.sql.migration.DbSchemaMigrationBusyException
 import ru.citeck.ecos.data.sql.migration.column.DbColumnMigrations
 import ru.citeck.ecos.data.sql.migration.column.DbShadowColumnTransition
 import ru.citeck.ecos.data.sql.perms.DbEntityPermsService
@@ -55,6 +57,7 @@ import ru.citeck.ecos.records2.predicate.model.*
 import ru.citeck.ecos.txn.lib.TxnContext
 import ru.citeck.ecos.webapp.api.authority.EcosAuthoritiesApi
 import ru.citeck.ecos.webapp.api.lock.exception.AcquireTimeoutException
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -733,15 +736,11 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
     }
 
     /**
-     * Limitation this lock does not close, worth stating plainly rather than leaving the next
-     * reader to assume more protection than exists: [EcosLockApi.doInSync] releases the lock when
-     * its lambda returns, but the DDL issued inside [runMigrationsInLock] is part of the caller's
-     * *mutation* transaction, which commits well after that lambda returns. So a second instance
-     * can take the lock the moment the first releases it, read the still-pre-commit schema under
-     * `READ COMMITTED`, and issue its own `ALTER` - which blocks on the first transaction's locks
-     * and then runs once it commits, doing the conversion twice. This is not fixed here: the real
-     * fix is to run the synchronous phase in a short transaction of its own, which is a change to
-     * the mutation path rather than to this method.
+     * Foreground DDL remains part of the caller's mutation transaction, whose PostgreSQL locks
+     * outlive this application's lock. Background reconciliation therefore reserves the table
+     * with NOWAIT before doing any work: it must not hold this lock while waiting on a writer
+     * which may need the same application lock in a nested mutation. This does not extend the
+     * application lock to the commit of ordinary foreground mutations.
      */
     private fun runMigrationsInTxn(
         expectedColumns: List<DbColumnDef>,
@@ -764,10 +763,16 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             return emptyList()
         }
         val lockKey = schemaMigrationLockKey(tableRef)
-        val lockTimeout = schemaCtx.dataSourceCtx.props.columns.schemaMigrationLockTimeout
+        val background = DbBackgroundSchemaMigration.active
+        val lockTimeout = if (background) Duration.ZERO else schemaCtx.dataSourceCtx.props.columns.schemaMigrationLockTimeout
         migrationInProgress.set(true)
         try {
             return schemaCtx.webAppApi.getAppLockApi().doInSync(lockKey, lockTimeout) {
+                if (background) {
+                    // Never hold the application lock while waiting for a writer's database lock:
+                    // that writer may need this same application lock in a nested mutation.
+                    schemaDao.lockTableForBackgroundMigration(dataSource, tableRef)
+                }
                 // only the columns, not the reconciled set: this reset exists so another instance's
                 // concurrent schema change is picked up, not to forget this instance's own
                 // reconciliation - see reconciledAttTypeEntries for the full reasoning, including
@@ -803,6 +808,7 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
                 result
             }
         } catch (e: AcquireTimeoutException) {
+            if (background) throw DbSchemaMigrationBusyException(tableRef, e)
             throw IllegalStateException(
                 "Schema migration lock can't be acquired for table ${tableRef.fullName} within " +
                     "$lockTimeout - another instance is very likely migrating this table right now.",
@@ -895,7 +901,13 @@ class DbDataServiceImpl<T : Any> : DbDataService<T> {
             migration.invoke()
         } catch (e: Throwable) {
             resetColumnsCache()
-            if (e::class == InterruptedException::class) {
+            if (e is DbSchemaMigrationBusyException ||
+                (DbBackgroundSchemaMigration.active && schemaDao.isBackgroundMigrationLockError(e))
+            ) {
+                // A PostgreSQL lock timeout has aborted this attempt's transaction. Retrying SQL
+                // inside it would replace 55P03 with 25P02 and hide the reason to defer the work.
+                throw e
+            } else if (e::class == InterruptedException::class) {
                 Thread.currentThread().interrupt()
                 throw e
             } else {

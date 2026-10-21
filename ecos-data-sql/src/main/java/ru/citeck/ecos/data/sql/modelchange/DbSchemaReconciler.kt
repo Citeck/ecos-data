@@ -4,6 +4,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import ru.citeck.ecos.context.lib.auth.AuthContext
 import ru.citeck.ecos.data.sql.columnmeta.DbColumnMetaDto
 import ru.citeck.ecos.data.sql.columnmeta.DbColumnSemanticType
+import ru.citeck.ecos.data.sql.migration.DbBackgroundSchemaMigration
+import ru.citeck.ecos.data.sql.migration.DbSchemaMigrationBusyException
 import ru.citeck.ecos.data.sql.records.DbRecordsDao
 import ru.citeck.ecos.data.sql.records.utils.DbReadToleranceLog
 import ru.citeck.ecos.model.lib.type.dto.TypeInfo
@@ -12,7 +14,8 @@ import ru.citeck.ecos.webapp.api.entity.EntityRef
 
 /**
  * Reconciling the schema of **one** table's records DAO, in the form a scheduler tick can call:
- * under the system user, without a transaction of its own, and without an exception ever leaving it.
+ * under the system user, with a short independent transaction per migration attempt. Busy tables
+ * yield to active writers and are retried by the queue; only interruption leaves this reconciler.
  *
  * Open so that the queue's own tests can substitute a reconciler that fails; production builds one
  * instance and reuses it, because it holds no state - everything it needs comes from the DAO.
@@ -147,10 +150,17 @@ open class DbSchemaReconciler {
             AuthContext.runAsSystem {
                 reconcileImpl(dao)
             }
+        } catch (e: DbSchemaMigrationBusyException) {
+            log.debug { "Schema reconciliation deferred for busy table ${dao.getTableRef().fullName}" }
+            Result(Status.BUSY, null, 0)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             throw e
         } catch (e: Throwable) {
+            if (dao.getSchemaCtx().dataSourceCtx.schemaDao.isBackgroundMigrationLockError(e)) {
+                // The independent attempt has rolled back, including its transaction-local GUC.
+                return Result(Status.BUSY, null, 0)
+            }
             DbReadToleranceLog.warnOnce(log, "schema-reconcile-failed:${dao.getTableRef().fullName}", e) {
                 "Schema reconciliation failed for table ${dao.getTableRef().fullName} " +
                     "(records source '${dao.getId()}'). The table keeps its current schema and will " +
@@ -203,7 +213,8 @@ open class DbSchemaReconciler {
         //
         // EntityRef.EMPTY rather than the type's own ref for the table's own type: it makes the DAO
         // resolve its configured type, which is the call every other caller of runMigrations makes.
-        // There is deliberately nothing transactional wrapped around any of this.
+        // Each attempt gets its own transaction so a failed NOWAIT reservation rolls back before
+        // BUSY is returned, even when an explicit caller already has a record transaction.
         var commandsCount = 0
         for ((otherTypeId, columns) in columnsByType) {
             val isOwnType = otherTypeId == typeInfo.id
@@ -214,7 +225,11 @@ open class DbSchemaReconciler {
             }
             if (migrationNeeded) {
                 val typeRef = if (isOwnType) EntityRef.EMPTY else ModelUtils.getTypeRef(otherTypeId)
-                commandsCount += dao.runMigrations(typeRef, mock = false, diff = true).size
+                commandsCount += schemaCtx.doInNewTxn {
+                    DbBackgroundSchemaMigration.run {
+                        dao.runMigrations(typeRef, mock = false, diff = true).size
+                    }
+                }
             }
         }
         log.debug { "Table ${tableRef.fullName} reconciled with $commandsCount schema command(s)" }
@@ -334,6 +349,9 @@ open class DbSchemaReconciler {
         /**
          * Something threw. The table is unchanged and the failure was reported once.
          */
-        FAILED
+        FAILED,
+
+        /** An active writer or another migration owns a required lock; retry on the next tick. */
+        BUSY
     }
 }

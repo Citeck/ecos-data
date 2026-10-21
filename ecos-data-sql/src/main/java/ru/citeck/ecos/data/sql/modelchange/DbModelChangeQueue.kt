@@ -232,7 +232,9 @@ class DbModelChangeQueue @JvmOverloads constructor(
      * What comes back and what does not is worth stating exactly, because "nothing is ever
      * dropped" would be too strong. The per-tick ceiling defers what it did not reach, and an
      * interrupt defers what the pass had left; both are retried by the next tick unconditionally.
-     * A reconciliation that **fails** is not deferred: [reconcileOne] records the failure and the
+     * A busy table is deferred to the next tick, after the unprocessed remainder, so contention
+     * cannot lose a model change or monopolize the per-tick limit. A reconciliation that **fails**
+     * for a reason other than contention is not deferred: [reconcileOne] records the failure and the
      * pass carries on, so that table waits for the next change announced for it or for the next
      * full sweep. That is deliberate - a table failing every tick would otherwise hold the
      * ceiling's worth of the queue for ever - and it is also the reason the fingerprint is stored
@@ -359,6 +361,10 @@ class DbModelChangeQueue @JvmOverloads constructor(
                     "The remaining tables of this tick are unaffected."
             }
             null
+        }
+        if (result?.status == DbSchemaReconciler.Status.BUSY) {
+            defer(listOf(dao))
+            return
         }
         val fingerprint = result?.fingerprint ?: return
         reconciledModels[modelKey(dao)] = fingerprint

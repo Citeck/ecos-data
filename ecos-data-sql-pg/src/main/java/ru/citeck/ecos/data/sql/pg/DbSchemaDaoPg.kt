@@ -5,6 +5,7 @@ import ru.citeck.ecos.data.sql.datasource.DbDataSource
 import ru.citeck.ecos.data.sql.dto.*
 import ru.citeck.ecos.data.sql.dto.fk.DbFkConstraint
 import ru.citeck.ecos.data.sql.dto.fk.FkCascadeActionOptions
+import ru.citeck.ecos.data.sql.migration.DbSchemaMigrationBusyException
 import ru.citeck.ecos.data.sql.schema.DbSchemaDao
 import ru.citeck.ecos.data.sql.schema.DbSchemaListener
 import java.sql.SQLException
@@ -707,7 +708,39 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
         return MAX_COLUMN_NAME_BYTES
     }
 
+    override fun lockTableForBackgroundMigration(dataSource: DbDataSource, tableRef: DbTableRef) {
+        if (!isTableExists(dataSource, tableRef)) return
+        try {
+            // NOWAIT covers the target table; semantic-only changes can still wait on a registry
+            // row. Bound those waits too, for this independent transaction only. Preserve a
+            // pre-existing stricter timeout; pg_settings reports lock_timeout in milliseconds.
+            dataSource.query(
+                """
+                    SELECT set_config('lock_timeout',
+                        CASE WHEN setting::bigint = 0 OR setting::bigint > 1 THEN '1ms'
+                             ELSE current_setting('lock_timeout') END, true)
+                    FROM pg_settings WHERE name = 'lock_timeout'
+                """.trimIndent(),
+                emptyList()
+            ) { check(it.next()) }
+            dataSource.updateSchema("LOCK TABLE ${tableRef.fullName} IN ACCESS EXCLUSIVE MODE NOWAIT")
+        } catch (e: Throwable) {
+            if (isBackgroundMigrationLockError(e)) {
+                throw DbSchemaMigrationBusyException(tableRef, e)
+            }
+            throw e
+        }
+    }
+
+    override fun isBackgroundMigrationLockError(exception: Throwable): Boolean {
+        return hasSqlState(exception, setOf("55P03"))
+    }
+
     override fun isSchemaMismatchError(exception: Throwable): Boolean {
+        return hasSqlState(exception, SCHEMA_MISMATCH_SQL_STATES)
+    }
+
+    private fun hasSqlState(exception: Throwable, states: Set<String>): Boolean {
         var current: Throwable? = exception
         var depth = 0
         while (current != null && depth++ < 20) {
@@ -715,7 +748,7 @@ open class DbSchemaDaoPg internal constructor() : DbSchemaDao {
                 var sqlException: SQLException? = current
                 var chainDepth = 0
                 while (sqlException != null && chainDepth++ < 20) {
-                    if (SCHEMA_MISMATCH_SQL_STATES.contains(sqlException.sqlState)) {
+                    if (states.contains(sqlException.sqlState)) {
                         return true
                     }
                     sqlException = sqlException.nextException
