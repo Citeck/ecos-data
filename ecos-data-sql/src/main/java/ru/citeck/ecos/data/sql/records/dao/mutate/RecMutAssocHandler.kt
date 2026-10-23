@@ -52,8 +52,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
          *        exactly where the batch engine runs (`DbBatchTaskEngine.runTaskAttempt`).
          */
         /**
-         * Takes back the `_parent`/`_parentAtt` a parent wrote on a child, **without deleting the
-         * child**.
+         * Clears `_parent`/`_parentAtt` **without deleting the child**, for an association allowing
+         * child detachment or for a background transfer taking back a back-reference it wrote.
          *
          * [updateParentRefOfChildren] with `add = false` is not this: it sends `_parent = null`
          * under [MUTATION_FROM_PARENT_FLAG], which `DbRecordsDao.mutate` reads as "the parent has
@@ -625,7 +625,16 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         }
 
         childrenChanges.forEach {
-            addOrRemoveParentRef.invoke(it.key, it.value.removed, false)
+            val attribute = childAssociations.first { column -> column.attribute.id == it.key }.attribute
+            if (DbRecordsUtils.isChildDetachAllowed(attribute)) {
+                releaseChildren(
+                    ctx.recordsService,
+                    it.value.removed.map { id -> childRefsById[id] ?: error("Child ref doesn't found by id $id") },
+                    disableEvents
+                )
+            } else {
+                addOrRemoveParentRef.invoke(it.key, it.value.removed, false)
+            }
             addOrRemoveParentRef.invoke(it.key, it.value.added, true)
         }
     }

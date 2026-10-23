@@ -136,11 +136,21 @@ class DbRecordsDeleteDao(var ctx: DbRecordsDaoCtx) {
                     Predicates.eq(DbAssocEntity.CHILD, true)
                 )
             ) { assocs ->
-                val childIds = assocs.filter { assoc ->
+                val childAssocs = assocs.filter { assoc ->
                     val attribute = meta.allAttributes[assoc.attribute]
                     // Stored flags can outlive a model change; an unknown attribute keeps legacy semantics.
                     attribute?.let { DbRecordsUtils.isChildAssocAttribute(it) } ?: assoc.child
-                }.map { it.targetId }
+                }
+                val (detached, deleted) = childAssocs.partition {
+                    DbRecordsUtils.isChildDetachAllowed(meta.allAttributes[it.attribute])
+                }
+                if (detached.isNotEmpty()) {
+                    RecMutAssocHandler.releaseChildren(
+                        ctx.recordsService,
+                        ctx.recordRefService.getEntityRefsByIds(detached.map { it.targetId })
+                    )
+                }
+                val childIds = deleted.map { it.targetId }
                 if (childIds.isNotEmpty()) {
                     ctx.recordsService.delete(ctx.recordRefService.getEntityRefsByIds(childIds))
                 }

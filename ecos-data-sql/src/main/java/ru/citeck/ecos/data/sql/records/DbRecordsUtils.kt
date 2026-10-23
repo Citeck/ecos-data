@@ -36,6 +36,11 @@ object DbRecordsUtils {
         return def.type == AttributeType.ASSOC && def.config.get("child", false)
     }
 
+    fun isChildDetachAllowed(def: AttributeDef?): Boolean {
+        def ?: return false
+        return isChildAssocAttribute(def) && def.config.get("allowChildDetach", false)
+    }
+
     /**
      * Returns true for association types stored in the ed_associations table
      * (ASSOC, PERSON, AUTHORITY_GROUP, AUTHORITY).
