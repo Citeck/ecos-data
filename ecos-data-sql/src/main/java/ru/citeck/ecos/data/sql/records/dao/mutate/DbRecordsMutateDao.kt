@@ -393,6 +393,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             },
             isRunAsSystemOrAdmin = isRunAsSystemOrAdmin,
             disableEvents = disableEvents,
+            disableAudit = disableAudit,
             isNewEntity = isNewEntity,
             extIdFromAtts = extIdFromAtts,
             computeContext = mutComputeContext
@@ -914,6 +915,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             mutCtx.typeAttColumns,
             mutCtx.allAssocsValues,
             disableEvents,
+            disableAudit,
             currentUser,
             metaAfterSave.globalRef
         )
@@ -991,6 +993,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         typeAttColumns: List<EcosAttColumnDef>,
         allAssocsValues: Map<String, DbAssocAttValuesContainer>,
         disableEvents: Boolean,
+        disableAudit: Boolean,
         currentUser: String,
         globalRef: EntityRef
     ) {
@@ -1000,13 +1003,15 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             attributes = record.attributes,
             columns = typeAttColumns,
             assocsValues = allAssocsValues,
-            disableEvents = disableEvents
+            disableEvents = disableEvents,
+            disableAudit = disableAudit
         )
         daoCtx.mutAssocHandler.processParentAfterMutation(
             recBeforeSave = recordEntityBeforeMutation,
             recAfterSave = recAfterSave,
             attributes = record.attributes,
-            disableEvents = disableEvents
+            disableEvents = disableEvents,
+            disableAudit = disableAudit
         )
         daoCtx.remoteActionsClient?.updateRemoteAssocs(
             currentCtx = daoCtx.tableCtx,
@@ -1491,6 +1496,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
                         mutCtx.typeAttColumns,
                         emptyMap(),
                         mutCtx.disableEvents,
+                        mutCtx.disableAudit,
                         mutCtx.currentUser,
                         metaAfterSave.globalRef
                     )
@@ -1657,6 +1663,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             record = mutCtx.record,
             typeInfo = typeInfo,
             disableEvents = mutCtx.disableEvents,
+            disableAudit = mutCtx.disableAudit,
             entityToMutate = mutCtx.entityToMutate,
             typeAttColumns = ArrayList(ecosTypeService.getColumnsForTypes(listOf(typeInfo))),
             frozenColumnsProvider = {

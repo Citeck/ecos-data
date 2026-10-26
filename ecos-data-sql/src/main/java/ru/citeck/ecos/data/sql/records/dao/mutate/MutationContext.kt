@@ -16,6 +16,7 @@ class MutationContext(
     val record: LocalRecordAtts,
     val typeInfo: TypeInfo,
     val disableEvents: Boolean,
+    val disableAudit: Boolean,
     val entityToMutate: DbEntity,
     val typeAttColumns: MutableList<EcosAttColumnDef>,
     /**

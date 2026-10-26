@@ -331,7 +331,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         recBeforeSave: DbEntity,
         recAfterSave: DbEntity,
         attributes: ObjectData,
-        disableEvents: Boolean
+        disableEvents: Boolean,
+        disableAudit: Boolean
     ) {
         val hasParent = attributes.has(RecordConstants.ATT_PARENT)
         val hasParentAtt = attributes.has(RecordConstants.ATT_PARENT_ATT)
@@ -410,6 +411,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                     if (disableEvents) {
                         atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
                     }
+                    if (disableAudit) {
+                        atts[DbRecordsControlAtts.DISABLE_AUDIT] = true
+                    }
                     mutateParentRef(parentRefBefore, atts)
                 }
             }
@@ -420,6 +424,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 atts[MUTATION_FROM_CHILD_FLAG] = true
                 if (disableEvents) {
                     atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
+                }
+                if (disableAudit) {
+                    atts[DbRecordsControlAtts.DISABLE_AUDIT] = true
                 }
                 mutateParentRef(parentRefAfter, atts)
             }
@@ -438,6 +445,9 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 atts[MUTATION_FROM_CHILD_FLAG] = true
                 if (disableEvents) {
                     atts[DbRecordsControlAtts.DISABLE_EVENTS] = true
+                }
+                if (disableAudit) {
+                    atts[DbRecordsControlAtts.DISABLE_AUDIT] = true
                 }
                 mutateParentRef(parentRefAfter, atts)
             }
@@ -549,7 +559,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         attributes: ObjectData,
         columns: List<EcosAttColumnDef>,
         assocsValues: Map<String, DbAssocAttValuesContainer>,
-        disableEvents: Boolean
+        disableEvents: Boolean,
+        disableAudit: Boolean
     ) {
 
         if (recAfterSave.refId < 0) {
@@ -620,7 +631,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                     childRefsById[it] ?: error("Child ref doesn't found by id. Refs: $childRefsById id: $it")
                 },
                 add,
-                disableEvents
+                disableEvents,
+                disableAudit
             )
         }
 
@@ -630,7 +642,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                 releaseChildren(
                     ctx.recordsService,
                     it.value.removed.map { id -> childRefsById[id] ?: error("Child ref doesn't found by id $id") },
-                    disableEvents
+                    disableEvents,
+                    disableAudit
                 )
             } else {
                 addOrRemoveParentRef.invoke(it.key, it.value.removed, false)
@@ -667,9 +680,10 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         attId: String,
         childRefs: Collection<EntityRef>,
         add: Boolean,
-        disableEvents: Boolean = false
+        disableEvents: Boolean = false,
+        disableAudit: Boolean = false
     ) {
-        updateParentRefOfChildren(ctx.recordsService, parentRef, attId, childRefs, add, disableEvents)
+        updateParentRefOfChildren(ctx.recordsService, parentRef, attId, childRefs, add, disableEvents, disableAudit)
     }
 
     private data class AddedRemovedAssocs(
