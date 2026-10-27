@@ -43,6 +43,7 @@ class DbContentServiceImpl(
         encoding: String?,
         storage: EcosContentStorageConfig?,
         creatorRefId: Long,
+        created: Instant?,
         content: (EcosContentWriter) -> Unit
     ): DbEcosContentData {
 
@@ -84,7 +85,7 @@ class DbContentServiceImpl(
         entity.name = nnName
         entity.mimeType = nnMimeType
         entity.encoding = nnEncoding
-        entity.created = Instant.now()
+        entity.created = created ?: Instant.now()
         entity.creator = creatorRefId
         entity.sha256 = sha256
         entity.size = size
@@ -180,10 +181,10 @@ class DbContentServiceImpl(
         }
     }
 
-    override fun cloneContent(id: Long, creatorRefId: Long): DbEcosContentData {
+    override fun cloneContent(id: Long, creatorRefId: Long, created: Instant?): DbEcosContentData {
         val entity = dataService.findById(id) ?: error("Content doesn't found by id '$id'")
         entity.id = DbContentEntity.NEW_REC_ID
-        entity.created = Instant.now()
+        entity.created = created ?: Instant.now()
         entity.creator = creatorRefId
         return EcosContentDataImpl(dataService.save(entity))
     }

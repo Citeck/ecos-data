@@ -3,6 +3,7 @@ package ru.citeck.ecos.data.sql.content
 import ru.citeck.ecos.data.sql.content.storage.EcosContentStorageConfig
 import ru.citeck.ecos.webapp.api.content.EcosContentWriter
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import java.time.Instant
 
 interface DbContentService {
 
@@ -12,6 +13,7 @@ interface DbContentService {
         encoding: String?,
         storage: EcosContentStorageConfig?,
         creatorRefId: Long,
+        created: Instant? = null,
         content: (EcosContentWriter) -> Unit
     ): DbEcosContentData
 
@@ -46,7 +48,7 @@ interface DbContentService {
      */
     fun findContentByStorageAndDataKey(storageRef: EntityRef, dataKey: String): DbEcosContentData?
 
-    fun cloneContent(id: Long, creatorRefId: Long): DbEcosContentData
+    fun cloneContent(id: Long, creatorRefId: Long, created: Instant? = null): DbEcosContentData
 
     fun resetColumnsCache()
 }

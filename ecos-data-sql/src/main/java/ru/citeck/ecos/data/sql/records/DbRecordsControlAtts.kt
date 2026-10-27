@@ -15,6 +15,30 @@ object DbRecordsControlAtts {
     const val DISABLE_AUDIT = "__disableAudit"
 
     /**
+     * Creation date of each content this mutation writes to the record's content attributes:
+     * a new upload or a copy of a temporary file or of another record's content. The content's
+     * `created` and the current version of a versionable record show this date instead of the
+     * time of the mutation.
+     *
+     * Content can't be changed after it is written, so the date is passed with the mutation
+     * that writes the content. In a mutation without content it does nothing. A value that
+     * is not a date is an error.
+     *
+     * Only together with [DISABLE_AUDIT].
+     */
+    const val CONTENT_CREATED = "__contentCreated"
+
+    /**
+     * Creator of each content this mutation writes, as [CONTENT_CREATED] for the date:
+     * a person ref or a user name. A user name with `@` is read as a ref, so such a user
+     * is passed as a ref only: `emodel/person@user@example.com`. Without it the creator
+     * is the current user.
+     *
+     * Only together with [DISABLE_AUDIT].
+     */
+    const val CONTENT_CREATOR = "__contentCreator"
+
+    /**
      * Disable record lifecycle event emission (created, changed, deleted, statusChanged) for this mutation.
      * System context only.
      */

@@ -372,6 +372,14 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         if (disableEvents && !isRunAsSystem) {
             error("${DbRecordsControlAtts.DISABLE_EVENTS} attribute can't be used outside of system context")
         }
+        val contentCreated = getContentCreated(record)
+        val contentCreator = record.getAtt(DbRecordsControlAtts.CONTENT_CREATOR).asText()
+        if ((contentCreated != null || contentCreator.isNotBlank()) && !disableAudit) {
+            error(
+                "${DbRecordsControlAtts.CONTENT_CREATED} and ${DbRecordsControlAtts.CONTENT_CREATOR} " +
+                    "attributes can be used only with ${DbRecordsControlAtts.DISABLE_AUDIT}"
+            )
+        }
 
         val currentUser = AuthContext.getCurrentUser()
         val currentUserRefId = daoCtx.getOrCreateUserRefId(currentUser)
@@ -465,6 +473,7 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         // Handle audit props
 
         val nowInstant = Instant.now()
+        var contentCreatorRefId = currentUserRefId
         if (disableAudit) {
             fun getUserId(user: String): Long {
                 val userName = if (user.contains('@')) {
@@ -496,6 +505,9 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             }
             if (entityToMutate.modifier == -1L) {
                 entityToMutate.modifier = getUserId(AuthUser.ANONYMOUS)
+            }
+            if (contentCreator.isNotBlank()) {
+                contentCreatorRefId = getUserId(contentCreator)
             }
         }
 
@@ -744,7 +756,8 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
             entityToMutate,
             mutCtx.typeAttColumns,
             contentDao.getContentStorage(typeInfo),
-            currentUserRefId
+            contentCreatorRefId,
+            contentCreated
         )
 
         recAttributes.forEach { att, newValue ->
@@ -1108,6 +1121,14 @@ class DbRecordsMutateDao : DbRecordsDaoCtxAware {
         entity.name = component.computeDisplayName(DbRecord(daoCtx, entity), typeRef)
 
         return mutatedColumns.values.toList()
+    }
+
+    private fun getContentCreated(record: LocalRecordAtts): Instant? {
+        val value = record.getAtt(DbRecordsControlAtts.CONTENT_CREATED)
+        if (value.isNull() || value.asText().isBlank()) {
+            return null
+        }
+        return value.getAsInstant() ?: error("Invalid ${DbRecordsControlAtts.CONTENT_CREATED} value: '$value'")
     }
 
     private fun expandFullAttsIfExists(record: LocalRecordAtts): Pair<LocalRecordAtts, Boolean> {

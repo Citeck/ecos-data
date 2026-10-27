@@ -23,6 +23,7 @@ import ru.citeck.ecos.records3.record.atts.dto.RecordAtts
 import ru.citeck.ecos.records3.record.atts.schema.ScalarType
 import ru.citeck.ecos.webapp.api.constants.AppName
 import ru.citeck.ecos.webapp.api.entity.EntityRef
+import java.time.Instant
 
 class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
 
@@ -133,7 +134,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
         recToMutate: DbEntity,
         columns: List<EcosAttColumnDef>,
         contentStorage: EcosContentStorageConfig?,
-        creatorRefId: Long
+        creatorRefId: Long,
+        contentCreated: Instant?
     ) {
 
         for (column in columns) {
@@ -150,7 +152,8 @@ class RecMutAssocHandler(private val ctx: DbRecordsDaoCtx) {
                     contentData,
                     column.column.multiple,
                     contentStorage,
-                    creatorRefId
+                    creatorRefId,
+                    contentCreated
                 )
             } else if (DbRecordsUtils.isStoredInAssocsTable(column.attribute.type)) {
                 val assocValue = recAttributes[column.attribute.id]
